@@ -1,0 +1,23 @@
+build/
+.dart_tool/
+
+# Secret keys - VERY IMPORTANT
+dotenv.env
+
+# IDE-specific files
+.idea/
+.vscode/
+*.iml
+
+# Generated files
+.flutter-plugins
+.flutter-plugins-dependencies
+*.packages
+
+# Log files
+*.log
+
+# Firebase (if you add these later)
+google-services.json
+GoogleService-Info.plist
+

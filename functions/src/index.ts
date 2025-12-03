@@ -1,0 +1,906 @@
+/* eslint-disable @typescript-eslint/no-var-requires */
+import {
+  onCall,
+  HttpsError,
+  CallableRequest,
+} from "firebase-functions/v2/https";
+// **FIXED:** Re-added 'onDocumentUpdated' and added required types
+import {
+  onDocumentUpdated,
+  FirestoreEvent,
+  Change,
+  DocumentSnapshot,
+} from "firebase-functions/v2/firestore";
+import * as admin from "firebase-admin";
+import * as logger from "firebase-functions/logger";
+import {defineString} from "firebase-functions/params";
+import * as nodemailer from "nodemailer";
+// **FIXED:** Use import = require syntax for non-ES module
+import Razorpay = require("razorpay");
+import * as crypto from "crypto";
+
+const geminiApiKey = defineString("GEMINI_API_KEY");
+const gmailEmail = defineString("GMAIL_EMAIL");
+const gmailAppPassword = defineString("GMAIL_APP_PASSWORD");
+const razorpayKeyId = defineString("RAZORPAY_KEY_ID");
+const razorpayKeySecret = defineString("RAZORPAY_KEY_SECRET");
+const exotelAccountSid = defineString("EXOTEL_ACCOUNT_SID");
+const exotelApiKey = defineString("EXOTEL_API_KEY");
+const exotelApiToken = defineString("EXOTEL_API_TOKEN");
+// e.g., "api" or "api.exotel.com"
+const exotelSubdomain = defineString("EXOTEL_SUBDOMAIN");
+const exotelVirtualNumber = defineString("EXOTEL_VIRTUAL_NUMBER");
+
+admin.initializeApp();
+const db = admin.firestore();
+
+// --- (Interfaces) ---
+interface VehiclePricing {
+  baseFare: number;
+  minimumFare: number;
+  perKilometer: number;
+  perMinute: number;
+  description: string;
+}
+
+interface PricingRules {
+  cityName: string;
+  currencySymbol: string;
+  vehicle_types: { [key: string]: VehiclePricing };
+}
+
+interface CalculateFaresData {
+  distanceMeters: number;
+  tollCost: number;
+  pickupLocation: { latitude: number; longitude: number; };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type RideData = any;
+
+interface GeofencedZone {
+  boundary: admin.firestore.GeoPoint[];
+  surcharge_amount?: number;
+}
+
+interface ChatPart {
+  text: string;
+}
+interface ChatHistory {
+  role: "user" | "model";
+  parts: ChatPart[];
+}
+interface ChatbotData {
+  prompt: string;
+  history: ChatHistory[];
+}
+interface EmailData {
+  subject: string;
+  body: string;
+}
+
+interface CreateOrderData {
+  amount: number; // Amount in smallest currency unit (e.g., paise)
+  currency: string; // e.g., "INR"
+}
+
+/* eslint-disable @typescript-eslint/naming-convention */
+interface VerifyPaymentData {
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+  amount: number; // The amount (in paise) to credit
+}
+/* eslint-enable @typescript-eslint/naming-convention */
+
+
+/**
+ * Helper function to generate a random 4-digit PIN
+ * @return {string} A 4-digit PIN.
+ */
+function generatePin(): string {
+  return (Math.floor(1000 + Math.random() * 9000)).toString();
+}
+
+/**
+ * Calculates ride fares based on distance, time, and geofences.
+ */
+export const calculateFares = onCall(async (
+  request: CallableRequest<CalculateFaresData>
+) => {
+  // 1. Check Auth
+  if (!request.auth) {
+    logger.warn("Unauthenticated user tried to call calculateFares.");
+    throw new HttpsError("unauthenticated", "Must be authenticated.");
+  }
+  const {distanceMeters, tollCost, pickupLocation} = request.data;
+  if (!distanceMeters || !pickupLocation) {
+    throw new HttpsError("invalid-argument", "Missing data.");
+  }
+  const distanceKm = distanceMeters / 1000.0;
+  const safeTollCost = tollCost || 0;
+  const pickupGeoPoint = new admin.firestore.GeoPoint(
+    pickupLocation.latitude,
+    pickupLocation.longitude
+  );
+  try {
+    const rulesDoc = await db.collection("pricing_rules").doc("Chennai").get();
+    if (!rulesDoc.exists) {
+      throw new HttpsError("not-found", "Pricing rules not found.");
+    }
+    const rules = rulesDoc.data() as PricingRules;
+    const vehiclePricingMap = rules.vehicle_types;
+    const now = new Date();
+    const timeZone = "Asia/Kolkata";
+    const istFormatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: timeZone,
+      hour: "2-digit",
+      hour12: false,
+      weekday: "short",
+    });
+    const parts = istFormatter.formatToParts(now);
+    let currentHour = 0;
+    let currentDayString = "";
+    for (const part of parts) {
+      if (part.type === "hour") currentHour = parseInt(part.value) % 24;
+      if (part.type === "weekday") currentDayString = part.value;
+    }
+    if (currentDayString === "") {
+      throw new HttpsError(
+        "internal", "Could not determine time zone data."
+      );
+    }
+    let surgeMultiplier = 1.0;
+    let nightCharge = 0.0;
+    const isWeekend = currentDayString === "Sat" || currentDayString === "Sun";
+    if (isWeekend) {
+      if (currentHour >= 15 && currentHour < 21) surgeMultiplier = 1.20;
+    } else {
+      const isMorningSurge = currentHour >= 8 && currentHour < 11;
+      const isEveningSurge = currentHour >= 17 && currentHour < 21;
+      if (isMorningSurge || isEveningSurge) surgeMultiplier = 1.20;
+    }
+    if (currentHour >= 22 || currentHour < 6) {
+      nightCharge = 50.0;
+    }
+
+    let geofenceSurcharge = 0.0;
+    const zonesSnapshot = await db.collection("geofenced_zones").get();
+    for (const doc of zonesSnapshot.docs) {
+      const zone = doc.data() as GeofencedZone;
+      if (
+        zone.surcharge_amount && zone.surcharge_amount > 0 &&
+        zone.boundary && isPointInPolygon(pickupGeoPoint, zone.boundary)
+      ) {
+        geofenceSurcharge = zone.surcharge_amount;
+        logger.info(
+          `Applying surcharge of ${geofenceSurcharge} for zone ${doc.id}`
+        );
+        break;
+      }
+    }
+    const calculatedFares: { [key: string]: number } = {};
+    Object.entries(vehiclePricingMap).forEach(([vehicleType, pricing]) => {
+      let fare = pricing.baseFare + (distanceKm * pricing.perKilometer);
+      fare *= surgeMultiplier;
+      fare += nightCharge + safeTollCost + geofenceSurcharge;
+      if (fare < pricing.minimumFare) fare = pricing.minimumFare;
+      calculatedFares[vehicleType] = Math.round(fare);
+    });
+    const result = {
+      fares: calculatedFares,
+      appliedSurcharge: geofenceSurcharge,
+      appliedToll: safeTollCost,
+    };
+    // **FIXED:** max-len and operator-linebreak
+    const logMessage = `Fares for ${distanceKm}km ` +
+      `(Day: ${currentDayString}, Hour: ${currentHour}):`;
+    logger.info(logMessage, result);
+    return result;
+  } catch (error) {
+    logger.error("Error calculating fares:", error);
+    throw new HttpsError(
+      "internal", "Error calculating fare."
+    );
+  }
+});
+
+
+/**
+ * Creates a ride/rental request with a sequential ID and safety PINs.
+ * @param {CallableRequest<RideData>} request The request object.
+ * @return {Promise<{rideId: string}>}
+ */
+export const createRideRequest = onCall(async (
+  request: CallableRequest<RideData>
+) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Must be authenticated.");
+  }
+  const userId = request.auth.uid;
+  // **FIXED:** @typescript-eslint/no-explicit-any
+  // Removed redundant 'as any' since RideData is already 'any'
+  const rideData = request.data;
+  if (!rideData) {
+    throw new HttpsError("invalid-argument", "Missing ride data.");
+  }
+
+  const counterRef = db.collection("counters").doc("ride_counter");
+
+  let newRideIdString = ""; // **FIXED:** Initialize here
+
+  const isRental = rideData.rideType === "rental";
+  const collectionPath = isRental ? "rental_requests" : "ride_requests";
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const firestoreData: any = {
+    ...rideData,
+    pickupLocation: new admin.firestore.GeoPoint(
+      rideData.pickupLocation.latitude,
+      rideData.pickupLocation.longitude
+    ),
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    status: "searching", // **ALWAYS** start as 'searching'
+  };
+
+  if (rideData.destinationLocation) {
+    firestoreData.destinationLocation = new admin.firestore.GeoPoint(
+      rideData.destinationLocation.latitude,
+      rideData.destinationLocation.longitude
+    );
+  }
+
+  if (isRental || rideData.vehicleType === "ActingDriver") {
+    const startRidePin = generatePin();
+    let endRidePin = generatePin();
+    while (endRidePin === startRidePin) {
+      endRidePin = generatePin();
+    }
+    firestoreData.startRidePin = startRidePin;
+    firestoreData.endRidePin = endRidePin;
+  } else {
+    // Daily/Multi-Stop rides
+    firestoreData.safetyPin = generatePin();
+  }
+
+  // 1. Run the transaction to create the ride & update counter
+  try {
+    await db.runTransaction(async (transaction) => {
+      const counterDoc = await transaction.get(counterRef);
+      let newCount = 1;
+      if (counterDoc.exists) {
+        newCount = (counterDoc.data()?.current_id || 0) + 1;
+      }
+      newRideIdString = "ID" + newCount.toString().padStart(15, "0");
+      // **FIXED:** Create doc ref inside transaction
+      const newRideDocRef = db.collection(collectionPath).doc(newRideIdString);
+      if (rideData.userId !== userId) {
+        throw new Error("User ID mismatch.");
+      }
+      transaction.set(newRideDocRef, firestoreData);
+      transaction.set(counterRef, {current_id: newCount}, {merge: true});
+    });
+  } catch (error) {
+    logger.error(`Error creating ride doc for user ${userId}:`, error);
+    throw new HttpsError(
+      "internal",
+      "Failed to create ride document."
+    );
+  }
+
+  // **FIXED:** Create the docRef *after* the transaction,
+  // once newRideIdString is guaranteed to be set.
+  const newRideDocRef = db.collection(collectionPath).doc(newRideIdString);
+
+  // 2. NOW, find a driver (outside the transaction)
+  try {
+    let driversQuery: admin.firestore.Query = db.collection("drivers")
+      .where("isOnline", "==", true)
+      .where("isAvailable", "==", true);
+
+    if (rideData.vehicleType === "ActingDriver") {
+      driversQuery = driversQuery.where("isActingDriver", "==", true);
+    } else if (!isRental) { // For Daily or Multi-Stop
+      // **FIXED:** max-len
+      driversQuery = driversQuery.where(
+        "vehicleType", "==", rideData.vehicleType
+      );
+    }
+    const availableDrivers = await driversQuery.limit(5).get();
+
+    // 3. If a driver is found, assign them.
+    if (!availableDrivers.empty) {
+      const driverToAssign = availableDrivers.docs[0];
+      const driver = driverToAssign.data();
+
+      // This update will trigger onRideRequestUpdated
+      await newRideDocRef.update({
+        status: "accepted",
+        driverId: driverToAssign.id,
+        driverName: driver.displayName || "N/A",
+        driverPhone: driver.phoneNumber || "N/A",
+        driverPhotoUrl: driver.photoUrl || "",
+        carModel: driver.carName || "N/A",
+        carNumber: driver.vehicleNumber || "N/A",
+      });
+
+      // Mark driver as unavailable
+      await driverToAssign.ref.update({
+        isAvailable: false,
+        assignedRideId: newRideIdString,
+      });
+    } else {
+      logger.warn(`No drivers found for ride ${newRideIdString}.`);
+    }
+  } catch (error) {
+    logger.error(`Error assigning driver for ride ${newRideIdString}:`, error);
+  }
+
+  // 4. Return the Ride ID
+  logger.info(`Created ride ${newRideIdString} for user ${userId}`);
+  return {
+    rideId: newRideIdString,
+  };
+});
+
+// **--- NEW EMAIL FUNCTION ---**
+
+/**
+ * Sends a support email using Nodemailer and a Gmail App Password.
+ * @param {CallableRequest<EmailData>} request The request object.
+ * @return {Promise<{success: boolean}>}
+ */
+export const sendSupportEmail = onCall(async (
+  request: CallableRequest<EmailData>
+) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Must be authenticated.");
+  }
+  // **FIXED:** no-trailing-spaces
+  const uid = request.auth.uid;
+  const userEmail = request.auth.token.email || "No email provided";
+  const {subject, body} = request.data;
+
+  if (!subject || !body) {
+    throw new HttpsError("invalid-argument", "Missing subject or body.");
+  }
+
+  const appEmail = gmailEmail.value();
+  const appPassword = gmailAppPassword.value();
+
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: appEmail,
+      pass: appPassword,
+    },
+  });
+
+  const mailOptions = {
+    from: `"${userEmail} (App Support)" <${appEmail}>`,
+    to: appEmail,
+    subject: `[Support Request] ${subject}`,
+    text: `User ID: ${uid}\nUser Email: ${userEmail}\n\nMessage:\n${body}`,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    logger.info(`Support email sent from ${userEmail}`);
+    return {success: true};
+  } catch (error) {
+    logger.error(`Error sending email: ${error}`);
+    throw new HttpsError(
+      "internal", "Failed to send email."
+    );
+  }
+});
+
+
+// **--- NEW CHATBOT FUNCTION ---**
+
+/**
+ * Gets a response from the Gemini API.
+ * @param {CallableRequest<ChatbotData>} request The request object.
+ * @return {Promise<{response: string}>} Promise that resolves with response.
+ */
+export const getChatbotResponse = onCall(async (
+  request: CallableRequest<ChatbotData>
+) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Must be authenticated.");
+  }
+
+  const prompt = request.data.prompt;
+  const history = request.data.history || [];
+
+  if (!prompt) {
+    throw new HttpsError("invalid-argument", "Missing 'prompt'.");
+  }
+
+  const apiKey = geminiApiKey.value();
+
+  const model = "gemini-2.5-flash-preview-09-2025";
+  const apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/" +
+    `${model}:generateContent?key=${apiKey}`;
+
+  const systemInstruction = {
+    role: "model",
+    parts: [{
+      text: "You are a friendly and helpful support agent for a " +
+        "taxi app. Be concise. Do not answer questions " +
+        "unrelated to the taxi service.",
+    }],
+  };
+
+  const contents = [
+    systemInstruction,
+    ...history,
+    {
+      role: "user",
+      parts: [{text: prompt}],
+    },
+  ];
+
+  try {
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({contents}),
+    });
+
+    if (!response.ok) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const errorData = await response.json() as any;
+      logger.error("Gemini API Error:", errorData);
+      throw new HttpsError(
+        "internal", "Failed to get response from AI."
+      );
+    }
+
+    const data = await response.json();
+    const botResponse = data.candidates?.[0]?.content?.parts?.[0]?.text ||
+      "Sorry, I couldn't process that. Please try again.";
+
+    return {response: botResponse};
+  } catch (error) {
+    logger.error("Error calling Gemini API:", error);
+    throw new HttpsError(
+      "internal", "An error occurred while contacting support."
+    );
+  }
+});
+
+
+// **--- NEW RAZORPAY FUNCTIONS ---**
+
+/**
+ * Creates a Razorpay Order on the server.
+ * @param {CallableRequest<CreateOrderData>} request The request object.
+ * @return {Promise<{orderId: string, amount: number, paymentDocId: string}>}
+ */
+export const createWalletOrder = onCall(async (
+  request: CallableRequest<CreateOrderData>
+) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Must be authenticated.");
+  }
+  const uid = request.auth.uid;
+  const {amount, currency} = request.data; // Amount in paise
+  if (!amount || !currency || amount <= 0) {
+    throw new HttpsError("invalid-argument", "Missing 'amount' or 'currency'.");
+  }
+
+  const amountInRupees = amount / 100.0;
+
+  try {
+    // 1. Create a "pending" payment document in Firestore
+    const paymentHistoryRef = db.collection("users").doc(uid)
+      .collection("payment_history").doc(); // Create new doc ref
+
+    await paymentHistoryRef.set({
+      amount: amountInRupees,
+      status: "PENDING", // Status is pending
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      type: "credit",
+      userId: uid,
+    });
+    const paymentDocId = paymentHistoryRef.id;
+
+    // 2. Create Razorpay order
+    const razorpay = new Razorpay({
+      key_id: razorpayKeyId.value(),
+      key_secret: razorpayKeySecret.value(),
+    });
+
+    const options = {
+      amount: amount, // Amount in paise
+      currency: currency,
+      receipt: paymentDocId, // Use our Firestore doc ID as the receipt
+    };
+
+    const order = await razorpay.orders.create(options);
+
+    // 3. Update the pending payment doc with the Razorpay Order ID
+    await paymentHistoryRef.update({
+      razorpayOrderId: order.id,
+    });
+
+    logger.info(`Created Razorpay order ${order.id} for user ${uid}`);
+    return {
+      orderId: order.id,
+      amount: order.amount,
+      paymentDocId: paymentDocId, // Pass our doc ID back
+    };
+  } catch (error) {
+    logger.error("Error creating Razorpay order:", error);
+    throw new HttpsError("internal", "Failed to create Razorpay order.");
+  }
+});
+
+/**
+ * Verifies a Razorpay payment and updates the user's wallet.
+ * This is transactional.
+ * @param {CallableRequest<VerifyPaymentData>} request The request object.
+ * @return {Promise<{success: boolean, newBalance: number}>}
+ */
+// **FIXED:** Replaced @typescript-eslint/naming-convention with camelcase
+/* eslint-disable camelcase */
+export const verifyWalletPayment = onCall(async (
+  request: CallableRequest<VerifyPaymentData>
+) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Must be authenticated.");
+  }
+
+  const uid = request.auth.uid;
+  const {
+    razorpay_order_id,
+    razorpay_payment_id,
+    razorpay_signature,
+  } = request.data;
+
+  // 1. Verify the signature
+  const secret = razorpayKeySecret.value();
+  const body = razorpay_order_id + "|" + razorpay_payment_id;
+  const expectedSignature = crypto
+    .createHmac("sha256", secret)
+    .update(body.toString())
+    .digest("hex");
+
+  if (expectedSignature !== razorpay_signature) {
+    logger.error(`Invalid payment signature for user ${uid}.`);
+    throw new HttpsError("permission-denied", "Invalid payment signature.");
+  }
+
+  // 2. Signature is valid, find the pending payment document
+  const paymentQuery = await db.collection("users").doc(uid)
+    .collection("payment_history")
+    .where("razorpayOrderId", "==", razorpay_order_id)
+    .limit(1)
+    .get();
+
+  if (paymentQuery.empty) {
+    // **FIXED:** max-len
+    logger.error(
+      `No pending payment doc found for order ${razorpay_order_id}`
+    );
+    throw new HttpsError("not-found", "Payment record not found.");
+  }
+
+  const paymentDocRef = paymentQuery.docs[0].ref;
+  const paymentData = paymentQuery.docs[0].data();
+  const amountToCredit = paymentData.amount; // Amount in Rupees
+
+  // 3. Run Transaction to update wallet and payment status
+  const userWalletRef = db.collection("users").doc(uid);
+
+  try {
+    let newBalance = 0;
+    await db.runTransaction(async (transaction) => {
+      const paymentDoc = await transaction.get(paymentDocRef);
+      if (paymentDoc.data()?.status === "successful") {
+        throw new Error("Payment has already been processed.");
+      }
+
+      const userDoc = await transaction.get(userWalletRef);
+      if (!userDoc.exists) {
+        throw new Error("User document not found.");
+      }
+
+      const currentBalance = userDoc.data()?.wallet_balance || 0;
+      newBalance = currentBalance + amountToCredit;
+
+      transaction.update(userWalletRef, {
+        wallet_balance: newBalance,
+      });
+
+      transaction.update(paymentDocRef, {
+        status: "successful",
+        paymentId: razorpay_payment_id,
+        orderId: razorpay_order_id,
+      });
+    });
+
+    // **FIXED:** max-len
+    logger.info(
+      `User ${uid} added ${amountToCredit} to wallet. New: ${newBalance}`
+    );
+    return {success: true, newBalance: newBalance};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } catch (error: any) {
+    logger.error(`Error verifying payment for user ${uid}:`, error.message);
+    // **FIXED:** max-len
+    throw new HttpsError(
+      "internal", error.message || "Failed to update wallet."
+    );
+  }
+});
+/* eslint-enable camelcase */
+
+
+// **--- NEW: NOTIFICATION TRIGGER ---**
+/**
+ * Triggers when a ride_request is updated.
+ * Used to send a notification when a driver accepts the ride.
+ * @param {FirestoreEvent<Change<DocumentSnapshot>>} event The Firestore event.
+ * @return {Promise<void>} A promise that resolves when operations are complete.
+ */
+export const onRideRequestUpdated = onDocumentUpdated(
+  "ride_requests/{rideId}",
+  async (event: FirestoreEvent<Change<DocumentSnapshot> | undefined>) => {
+    if (!event.data) {
+      logger.warn("No event data found for onRideRequestUpdated.");
+      return;
+    }
+    const dataBefore = event.data.before.data();
+    const dataAfter = event.data.after.data();
+
+    if (!dataBefore || !dataAfter) {
+      logger.warn("Missing data before or after update.");
+      return;
+    }
+
+    if (
+      dataBefore.status === "searching" &&
+      dataAfter.status === "accepted" &&
+      dataAfter.driverId
+    ) {
+      const userId = dataAfter.userId;
+      const driverId = dataAfter.driverId;
+      const rideId = event.data.after.id;
+
+      try {
+        // 1. Get the User's FCM Token
+        const userDoc = await db.collection("users").doc(userId).get();
+        const fcmToken = userDoc.data()?.fcmToken;
+
+        if (!fcmToken) {
+          // **FIXED:** max-len
+          const warnMsg =
+            `User ${userId} has no FCM token. Cannot send notification.`;
+          logger.warn(warnMsg);
+          // Don't stop, still try to save to history
+        }
+
+        // 2. Get the Driver's details
+        const driverDoc = await db.collection("drivers").doc(driverId).get();
+        const driverName = driverDoc.data()?.displayName || "Your driver";
+        const carNumber = driverDoc.data()?.vehicleNumber || "";
+
+        // 3. Build the notification content
+        const notificationTitle = "Your ride is on the way!";
+        const notificationBody =
+          `${driverName} (${carNumber}) is arriving soon.`;
+
+        // 4. Build the payload for the push notification
+        const payload = {
+          notification: {
+            title: notificationTitle,
+            body: notificationBody,
+          },
+          data: {
+            rideId: rideId,
+            click_action: "FLUTTER_NOTIFICATION_CLICK",
+          },
+        };
+
+        // 5. Build the data to save to Firestore notification history
+        const notificationData = {
+          title: notificationTitle,
+          body: notificationBody,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          isRead: false,
+          data: {
+            rideId: rideId,
+          },
+        };
+
+        // 6. Send the push notification (if token exists)
+        if (fcmToken) {
+          logger.info(`Sending ride notification to user ${userId}`);
+          await admin.messaging().sendToDevice(fcmToken, payload);
+        }
+
+        // 7. **NEW:** Save the notification to the user's subcollection
+        await db.collection("users").doc(userId)
+          .collection("notifications").add(notificationData);
+      } catch (error) {
+        logger.error(
+          `Failed to send notification for ride ${rideId}`,
+          error
+        );
+      }
+    }
+  });
+
+
+// --- Helper Functions ---
+/**
+ * Helper function: Point-in-Polygon check.
+ * @param {admin.firestore.GeoPoint} point The point to check.
+ * @param {admin.firestore.GeoPoint[]} polygon The polygon boundaries.
+ * @return {boolean} True if the point is inside, false otherwise.
+ */
+function isPointInPolygon(
+  point: admin.firestore.GeoPoint,
+  polygon: admin.firestore.GeoPoint[]
+): boolean {
+  if (polygon.length === 0) return false;
+  let intersectCount = 0;
+  for (let j = 0; j < polygon.length - 1; j++) {
+    if (_rayCastIntersect(point, polygon[j], polygon[j + 1])) {
+      intersectCount++;
+    }
+  }
+  if (_rayCastIntersect(point, polygon[polygon.length - 1], polygon[0])) {
+    intersectCount++;
+  }
+  return intersectCount % 2 === 1;
+}
+
+/**
+ * Ray casting helper for isPointInPolygon.
+ * @param {admin.firestore.GeoPoint} point The point to check.
+ * @param {admin.firestore.GeoPoint} vertA The first vertex of the segment.
+ * @param {admin.firestore.GeoPoint} vertB The second vertex of the segment.
+ *IA
+ * @return {boolean} True if the ray intersects the segment.
+ */
+function _rayCastIntersect(
+  point: admin.firestore.GeoPoint,
+  vertA: admin.firestore.GeoPoint,
+  vertB: admin.firestore.GeoPoint
+): boolean {
+  const aY = vertA.latitude;
+  const bY = vertB.latitude;
+  const aX = vertA.longitude;
+  const bX = vertB.longitude;
+  const pY = point.latitude;
+  const pX = point.longitude;
+
+  if ((aY > pY && bY > pY) || (aY < pY && bY < pY)) {
+    return false;
+  }
+  if (aX < pX && bX < pX) {
+    return false;
+  }
+  if (aX > pX && bX > pX) {
+    return true;
+  }
+  if (aX === bX) {
+    return pX <= aX;
+  }
+  const numerator = (pY - aY) * (bX - aX);
+  const denominator = bY - aY;
+  const intersectX = (numerator / denominator) + aX;
+  return intersectX >= pX;
+}
+
+// **--- NEW EXOTEL CALL MASKING FUNCTION ---**
+
+interface MaskedCallData {
+  rideId: string;
+}
+
+/**
+ * Initiates a masked call between user and driver using Exotel.
+ * @param {CallableRequest<MaskedCallData>} request The request object.
+ * @return {Promise<{success: boolean, message: string}>}
+ */
+export const bridgeCall = onCall(async (
+  request: CallableRequest<MaskedCallData>
+) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Must be authenticated.");
+  }
+  const userId = request.auth.uid;
+  const {rideId} = request.data;
+
+  if (!rideId) {
+    throw new HttpsError("invalid-argument", "Missing 'rideId'.");
+  }
+
+  try {
+    // 1. Fetch Ride Details
+    const rideDoc = await db.collection("ride_requests").doc(rideId).get();
+    // Check rental requests if not found in ride_requests
+    let rideData = rideDoc.data();
+    if (!rideDoc.exists) {
+      const rentalDoc = await db.collection("rental_requests")
+        .doc(rideId).get();
+      if (!rentalDoc.exists) {
+        throw new HttpsError("not-found", "Ride not found.");
+      }
+      rideData = rentalDoc.data();
+    }
+
+    if (!rideData) {
+      throw new HttpsError("not-found", "Ride data is empty.");
+    }
+
+    // 2. Get Phone Numbers
+    // User's phone number (Caller)
+    const userDoc = await db.collection("users").doc(userId).get();
+    const userPhone = userDoc.data()?.phoneNumber;
+
+    // Driver's phone number (Callee)
+    const driverId = rideData.driverId;
+    if (!driverId) {
+      throw new HttpsError("failed-precondition", "No driver assigned.");
+    }
+    const driverDoc = await db.collection("drivers").doc(driverId).get();
+    const driverPhone = driverDoc.data()?.phoneNumber;
+
+    if (!userPhone || !driverPhone) {
+      throw new HttpsError(
+        "failed-precondition", "Missing phone numbers for call."
+      );
+    }
+
+    // 3. Prepare Exotel Request
+    const accountSid = exotelAccountSid.value();
+    const apiKey = exotelApiKey.value();
+    const apiToken = exotelApiToken.value();
+    const subdomain = exotelSubdomain.value() || "api";
+    const virtualNumber = exotelVirtualNumber.value();
+
+    const url = `https://${subdomain}.exotel.com/v1/Accounts/${accountSid}/Calls/connect.json`;
+
+    // Form Data
+    const formData = new URLSearchParams();
+    formData.append("From", userPhone);
+    formData.append("To", driverPhone);
+    formData.append("CallerId", virtualNumber);
+    formData.append("Record", "true"); // Optional: Record the call
+
+    // 4. Make the API Call
+    const authHeader = "Basic " +
+      Buffer.from(`${apiKey}:${apiToken}`).toString("base64");
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": authHeader,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error("Exotel API Error:", errorText);
+      throw new HttpsError("internal", "Failed to initiate call via Exotel.");
+    }
+
+    const responseData = await response.json();
+    logger.info("Exotel Call Initiated:", responseData);
+
+    return {success: true, message: "Call initiated successfully."};
+  } catch (error) {
+    logger.error("Error initiating masked call:", error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError("internal", "Failed to initiate call.");
+  }
+});
