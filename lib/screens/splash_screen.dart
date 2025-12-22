@@ -8,7 +8,6 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:project_taxi_with_ai/controllers/ride_controller.dart';
 import 'package:project_taxi_with_ai/screens/onboarding.dart';
-import 'package:project_taxi_with_ai/screens/keepme_signed.dart';
 
 import 'package:project_taxi_with_ai/bindings/controller_binding.dart';
 
@@ -63,11 +62,11 @@ class _SplashScreenState extends State<SplashScreen> {
       final User? currentUser = FirebaseAuth.instance.currentUser;
 
       if (mounted) {
-        if (hasSeenOnboarding || currentUser != null) {
-          Get.offAll(() => const AuthWrapper());
-        } else {
+        if (!hasSeenOnboarding && currentUser == null) {
           Get.offAll(() => const OnboardingScreen());
         }
+        // Otherwise, let AuthController handle navigation to Login or Home
+        // to avoid race conditions with AuthWrapper.
       }
     } catch (e) {
       debugPrint("Initialization Error: $e");

@@ -148,10 +148,12 @@ class RideController extends GetxController {
       );
 
       // Load Pickup & Destination Icons (smaller size for pins)
+      /*
       pickupIcon = await _getBitmapFromAsset(
         'assets/images/marker_pickup.png',
         width: 64,
       );
+      */
       destinationIcon = await _getBitmapFromAsset(
         'assets/images/marker_destination.png',
         width: 64,

@@ -10,6 +10,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:project_taxi_with_ai/screens/splash_screen.dart';
 
 import 'package:flutter_refresh_rate_control/flutter_refresh_rate_control.dart';
+import 'package:project_taxi_with_ai/widgets/crash_reporting_service.dart';
+import 'dart:async'; // For runZonedGuarded
 
 // **NEW:** Background message handler (must be a top-level function)
 @pragma('vm:entry-point')
@@ -43,21 +45,42 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 }
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  // Wrap app execution in a zone to catch errors
+  runZonedGuarded(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
 
-  // Background message handler setup
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+      // Background message handler setup
+      FirebaseMessaging.onBackgroundMessage(
+        _firebaseMessagingBackgroundHandler,
+      );
 
-  // Set high refresh rate
-  try {
-    final refreshRateControl = FlutterRefreshRateControl();
-    await refreshRateControl.requestHighRefreshRate();
-    debugPrint("Requested high refresh rate");
-  } catch (e) {
-    debugPrint("Failed to set refresh rate: $e");
-  }
+      // Set high refresh rate
+      try {
+        final refreshRateControl = FlutterRefreshRateControl();
+        await refreshRateControl.requestHighRefreshRate();
+        debugPrint("Requested high refresh rate");
+      } catch (e) {
+        debugPrint("Failed to set refresh rate: $e");
+      }
 
-  runApp(const MyApp());
+      // Pass all uncaught errors from the framework to the crash reporter
+      FlutterError.onError = (FlutterErrorDetails details) {
+        FlutterError.presentError(details); // Log to console
+        CrashReportingService.showCrashDialog(
+          details.exception,
+          details.stack ?? StackTrace.empty,
+        );
+      };
+
+      runApp(const MyApp());
+    },
+    (error, stack) {
+      // Catch errors outside the Flutter framework
+      debugPrint("Caught global error: $error");
+      CrashReportingService.showCrashDialog(error, stack);
+    },
+  );
 }
 
 class MyApp extends StatelessWidget {

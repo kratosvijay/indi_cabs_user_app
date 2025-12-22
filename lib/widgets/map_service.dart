@@ -27,7 +27,7 @@ class MapService {
     try {
       final GoogleMapController controller =
           await _mapControllerCompleter.future;
-      controller.animateCamera(
+      await controller.animateCamera(
         CameraUpdate.newCameraPosition(
           CameraPosition(target: target, zoom: zoom, tilt: 30.0), // Add tilt
         ),
@@ -56,7 +56,9 @@ class MapService {
     try {
       final GoogleMapController controller =
           await _mapControllerCompleter.future;
-      controller.animateCamera(CameraUpdate.newLatLngBounds(bounds, padding));
+      await controller.animateCamera(
+        CameraUpdate.newLatLngBounds(bounds, padding),
+      );
     } catch (e) {
       // Bounds animation can sometimes fail if map isn't fully loaded or bounds are invalid
       debugPrint("Error animating camera to bounds: $e");
