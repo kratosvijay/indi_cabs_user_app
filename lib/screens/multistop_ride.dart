@@ -813,9 +813,8 @@ class _MultiStopScreenState extends State<MultiStopScreen>
           walletBalance: widget.walletBalance, // **NEW:** Pass wallet balance
           intermediateStops: intermediateStopsData, // **NEW:** Pass the stops
           // Multi-stop sheet doesn't support editing/saving this way
-          onEditPickup: () =>
-              Navigator.pop(context), // Allow closing sheet to edit
-          onEditDropoff: () => Navigator.pop(context),
+          onEditPickup: () => Get.back(), // Allow closing sheet to edit
+          onEditDropoff: () => Get.back(),
           onSaveDropoffFavorite: () => displaySnackBar(
             context,
             "Cannot save multi-stop route as favorite.",

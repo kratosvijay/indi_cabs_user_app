@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../widgets/snackbar.dart';
 import 'package:project_taxi_with_ai/widgets/pro_library.dart';
 import 'package:project_taxi_with_ai/app_colors.dart';
+import 'package:get/get.dart';
 
 /// A screen to pick a future date and time for a ride.
 /// Returns a DateTime object if saved, otherwise null.
@@ -134,7 +135,7 @@ class _SchedulePickerScreenState extends State<SchedulePickerScreen> {
       return;
     }
     // Return the selected DateTime
-    Navigator.of(context).pop(_selectedDateTime);
+    Get.back(result: _selectedDateTime);
   }
 
   @override

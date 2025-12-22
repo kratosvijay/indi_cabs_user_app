@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:get/get.dart';
 
 import 'package:project_taxi_with_ai/widgets/data_models.dart';
 import 'package:project_taxi_with_ai/widgets/firestore_services.dart';
@@ -425,10 +426,7 @@ class _RideConfirmationBottomSheetState
               ),
               const SizedBox(height: 16),
               const SizedBox(height: 24),
-              ProButton(
-                text: "Got it",
-                onPressed: () => Navigator.pop(context),
-              ),
+              ProButton(text: "Got it", onPressed: () => Get.back()),
               SizedBox(
                 height: MediaQuery.of(context).padding.bottom + 8,
               ), // Padding for safe area
@@ -485,9 +483,8 @@ class _RideConfirmationBottomSheetState
 
   // **NEW:** Function to open schedule picker
   Future<void> _pickSchedule() async {
-    final DateTime? result = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const SchedulePickerScreen()),
+    final DateTime? result = await Get.to<DateTime>(
+      () => const SchedulePickerScreen(),
     );
 
     if (result != null) {
@@ -806,7 +803,7 @@ class _RideConfirmationBottomSheetState
                     widget.isLoadingFares
                 ? null
                 : () {
-                    Navigator.of(context).pop(); // Close this sheet
+                    Get.back(); // Close this sheet
                     // **MODIFIED:** Add fee to selected fare
                     final num baseFare =
                         widget.calculatedFares![_selectedVehicle!.type]!;

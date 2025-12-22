@@ -293,6 +293,8 @@ class RideController extends GetxController {
     pickupAddress.value = await locationService.getAddressFromLatLng(position);
   }
 
+  DateTime? _lastDriverUpdateTime;
+
   void _listenForNearbyDrivers() {
     if (!iconsLoaded.value) {
       return;
@@ -302,11 +304,21 @@ class RideController extends GetxController {
     _driversSubscription = FirebaseFirestore.instance
         .collection('drivers')
         .where('isOnline', isEqualTo: true)
+        .limit(50) // Limit to prevent ANR from too many docs
         .snapshots()
         .listen((snapshot) {
           if (currentPosition.value == null) {
             return;
           }
+
+          // Throttle updates to prevent ANR
+          final now = DateTime.now();
+          if (_lastDriverUpdateTime != null &&
+              now.difference(_lastDriverUpdateTime!) <
+                  const Duration(milliseconds: 1000)) {
+            return;
+          }
+          _lastDriverUpdateTime = now;
 
           final Set<Marker> newDriverMarkers = {};
           final List<Driver> newNearbyDrivers = [];

@@ -697,7 +697,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                 leading: const Icon(Icons.message),
                 title: const Text('Share via SMS'),
                 onTap: () async {
-                  Navigator.pop(context);
+                  Get.back();
                   final Uri smsUri = Uri(
                     scheme: 'sms',
                     path: '',
@@ -712,7 +712,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                 leading: const Icon(Icons.copy),
                 title: const Text('Copy to Clipboard'),
                 onTap: () {
-                  Navigator.pop(context);
+                  Get.back();
                   Clipboard.setData(ClipboardData(text: message));
                   displaySnackBar(context, "Ride details copied to clipboard!");
                 },
@@ -942,9 +942,6 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     final Color backgroundColor = isDark ? Colors.grey[900]! : Colors.white;
     final Color textColor = isDark ? Colors.white : Colors.black;
     final Color subTextColor = isDark ? Colors.grey[400]! : Colors.grey[600]!;
-    final Color carNumberBgColor = isDark
-        ? Colors.grey[800]!
-        : Colors.grey[200]!;
 
     if (_driver == null) {
       return Positioned(
@@ -1050,60 +1047,58 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                   ),
                 ),
                 const SizedBox(width: 16),
-                // Driver Details
+                // Driver Details Column
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
                         _driver!.name,
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: 16,
                           fontWeight: FontWeight.bold,
                           color: textColor,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Text(
-                            "${_driver!.carModel} • ",
-                            style: TextStyle(color: subTextColor, fontSize: 14),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: carNumberBgColor,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              _driver!.carNumber,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: textColor,
-                              ),
-                            ),
-                          ),
-                        ],
+                      // Vehicle Details: Brand Model (Number)
+                      Text(
+                        "${_driver!.vehicleBrand.isNotEmpty ? '${_driver!.vehicleBrand} ' : ''}${_driver!.vehicleModel.isNotEmpty ? _driver!.vehicleModel : _driver!.carModel} (${_driver!.carNumber})",
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: subTextColor,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          const Icon(Icons.star, color: Colors.amber, size: 16),
-                          const SizedBox(width: 4),
-                          Text(
-                            "4.8",
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                              color: textColor,
-                            ),
+                      // Vehicle Class Badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.blueAccent.withAlpha(20),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                            color: Colors.blueAccent.withAlpha(50),
+                            width: 0.5,
                           ),
-                        ],
+                        ),
+                        child: Text(
+                          _driver!
+                              .vehicleType, // This now maps to vehicleClass (e.g. Sedan)
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blueAccent,
+                          ),
+                        ),
                       ),
                     ],
                   ),

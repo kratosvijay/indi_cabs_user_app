@@ -1,7 +1,7 @@
 // ignore_for_file: unused_local_variable
 
 import 'dart:async';
-import 'dart:math'; // For min/max
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -13,6 +13,7 @@ import '../widgets/snackbar.dart'; // Import snackbar
 // Import Home Page for cancellation navigation
 import 'home_page.dart';
 import 'package:project_taxi_with_ai/widgets/pro_library.dart'; // Import Pro Library
+import 'package:project_taxi_with_ai/app_colors.dart'; // Import AppColors
 
 class SearchingForRideScreen extends StatefulWidget {
   final User user;
@@ -25,6 +26,8 @@ class SearchingForRideScreen extends StatefulWidget {
   final String? rideRequestId; // Made nullable
   final Future<String>?
   rideRequestIdFuture; // **NEW:** Future for optimistic navigation
+  final String? destinationAddress; // **NEW**
+  final String? initialEta; // **NEW**
 
   // --- Daily Ride Specific (optional) ---
   final VehicleOption? selectedVehicle;
@@ -48,6 +51,8 @@ class SearchingForRideScreen extends StatefulWidget {
     required this.isRental,
     this.rideRequestId, // Nullable
     this.rideRequestIdFuture, // **NEW**
+    this.destinationAddress, // **NEW**
+    this.initialEta, // **NEW**
     this.selectedVehicle,
     this.rentalPackage,
     this.rentalVehicleType,
@@ -75,21 +80,40 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
   LatLngBounds? _routeBounds;
   Timer? _tipTimer;
   String? _resolvedRideRequestId; // To store the ID once resolved
+  bool _isCancelling = false; // **NEW**
 
   @override
   void initState() {
     super.initState();
+    debugPrint("SearchingForRideScreen: initState started");
     _currentTip = widget.tip;
     _resolvedRideRequestId = widget.rideRequestId; // Initialize if available
-    _buildMarkersAndBounds();
+    debugPrint(
+      "SearchingForRideScreen: _resolvedRideRequestId at start: $_resolvedRideRequestId",
+    );
+
+    try {
+      _buildMarkersAndBounds();
+      debugPrint("SearchingForRideScreen: _buildMarkersAndBounds completed");
+    } catch (e) {
+      debugPrint("SearchingForRideScreen: Error in _buildMarkersAndBounds: $e");
+    }
 
     // **MODIFIED:** Check if the ride is scheduled or "book now"
     if (widget.scheduledTime == null) {
       // --- BOOK NOW LOGIC ---
       if (_resolvedRideRequestId != null) {
+        debugPrint(
+          "SearchingForRideScreen: Listening for driver assignment with existing ID",
+        );
         _listenForDriverAssignment();
       } else if (widget.rideRequestIdFuture != null) {
+        debugPrint(
+          "SearchingForRideScreen: Waiting for ride request ID future",
+        );
         _waitForRideRequestId();
+      } else {
+        debugPrint("SearchingForRideScreen: No ID and no Future provided!");
       }
 
       _tipTimer = Timer(const Duration(seconds: 10), () {
@@ -102,24 +126,47 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
       });
     } else {
       // --- SCHEDULED RIDE LOGIC ---
+      debugPrint("SearchingForRideScreen: Scheduled ride logic");
       _showScheduledMessage();
     }
+    debugPrint("SearchingForRideScreen: initState completed");
   }
 
   Future<void> _waitForRideRequestId() async {
+    debugPrint("SearchingForRideScreen: _waitForRideRequestId started");
     try {
       final id = await widget.rideRequestIdFuture!;
+      debugPrint("SearchingForRideScreen: Ride request ID resolved: $id");
       if (mounted) {
         setState(() {
           _resolvedRideRequestId = id;
         });
         _listenForDriverAssignment();
+      } else {
+        debugPrint(
+          "SearchingForRideScreen: Widget unmounted after ID resolution",
+        );
       }
     } catch (e) {
       debugPrint("Error resolving ride request ID: $e");
       if (mounted) {
-        displaySnackBar(context, "Failed to create ride request: $e");
-        Get.offAll(() => HomePage(user: widget.user));
+        // Show error dialog instead of immediately navigating
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: const Text("Ride Request Failed"),
+            content: Text("Could not create ride request.\nError: $e"),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Get.offAll(() => HomePage(user: widget.user));
+                },
+                child: const Text("Go to Home"),
+              ),
+            ],
+          ),
+        );
       }
     }
   }
@@ -146,6 +193,7 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
   }
 
   void _buildMarkersAndBounds() {
+    debugPrint("SearchingForRideScreen: _buildMarkersAndBounds started");
     final Set<Marker> markers = {};
     final List<LatLng> allPoints = [];
 
@@ -206,20 +254,40 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
     }
     allPoints.add(widget.destinationPosition);
 
+    // **NEW:** Add Polyline points to bounds
+    debugPrint(
+      "SearchingForRideScreen: Polyline count: ${widget.polylines.length}",
+    );
+    for (var polyline in widget.polylines) {
+      allPoints.addAll(polyline.points);
+    }
+
     // 4. Calculate Bounds
     LatLngBounds bounds;
-    if (allPoints.length == 1) {
+    if (allPoints.isEmpty) {
+      // Fallback if absolutely no points
+      bounds = LatLngBounds(
+        southwest: widget.pickupLocation,
+        northeast: widget.pickupLocation,
+      );
+    } else if (allPoints.length == 1) {
       bounds = LatLngBounds(southwest: allPoints[0], northeast: allPoints[0]);
     } else {
+      double minLat = allPoints[0].latitude;
+      double maxLat = allPoints[0].latitude;
+      double minLng = allPoints[0].longitude;
+      double maxLng = allPoints[0].longitude;
+
+      for (var p in allPoints) {
+        if (p.latitude < minLat) minLat = p.latitude;
+        if (p.latitude > maxLat) maxLat = p.latitude;
+        if (p.longitude < minLng) minLng = p.longitude;
+        if (p.longitude > maxLng) maxLng = p.longitude;
+      }
+
       bounds = LatLngBounds(
-        southwest: LatLng(
-          allPoints.map((p) => p.latitude).reduce(min),
-          allPoints.map((p) => p.longitude).reduce(min),
-        ),
-        northeast: LatLng(
-          allPoints.map((p) => p.latitude).reduce(max),
-          allPoints.map((p) => p.longitude).reduce(max),
-        ),
+        southwest: LatLng(minLat, minLng),
+        northeast: LatLng(maxLat, maxLng),
       );
     }
 
@@ -227,11 +295,20 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
       _markers = markers;
       _routeBounds = bounds;
     });
+    debugPrint(
+      "SearchingForRideScreen: Markers and bounds built. Marker count: ${_markers.length}, Points count: ${allPoints.length}",
+    );
   }
 
   // --- Listen for Firestore changes ---
   void _listenForDriverAssignment() {
-    if (_resolvedRideRequestId == null) return; // Safety check
+    debugPrint("SearchingForRideScreen: _listenForDriverAssignment started");
+    if (_resolvedRideRequestId == null) {
+      debugPrint(
+        "SearchingForRideScreen: _resolvedRideRequestId is null in _listenForDriverAssignment",
+      );
+      return; // Safety check
+    }
 
     String collectionPath;
     if (widget.isRental) {
@@ -239,6 +316,9 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
     } else {
       collectionPath = 'ride_requests';
     }
+    debugPrint(
+      "SearchingForRideScreen: Listening to collection: $collectionPath, doc: $_resolvedRideRequestId",
+    );
 
     DocumentReference rideRef = FirebaseFirestore.instance
         .collection(collectionPath)
@@ -246,12 +326,20 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
 
     _rideStatusSubscription = rideRef.snapshots().listen(
       (snapshot) {
-        if (!mounted) return;
+        if (!mounted) {
+          debugPrint(
+            "SearchingForRideScreen: Widget unmounted during snapshot listen",
+          );
+          return;
+        }
 
         if (snapshot.exists) {
           final data = snapshot.data() as Map<String, dynamic>;
           final status = data['status'] as String?;
           final driverId = data['driverId'] as String?;
+          debugPrint(
+            "SearchingForRideScreen: Snapshot received. Status: $status, DriverId: $driverId",
+          );
 
           if (status == 'accepted' && driverId != null && driverId.isNotEmpty) {
             debugPrint("Driver found! Navigating to RideInProgressScreen.");
@@ -274,6 +362,9 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
               ),
             );
           } else if (status == 'cancelled' || status == 'no_drivers_found') {
+            debugPrint(
+              "SearchingForRideScreen: Ride cancelled or no drivers found",
+            );
             _rideStatusSubscription?.cancel();
             _rideStatusSubscription = null;
             displaySnackBar(
@@ -283,26 +374,17 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
                   : "No drivers found. Please try again.",
             );
             if (mounted) {
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(
-                  builder: (context) => HomePage(user: widget.user),
-                ),
-                (route) => false,
-              );
+              Get.offAll(() => HomePage(user: widget.user));
             }
           }
         } else {
+          debugPrint("SearchingForRideScreen: Snapshot does not exist");
           _rideStatusSubscription?.cancel();
           _rideStatusSubscription = null;
           // Only show snackbar if we are not already cancelling
           if (mounted) {
             displaySnackBar(context, "Ride request not found.");
-            Navigator.of(context).pushAndRemoveUntil(
-              MaterialPageRoute(
-                builder: (context) => HomePage(user: widget.user),
-              ),
-              (route) => false,
-            );
+            Get.offAll(() => HomePage(user: widget.user));
           }
         }
       },
@@ -319,6 +401,10 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
 
   // --- Cancel Ride ---
   Future<void> _cancelRide() async {
+    if (_isCancelling) return; // Prevent double taps
+    if (mounted) setState(() => _isCancelling = true);
+
+    debugPrint("SearchingForRideScreen: _cancelRide called");
     await _rideStatusSubscription?.cancel();
     _rideStatusSubscription = null;
 
@@ -331,6 +417,11 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
             .collection(collectionPath)
             .doc(_resolvedRideRequestId);
         await rideRef.update({'status': 'cancelled_by_user'});
+        debugPrint("SearchingForRideScreen: Ride cancelled in Firestore");
+      } else {
+        debugPrint(
+          "SearchingForRideScreen: Cannot cancel, _resolvedRideRequestId is null",
+        );
       }
     } catch (e) {
       debugPrint("Error cancelling ride: $e");
@@ -340,11 +431,11 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
       }
     } finally {
       if (mounted) {
-        // Use Navigator instead of Get.offAll to ensure clean stack reset
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => HomePage(user: widget.user)),
-          (route) => false,
-        );
+        // Use Get.offAll to ensure clean stack reset
+        Get.offAll(() => HomePage(user: widget.user));
+      } else {
+        // Even if unmounted, ensure we don't leave the flag hanging if the object somehow survives (rare)
+        _isCancelling = false;
       }
     }
   }
@@ -376,13 +467,20 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
 
   @override
   void dispose() {
+    debugPrint("SearchingForRideScreen: dispose called");
     _rideStatusSubscription?.cancel();
     _tipTimer?.cancel(); // **NEW:** Cancel tip timer
+    try {
+      // map controller disposal logic if any
+    } catch (e) {
+      debugPrint("Error disposing elements: $e");
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    debugPrint("SearchingForRideScreen: build called");
     // **NEW:** Dynamic UI based on scheduled time
     final bool isScheduled = widget.scheduledTime != null;
     final String title = isScheduled
@@ -420,22 +518,36 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
               rotateGesturesEnabled: false,
               zoomGesturesEnabled: false,
               onMapCreated: (GoogleMapController controller) {
-                Future.delayed(const Duration(milliseconds: 100), () {
-                  if (mounted && _routeBounds != null) {
-                    try {
-                      controller.animateCamera(
-                        CameraUpdate.newLatLngBounds(_routeBounds!, 100.0),
-                      );
-                    } catch (e) {
-                      debugPrint(
-                        "Error animating bounds in Searching screen: $e",
-                      );
-                      controller.animateCamera(
-                        CameraUpdate.newLatLngZoom(widget.pickupLocation, 15),
-                      );
+                try {
+                  debugPrint("SearchingForRideScreen: Map created");
+                  Future.delayed(const Duration(milliseconds: 100), () async {
+                    if (mounted && _routeBounds != null) {
+                      try {
+                        await controller.animateCamera(
+                          CameraUpdate.newLatLngBounds(_routeBounds!, 100.0),
+                        );
+                      } catch (e) {
+                        debugPrint(
+                          "Error animating bounds in Searching screen: $e",
+                        );
+                        if (mounted) {
+                          try {
+                            await controller.animateCamera(
+                              CameraUpdate.newLatLngZoom(
+                                widget.pickupLocation,
+                                15,
+                              ),
+                            );
+                          } catch (e2) {
+                            debugPrint("Error animating camera fallback: $e2");
+                          }
+                        }
+                      }
                     }
-                  }
-                });
+                  });
+                } catch (e) {
+                  debugPrint("Error in onMapCreated: $e");
+                }
               },
             ),
             // Gradient overlay for better text visibility
@@ -458,7 +570,16 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  const SizedBox(height: 10), // Reduced top spacing
+                  // **NEW:** Trip Details Top Card
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: _buildTripDetailsCard(isDark),
+                  ),
+
                   const SizedBox(height: 20),
+
+                  // **RESTORED:** Title Text
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24.0),
                     child: Text(
@@ -515,7 +636,10 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
                       padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
                       child: ProButton(
                         text: "Cancel Ride",
-                        onPressed: _cancelRide,
+                        onPressed: _isCancelling
+                            ? null
+                            : _cancelRide, // Disable if cancelling
+                        isLoading: _isCancelling, // Show loading
                         backgroundColor: Colors.redAccent.shade400,
                         icon: const Icon(Icons.close, color: Colors.white),
                       ),
@@ -525,6 +649,97 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // **NEW:** Trip Details Card Widget
+  Widget _buildTripDetailsCard(bool isDark) {
+    if (widget.isRental) return const SizedBox.shrink(); // Hide for rentals
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.grey[900]!.withValues(alpha: 0.9)
+            : Colors.white.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        children: [
+          // Destination Row
+          Row(
+            children: [
+              const Icon(Icons.location_on, color: Colors.redAccent, size: 24),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  widget.destinationAddress ?? "Destination",
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12.0),
+            child: Divider(height: 1),
+          ),
+          // ETA & Fare Row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // ETA
+              Row(
+                children: [
+                  Icon(
+                    Icons.access_time_filled,
+                    color: isDark ? Colors.grey[400] : Colors.grey[600],
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    widget.initialEta ?? "-- mins",
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: isDark ? Colors.grey[300] : Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+              // Dynamic Fare
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  "₹${(widget.fare + _currentTip).round()}",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

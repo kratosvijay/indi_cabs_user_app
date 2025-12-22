@@ -368,6 +368,10 @@ class Driver {
   final bool isOnline;
   final bool isAvailable;
 
+  // **NEW FIELDS**
+  final String vehicleBrand;
+  final String vehicleModel;
+
   Driver({
     required this.id,
     required this.name,
@@ -381,25 +385,41 @@ class Driver {
     this.bearing = 0.0,
     required this.isOnline,
     required this.isAvailable,
+    this.vehicleBrand = '',
+    this.vehicleModel = '',
   });
 
   factory Driver.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
     GeoPoint location = data['currentLocation'] ?? const GeoPoint(0, 0);
+
+    // Map 'vehicleClass' (from new format) to 'vehicleType' (app internal)
+    // Fallback to 'vehicleType' if 'vehicleClass' is missing.
+    String vType = data['vehicleClass'] ?? data['vehicleType'] ?? 'Hatchback';
+
+    // Handle 'vehicleType' being 'Car' in new format -> Default to Hatchback or use vehicleClass
+    if (vType == 'Car') {
+      vType = data['vehicleClass'] ?? 'Hatchback';
+    }
+
     return Driver(
       id: doc.id,
-      name: data['displayName'] ?? data['name'] ?? 'N/A', // Support both
-      carModel: data['carName'] ?? data['carModel'] ?? 'N/A', // Support both
-      carNumber:
-          data['vehicleNumber'] ?? data['carNumber'] ?? 'N/A', // Support both
+      name: data['displayName'] ?? data['name'] ?? 'N/A',
+      // Map 'carName' (full name) to carModel. Fallback to vehicleModel if carName missing.
+      carModel:
+          data['carName'] ?? data['vehicleModel'] ?? data['carModel'] ?? 'N/A',
+      carNumber: data['vehicleNumber'] ?? data['carNumber'] ?? 'N/A',
       photoUrl: data['photoUrl'] ?? '',
       phoneNumber: data['phoneNumber'] ?? '',
       currentLocation: LatLng(location.latitude, location.longitude),
-      vehicleType: data['vehicleType'] ?? 'Hatchback',
+      vehicleType: vType,
       isActingDriver: data['isActingDriver'] ?? false,
       bearing: (data['bearing'] as num?)?.toDouble() ?? 0.0,
       isOnline: data['isOnline'] ?? false,
-      isAvailable: data['isAvailable'] ?? false,
+      // Default isAvailable to isOnline if missing, as new format doesn't seem to have it explicitly
+      isAvailable: data['isAvailable'] ?? data['isOnline'] ?? false,
+      vehicleBrand: data['vehicleBrand'] ?? '',
+      vehicleModel: data['vehicleModel'] ?? '',
     );
   }
 }

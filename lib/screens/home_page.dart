@@ -529,9 +529,10 @@ class _HomePageState extends State<HomePage> {
     Map<String, bool> availability = const {},
     bool showScheduleTour = false,
   }) async {
-    if (!mounted ||
-        _rideController.currentPosition.value == null ||
-        _destinationPosition == null) {
+    final currentPos = _rideController.currentPosition.value;
+    final destPos = _destinationPosition;
+
+    if (!mounted || currentPos == null || destPos == null) {
       return;
     }
 
@@ -547,8 +548,8 @@ class _HomePageState extends State<HomePage> {
       backgroundColor: Colors.transparent,
       builder: (_) => RideConfirmationBottomSheet(
         currentUser: _currentUser,
-        currentPosition: _rideController.currentPosition.value!,
-        destinationPosition: _destinationPosition!,
+        currentPosition: currentPos,
+        destinationPosition: destPos,
         pickupAddress: _pickupController.text,
         destinationAddress: _destinationController.text,
         isDropoffInServiceArea: isDropoffInServiceArea,
@@ -563,12 +564,8 @@ class _HomePageState extends State<HomePage> {
         rideType: rideType,
         availability: availability,
         showScheduleTour: showScheduleTour,
-        onEditPickup: () => _handleEditLocation(
-          _rideController.currentPosition.value!,
-          isPickup: true,
-        ),
-        onEditDropoff: () =>
-            _handleEditLocation(_destinationPosition!, isPickup: false),
+        onEditPickup: () => _handleEditLocation(currentPos, isPickup: true),
+        onEditDropoff: () => _handleEditLocation(destPos, isPickup: false),
         onSaveDropoffFavorite: _handleSaveDropoffFavorite,
         onSavePickupFavorite: _handleSavePickupFavorite,
       ),
@@ -576,7 +573,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _showRentalBottomSheet({bool isActingDriver = false}) {
-    if (!mounted || _rideController.currentPosition.value == null) {
+    final currentPos = _rideController.currentPosition.value;
+    if (!mounted || currentPos == null) {
       displaySnackBar(
         context,
         "Cannot determine current location for rental pickup.",
@@ -592,7 +590,7 @@ class _HomePageState extends State<HomePage> {
         isLoadingRentals: _rideController.isLoadingRentals.value,
         rentalVehicleOptions: VehicleOption.defaultOptions,
         currentUser: _currentUser,
-        currentPosition: _rideController.currentPosition.value!,
+        currentPosition: currentPos,
         isActingDriver: isActingDriver,
         pricingRules: _rideController.pricingRules.value,
       ),

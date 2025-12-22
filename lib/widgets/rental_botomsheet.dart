@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'package:intl/intl.dart';
+import 'package:get/get.dart';
 import 'package:project_taxi_with_ai/widgets/data_models.dart';
 import 'package:project_taxi_with_ai/widgets/firestore_services.dart';
 import 'package:project_taxi_with_ai/widgets/scheduler.dart';
@@ -170,7 +171,7 @@ class _RentalBottomSheetState extends State<RentalBottomSheet> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
-                onPressed: () => Navigator.pop(context),
+                onPressed: () => Get.back(),
                 child: const Center(
                   child: Text(
                     "Got it",
@@ -209,9 +210,8 @@ class _RentalBottomSheetState extends State<RentalBottomSheet> {
 
   // **NEW:** Function to open schedule picker
   Future<void> _pickSchedule() async {
-    final DateTime? result = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const SchedulePickerScreen()),
+    final DateTime? result = await Get.to<DateTime>(
+      () => const SchedulePickerScreen(),
     );
 
     if (result != null) {
@@ -534,7 +534,7 @@ class _RentalBottomSheetState extends State<RentalBottomSheet> {
                   : 'Select a Vehicle',
               onPressed: _selectedRentalVehicleType != null
                   ? () {
-                      Navigator.pop(context); // Close sheet
+                      Get.back(); // Close sheet
                       _firestoreService.navigateToRentalConfirmPickup(
                         context,
                         currentUser: widget.currentUser,

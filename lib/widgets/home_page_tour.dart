@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // --- NEW PREFERENCE KEYS ---
@@ -25,7 +26,7 @@ class ContextualFeatureTour {
     if (!hasSeen && context.mounted) {
       // Wait for the widget to be findable
       await Future.delayed(const Duration(milliseconds: 100));
-      
+
       final Rect? targetBounds = _getWidgetBounds(key);
       if (targetBounds == null || !context.mounted) return;
 
@@ -50,10 +51,16 @@ class ContextualFeatureTour {
 
   /// Finds the position of a widget on the screen from its GlobalKey
   static Rect? _getWidgetBounds(GlobalKey key) {
-    final RenderBox? renderBox = key.currentContext?.findRenderObject() as RenderBox?;
+    final RenderBox? renderBox =
+        key.currentContext?.findRenderObject() as RenderBox?;
     if (renderBox != null && renderBox.hasSize) {
       final position = renderBox.localToGlobal(Offset.zero);
-      return Rect.fromLTWH(position.dx, position.dy, renderBox.size.width, renderBox.size.height);
+      return Rect.fromLTWH(
+        position.dx,
+        position.dy,
+        renderBox.size.width,
+        renderBox.size.height,
+      );
     }
     return null;
   }
@@ -64,7 +71,7 @@ class _TourStepDialog extends StatelessWidget {
   final Rect targetBounds;
   final String title;
   final String description;
-  
+
   const _TourStepDialog({
     required this.targetBounds,
     required this.title,
@@ -74,7 +81,8 @@ class _TourStepDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Decide where to put the text box (above or below the highlight)
-    final bool showTextAbove = targetBounds.top > MediaQuery.of(context).size.height * 0.6;
+    final bool showTextAbove =
+        targetBounds.top > MediaQuery.of(context).size.height * 0.6;
 
     return Material(
       color: Colors.transparent,
@@ -109,11 +117,13 @@ class _TourStepDialog extends StatelessWidget {
               ],
             ),
           ),
-          
+
           // This is the text box
           Positioned(
             top: showTextAbove ? null : targetBounds.bottom + 24, // Show below
-            bottom: showTextAbove ? (MediaQuery.of(context).size.height - targetBounds.top + 24) : null, // Show above
+            bottom: showTextAbove
+                ? (MediaQuery.of(context).size.height - targetBounds.top + 24)
+                : null, // Show above
             left: 24,
             right: 24,
             child: Column(
@@ -139,7 +149,7 @@ class _TourStepDialog extends StatelessWidget {
                 ),
                 const SizedBox(height: 24),
                 ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: () => Get.back(),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blueAccent,
                     foregroundColor: Colors.white,

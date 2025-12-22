@@ -214,7 +214,25 @@ export const calculateFares = onCall(async (
 export const createRideRequest = onCall(async (
   request: CallableRequest<RideData>
 ) => {
+  // Debug Logging
+  logger.info(
+    "createRideRequest called. Auth: " + JSON.stringify(request.auth) +
+    ", AppCheck: " + JSON.stringify(request.app)
+  );
+
+  // Log header presence to debug UNAUTHENTICATED error
+  const authHeader = request.rawRequest.headers.authorization;
+  logger.info(
+    `Auth Header: ${authHeader ?
+      "Present (" + authHeader.substring(0, 20) + "...)" :
+      "Missing"
+    }`
+  );
+
   if (!request.auth) {
+    logger.warn(
+      "createRideRequest: Unauthorized access attempt (request.auth is null)"
+    );
     throw new HttpsError("unauthenticated", "Must be authenticated.");
   }
   const userId = request.auth.uid;
@@ -250,7 +268,7 @@ export const createRideRequest = onCall(async (
     );
   }
 
-  if (isRental || rideData.vehicleType === "ActingDriver") {
+  if (isRental || rideData.vehicleClass === "ActingDriver") {
     const startRidePin = generatePin();
     let endRidePin = generatePin();
     while (endRidePin === startRidePin) {
@@ -298,12 +316,12 @@ export const createRideRequest = onCall(async (
       .where("isOnline", "==", true)
       .where("isAvailable", "==", true);
 
-    if (rideData.vehicleType === "ActingDriver") {
+    if (rideData.vehicleClass === "ActingDriver") {
       driversQuery = driversQuery.where("isActingDriver", "==", true);
     } else if (!isRental) { // For Daily or Multi-Stop
-      // **FIXED:** max-len
+      // **MODIFIED:** Filter by 'vehicleClass'
       driversQuery = driversQuery.where(
-        "vehicleType", "==", rideData.vehicleType
+        "vehicleClass", "==", rideData.vehicleClass
       );
     }
     const availableDrivers = await driversQuery.limit(5).get();

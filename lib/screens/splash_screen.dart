@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:get/get.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:firebase_app_check/firebase_app_check.dart';
+// import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:project_taxi_with_ai/controllers/ride_controller.dart';
 import 'package:project_taxi_with_ai/screens/onboarding.dart';
@@ -41,10 +41,10 @@ class _SplashScreenState extends State<SplashScreen> {
       );
 
       // 4. Activate App Check
-      await FirebaseAppCheck.instance.activate(
-        providerAndroid: AndroidDebugProvider(),
-        providerApple: AppleDebugProvider(),
-      );
+      // await FirebaseAppCheck.instance.activate(
+      //   providerAndroid: AndroidDebugProvider(),
+      //   providerApple: AppleDebugProvider(),
+      // );
 
       // 5. Initialize Controllers (Auth & Ride)
       ControllerBinding().dependencies();

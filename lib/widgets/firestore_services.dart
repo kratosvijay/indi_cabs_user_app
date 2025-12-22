@@ -5,6 +5,7 @@ import 'package:project_taxi_with_ai/screens/searching_for_ride.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart'; // Import Auth
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:get/get.dart';
 import 'package:project_taxi_with_ai/widgets/data_models.dart'; // Import Functions
 
 typedef NavigationCallback = void Function(Widget destination);
@@ -138,6 +139,23 @@ class FirestoreService {
     num? convenienceFee,
   }) async {
     try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        debugPrint("ERROR: createDailyRideRequest - User is null!");
+        throw Exception("User is not logged in.");
+      }
+
+      final idToken = await user.getIdToken(true); // Force refresh
+      debugPrint("createDailyRideRequest - User ID: ${user.uid}");
+      debugPrint("createDailyRideRequest - Token present: ${idToken != null}");
+      if (idToken != null && idToken.isNotEmpty) {
+        debugPrint(
+          "createDailyRideRequest - Token starts with: ${idToken.substring(0, 5)}...",
+        );
+      } else {
+        debugPrint("createDailyRideRequest - Token is null or empty!");
+      }
+
       final callable = _functions.httpsCallable('createRideRequest');
 
       final Map<String, dynamic> rideData = {
@@ -154,7 +172,7 @@ class FirestoreService {
           'longitude': destinationLocation.longitude,
         },
         'destinationAddress': destinationAddress,
-        'vehicleType': vehicleType,
+        'vehicleClass': vehicleType, // Using vehicleType arg as vehicleClass
         'fare': fare,
         'tip': tip,
         'totalFare': fare + tip + (convenienceFee ?? 0),
@@ -178,6 +196,11 @@ class FirestoreService {
       return rideId;
     } catch (e) {
       debugPrint("Error calling createRideRequest function: $e");
+      if (e is FirebaseFunctionsException) {
+        debugPrint("Code: ${e.code}");
+        debugPrint("Message: ${e.message}");
+        debugPrint("Details: ${e.details}");
+      }
       rethrow;
     }
   }
@@ -214,7 +237,8 @@ class FirestoreService {
         'kmLimit': rentalPackage.kmLimit,
         'extraKmCharge': rentalPackage.extraKmCharge,
         'extraHourCharge': rentalPackage.extraHourCharge,
-        'vehicleType': rentalVehicleType,
+        'vehicleClass':
+            rentalVehicleType, // Using rentalVehicleType arg as vehicleClass
         'fare': rentalPrice,
         'tip': tip,
         'totalFare': rentalPrice + tip + (convenienceFee ?? 0),
@@ -255,22 +279,20 @@ class FirestoreService {
     DateTime? scheduledTime,
     num? convenienceFee,
   }) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => ConfirmPickupScreen(
-          user: currentUser,
-          currentPosition: currentPosition,
-          destinationPosition: destinationPosition,
-          selectedVehicle: selectedVehicle,
-          polylines: polylines,
-          calculatedFare: calculatedFare,
-          routeDetails: routeDetails,
-          intermediateStops: intermediateStops,
-          walletBalance: walletBalance,
-          scheduledTime: scheduledTime,
-          convenienceFee: convenienceFee,
-          // Rental params are null for daily ride
-        ),
+    Get.to(
+      () => ConfirmPickupScreen(
+        user: currentUser,
+        currentPosition: currentPosition,
+        destinationPosition: destinationPosition,
+        selectedVehicle: selectedVehicle,
+        polylines: polylines,
+        calculatedFare: calculatedFare,
+        routeDetails: routeDetails,
+        intermediateStops: intermediateStops,
+        walletBalance: walletBalance,
+        scheduledTime: scheduledTime,
+        convenienceFee: convenienceFee,
+        // Rental params are null for daily ride
       ),
     );
   }
@@ -285,23 +307,21 @@ class FirestoreService {
     DateTime? scheduledTime,
     num? convenienceFee,
   }) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => ConfirmPickupScreen(
-          user: currentUser,
-          currentPosition: currentPosition,
-          destinationPosition: currentPosition,
-          polylines: const {},
-          selectedVehicle: null,
-          rentalPackage: rentalPackage,
-          rentalVehicleType: rentalVehicleType,
-          rentalPrice: rentalPrice,
-          calculatedFare: rentalPrice,
-          routeDetails: null,
-          walletBalance: 0,
-          scheduledTime: scheduledTime,
-          convenienceFee: convenienceFee,
-        ),
+    Get.to(
+      () => ConfirmPickupScreen(
+        user: currentUser,
+        currentPosition: currentPosition,
+        destinationPosition: currentPosition,
+        polylines: const {},
+        selectedVehicle: null,
+        rentalPackage: rentalPackage,
+        rentalVehicleType: rentalVehicleType,
+        rentalPrice: rentalPrice,
+        calculatedFare: rentalPrice,
+        routeDetails: null,
+        walletBalance: 0,
+        scheduledTime: scheduledTime,
+        convenienceFee: convenienceFee,
       ),
     );
   }
@@ -322,27 +342,28 @@ class FirestoreService {
     String? rentalVehicleType,
     List<Map<String, dynamic>>? intermediateStops,
     DateTime? scheduledTime,
+    String? destinationAddress, // **NEW**
+    String? initialEta, // **NEW**
   }) {
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(
-        builder: (context) => SearchingForRideScreen(
-          user: user,
-          pickupLocation: pickupLocation,
-          destinationPosition: destinationPosition,
-          fare: fare,
-          tip: tip,
-          polylines: polylines,
-          isRental: isRental,
-          rideRequestId: rideRequestId,
-          rideRequestIdFuture: rideRequestIdFuture, // **NEW**
-          selectedVehicle: selectedVehicle,
-          rentalPackage: rentalPackage,
-          rentalVehicleType: rentalVehicleType,
-          intermediateStops: intermediateStops,
-          scheduledTime: scheduledTime,
-        ),
+    Get.offAll(
+      () => SearchingForRideScreen(
+        user: user,
+        pickupLocation: pickupLocation,
+        destinationPosition: destinationPosition,
+        fare: fare,
+        tip: tip,
+        polylines: polylines,
+        isRental: isRental,
+        rideRequestId: rideRequestId,
+        rideRequestIdFuture: rideRequestIdFuture, // **NEW**
+        selectedVehicle: selectedVehicle,
+        rentalPackage: rentalPackage,
+        rentalVehicleType: rentalVehicleType,
+        intermediateStops: intermediateStops,
+        scheduledTime: scheduledTime,
+        destinationAddress: destinationAddress, // **NEW**
+        initialEta: initialEta, // **NEW**
       ),
-      (route) => false,
     );
   }
 }

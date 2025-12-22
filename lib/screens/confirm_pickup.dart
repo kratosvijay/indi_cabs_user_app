@@ -482,13 +482,26 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
     try {
       Future<String> rideRequestIdFuture;
       num finalFare = _currentCalculatedFare;
+      String? destinationAddressString; // **NEW:** Hoisted variable
+
+      // **NEW:** strict auth check & refresh
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        if (mounted) {
+          displaySnackBar(context, "User not logged in. Please log in again.");
+          setState(() => _isBooking = false);
+        }
+        return;
+      }
+      // Force token refresh to ensure valid session for Cloud Function
+      await user.getIdToken(true);
 
       if (widget.isRental) {
         // --- Create Rental Request ---
         rideRequestIdFuture = _firestoreService.createRentalRideRequest(
-          userId: widget.user.uid,
-          userName: widget.user.displayName,
-          userPhone: widget.user.phoneNumber,
+          userId: user.uid, // Use current user uid
+          userName: user.displayName,
+          userPhone: user.phoneNumber,
           pickupLocation: _adjustablePickupLocation,
           pickupAddress: finalPickupAddress,
           rentalPackage: widget.rentalPackage!,
@@ -501,18 +514,20 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
         );
       } else {
         // --- Create Daily/Multi-Stop Ride Request ---
-        final destinationAddress = await _locationService.getAddressFromLatLng(
+        // **MODIFIED:** Assign to hoisted variable
+        destinationAddressString = await _locationService.getAddressFromLatLng(
           widget.destinationPosition,
         );
 
         rideRequestIdFuture = _firestoreService.createDailyRideRequest(
-          userId: widget.user.uid,
-          userName: widget.user.displayName,
-          userPhone: widget.user.phoneNumber,
+          userId: user.uid, // Use current user uid
+          userName: user.displayName,
+          userPhone: user.phoneNumber,
           pickupLocation: _adjustablePickupLocation,
           pickupAddress: finalPickupAddress,
           destinationLocation: widget.destinationPosition,
-          destinationAddress: destinationAddress,
+          destinationAddress:
+              destinationAddressString, // Use non-null asserted string
           vehicleType: widget.selectedVehicle?.type ?? "Multi-Stop",
           fare: finalFare,
           tip: _tipValue,
@@ -525,6 +540,15 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
       }
 
       if (mounted) {
+        // **NEW:** Calculate ETA
+        String? initialEta;
+        if (_currentRouteDetails != null) {
+          final int mins = (_currentRouteDetails!.durationSeconds / 60).round();
+          initialEta = "$mins mins";
+        } else if (widget.selectedVehicle?.eta != null) {
+          initialEta = widget.selectedVehicle!.eta;
+        }
+
         // Navigate to the SearchingForRideScreen
         _firestoreService.navigateToSearching(
           context,
@@ -541,6 +565,8 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
           rentalVehicleType: widget.rentalVehicleType,
           intermediateStops: widget.intermediateStops,
           scheduledTime: _currentScheduledTime, // **NEW**
+          destinationAddress: destinationAddressString, // **NEW**
+          initialEta: initialEta, // **NEW**
         );
       }
     } catch (e) {

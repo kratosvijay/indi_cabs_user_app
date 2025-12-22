@@ -190,7 +190,7 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: textColor),
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () => Get.back(),
         ),
         title: Text(
           "Ride Details",
