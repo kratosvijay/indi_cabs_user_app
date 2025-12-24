@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:get/get.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 // import 'package:firebase_app_check/firebase_app_check.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
 import 'package:project_taxi_with_ai/controllers/ride_controller.dart';
-import 'package:project_taxi_with_ai/screens/onboarding.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:project_taxi_with_ai/screens/permissions_screen.dart';
 
 import 'package:project_taxi_with_ai/bindings/controller_binding.dart';
 
@@ -45,29 +46,39 @@ class _SplashScreenState extends State<SplashScreen> {
       //   providerApple: AppleDebugProvider(),
       // );
 
-      // 5. Initialize Controllers (Auth & Ride)
+      // 5. Check Permissions (BEFORE Controllers)
+      final locStatus = await Permission.location.status;
+      final notifStatus = await Permission.notification.status;
+      final contactStatus = await Permission.contacts.status;
+
+      debugPrint("Permissions Check:");
+      debugPrint("Location: $locStatus");
+      debugPrint("Notification: $notifStatus");
+      debugPrint("Contacts: $contactStatus");
+
+      if (!locStatus.isGranted ||
+          !notifStatus.isGranted ||
+          !contactStatus.isGranted) {
+        debugPrint("Redirecting to PermissionsScreen");
+        if (mounted) {
+          Get.offAll(() => const PermissionsScreen());
+        }
+        return;
+      }
+
+      // 6. Initialize Controllers (Auth & Ride)
+      // Only init controllers if permissions are granted to avoid race conditions
       ControllerBinding().dependencies();
 
-      // 6. Initialize RideController Data
+      // 7. Initialize RideController Data
       if (Get.isRegistered<RideController>()) {
         await RideController.instance.initialize();
       } else {
         debugPrint("RideController not found!");
       }
 
-      // 6. Check User State & Navigation
-      final SharedPreferences prefs = await SharedPreferences.getInstance();
-      final bool hasSeenOnboarding =
-          prefs.getBool('hasSeenOnboarding') ?? false;
-      final User? currentUser = FirebaseAuth.instance.currentUser;
-
-      if (mounted) {
-        if (!hasSeenOnboarding && currentUser == null) {
-          Get.offAll(() => const OnboardingScreen());
-        }
-        // Otherwise, let AuthController handle navigation to Login or Home
-        // to avoid race conditions with AuthWrapper.
-      }
+      // 8. User State & Navigation will be handled by AuthController's onReady
+      debugPrint("Initialization complete. Waiting for AuthController...");
     } catch (e) {
       debugPrint("Initialization Error: $e");
       if (mounted) {

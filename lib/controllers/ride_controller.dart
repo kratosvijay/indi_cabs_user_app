@@ -89,20 +89,33 @@ class RideController extends GetxController {
     // Initialization is now handled explicitly via initialize()
   }
 
+  bool _isInitialized = false;
+
   Future<void> initialize() async {
     debugPrint("RideController: initialize started");
 
+    if (_isInitialized) {
+      debugPrint("RideController: Already initialized, skipping.");
+      return;
+    }
+
     // Initialize Services
     final apiKey = dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
-    locationService = LocationService(apiKey: apiKey);
-    placesService = PlacesService(apiKey: apiKey);
-    directionsService = DirectionsService(apiKey: apiKey);
+    // Use try-catch or check if already assigned to be extra safe, though _isInitialized should handle it.
+    try {
+      locationService = LocationService(apiKey: apiKey);
+      placesService = PlacesService(apiKey: apiKey);
+      directionsService = DirectionsService(apiKey: apiKey);
+    } catch (e) {
+      debugPrint(
+        "RideController: Service initialization error (or already initialized): $e",
+      );
+    }
 
     // Initialize TTS
     flutterTts = FlutterTts();
-    await _configureTts(); // **NEW**
+    await _configureTts();
 
-    // Load Data
     // Load Data
     try {
       await Future.wait([
@@ -117,6 +130,7 @@ class RideController extends GetxController {
     }
 
     isLoadingLocation.value = false;
+    _isInitialized = true;
     debugPrint("RideController: initialize completed");
   }
 
@@ -385,6 +399,42 @@ class RideController extends GetxController {
       availability['SUV'] = nearbyDrivers.any((d) => d.vehicleType == 'SUV');
     }
     return availability;
+  }
+
+  String getNearestDriverEta(String vehicleType) {
+    if (currentPosition.value == null) return "N/A";
+
+    final relevantDrivers = nearbyDrivers.where((d) {
+      if (vehicleType == 'ActingDriver') {
+        return d.isActingDriver;
+      }
+      return d.vehicleType == vehicleType && !d.isActingDriver;
+    }).toList();
+
+    if (relevantDrivers.isEmpty) return "N/A";
+
+    double minDistance = double.infinity;
+
+    for (var driver in relevantDrivers) {
+      final double distance = Geolocator.distanceBetween(
+        currentPosition.value!.latitude,
+        currentPosition.value!.longitude,
+        driver.currentLocation.latitude,
+        driver.currentLocation.longitude,
+      );
+      if (distance < minDistance) {
+        minDistance = distance;
+      }
+    }
+
+    if (minDistance == double.infinity) return "N/A";
+
+    // Assume average city speed of 25 km/h
+    // 25 km/h = 25000 meters / 60 minutes ≈ 416 meters/minute
+    final int etaMinutes = (minDistance / 416).ceil();
+
+    if (etaMinutes <= 1) return "1 min";
+    return "$etaMinutes mins";
   }
 
   void updateMapElements({

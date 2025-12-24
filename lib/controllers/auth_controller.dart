@@ -8,6 +8,8 @@ import 'package:project_taxi_with_ai/screens/mobile_no_validator.dart';
 import 'package:project_taxi_with_ai/google_sign_in.dart';
 import 'package:project_taxi_with_ai/controllers/ride_controller.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:project_taxi_with_ai/screens/onboarding.dart';
 
 class AuthController extends GetxController {
   static AuthController get instance => Get.find();
@@ -36,7 +38,16 @@ class AuthController extends GetxController {
     _isNavigating = true;
     try {
       if (user == null) {
-        Get.offAll(() => const SignInScreen());
+        // Check Onboarding
+        final prefs = await SharedPreferences.getInstance();
+        final bool hasSeenOnboarding =
+            prefs.getBool('hasSeenOnboarding') ?? false;
+
+        if (!hasSeenOnboarding) {
+          Get.offAll(() => const OnboardingScreen());
+        } else {
+          Get.offAll(() => const SignInScreen());
+        }
       } else {
         // Check if user profile is complete (has phone number)
         try {

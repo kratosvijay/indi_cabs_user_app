@@ -41,7 +41,8 @@ class BottomBarWidget extends StatelessWidget {
           children: [
             // --- Service Type Cards ---
             SizedBox(
-              height: 90, // Give the row a fixed height
+              height:
+                  120, // Increased height to prevent overflow and standardise card size
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
@@ -49,9 +50,18 @@ class BottomBarWidget extends StatelessWidget {
                     _buildServiceTypeCard(
                       context: context,
                       icon: Icons.local_taxi_outlined,
+
                       label: "Daily Rides",
                       isSelected: selectedServiceType == RideType.daily,
                       onTap: () => onServiceTypeSelected(RideType.daily),
+                      isDark: isDark,
+                    ),
+                    _buildServiceTypeCard(
+                      context: context,
+                      icon: Icons.person_add_alt_1_outlined,
+                      label: "Book for Guest",
+                      isSelected: selectedServiceType == RideType.bookForOther,
+                      onTap: () => onServiceTypeSelected(RideType.bookForOther),
                       isDark: isDark,
                     ),
                     _buildServiceTypeCard(
@@ -95,7 +105,7 @@ class BottomBarWidget extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               SizedBox(
-                height: 115,
+                height: 135, // Increased height for better readability
                 child: ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   scrollDirection: Axis.horizontal,
@@ -103,7 +113,7 @@ class BottomBarWidget extends StatelessWidget {
                   itemBuilder: (context, index) {
                     final dest = predefinedDestinations[index];
                     return SizedBox(
-                      width: 110,
+                      width: 130, // Increased width for longer names
                       child: Card(
                         margin: const EdgeInsets.only(right: 8),
                         clipBehavior: Clip.antiAlias,
@@ -130,14 +140,14 @@ class BottomBarWidget extends StatelessWidget {
                                 Text(
                                   dest.name,
                                   textAlign: TextAlign.center,
-                                  maxLines: 2,
+                                  maxLines: 3,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     color: isDark
                                         ? Colors.white70
                                         : Colors.black87,
                                     fontWeight: FontWeight.w500,
-                                    fontSize: 12,
+                                    fontSize: 11,
                                   ),
                                 ),
                               ],
@@ -182,7 +192,8 @@ class BottomBarWidget extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
       child: SizedBox(
-        width: 100, // Give each card a fixed width
+        width: 115,
+        height: 110, // Fixed height so all cards are equal size
         child: Card(
           elevation: isSelected ? 4 : 1.5,
           margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
@@ -197,6 +208,7 @@ class BottomBarWidget extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
                   icon,
@@ -212,7 +224,7 @@ class BottomBarWidget extends StatelessWidget {
                     fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                     color: textColor,
                   ),
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
               ],

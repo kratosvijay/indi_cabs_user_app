@@ -6,7 +6,7 @@ import 'package:intl/intl.dart'; // Import for formatting
 // --- Enums ---
 
 // Enum to define the type of ride service
-enum RideType { daily, rental, acting, multiStop }
+enum RideType { daily, rental, acting, multiStop, bookForOther }
 
 // --- Models ---
 
@@ -225,7 +225,7 @@ class PredefinedDestination {
       icon: Icons.airplanemode_active,
     ),
     PredefinedDestination(
-      name: "Central Railway Station",
+      name: "Chennai Central Railway Station",
       location: const LatLng(13.082477094001776, 80.27592326678992),
       icon: Icons.train,
     ),

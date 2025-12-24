@@ -64,7 +64,12 @@ class RideConfirmationBottomSheet extends StatefulWidget {
     required this.rideType, // **NEW:** Add to constructor
     this.showScheduleTour = false, // **NEW:** Add to constructor
     required this.availability, // **NEW:** Add to constructor
+    this.guestName,
+    this.guestPhone,
   });
+
+  final String? guestName;
+  final String? guestPhone;
 
   @override
   State<RideConfirmationBottomSheet> createState() =>
@@ -481,6 +486,20 @@ class _RideConfirmationBottomSheetState
     }
   }
 
+  int? _getPassengerCount(String type) {
+    switch (type.toLowerCase().trim()) {
+      case 'auto':
+        return 3;
+      case 'hatchback':
+      case 'sedan':
+        return 4;
+      case 'suv':
+        return 6;
+      default:
+        return null;
+    }
+  }
+
   // **NEW:** Function to open schedule picker
   Future<void> _pickSchedule() async {
     final DateTime? result = await Get.to<DateTime>(
@@ -689,15 +708,41 @@ class _RideConfirmationBottomSheetState
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Text(
-                                      vehicle.type,
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.bold,
-                                        color: isDark
-                                            ? Colors.white
-                                            : Colors.black87,
-                                      ),
+                                    Row(
+                                      children: [
+                                        Text(
+                                          vehicle.type,
+                                          style: TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.bold,
+                                            color: isDark
+                                                ? Colors.white
+                                                : Colors.black87,
+                                          ),
+                                        ),
+                                        if (_getPassengerCount(vehicle.type) !=
+                                            null) ...[
+                                          const SizedBox(width: 8),
+                                          Icon(
+                                            Icons.person,
+                                            size: 16,
+                                            color: isDark
+                                                ? Colors.white70
+                                                : Colors.black54,
+                                          ),
+                                          const SizedBox(width: 2),
+                                          Text(
+                                            "${_getPassengerCount(vehicle.type)} Max",
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: isDark
+                                                  ? Colors.white70
+                                                  : Colors.black54,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
                                     ),
                                     Text(
                                       "Driver ETA: ${vehicle.eta}",
@@ -822,6 +867,8 @@ class _RideConfirmationBottomSheetState
                       walletBalance: widget.walletBalance,
                       scheduledTime: _scheduledTime, // **NEW**
                       convenienceFee: _convenienceFee, // **NEW**
+                      guestName: widget.guestName,
+                      guestPhone: widget.guestPhone,
                     );
                   },
           ),

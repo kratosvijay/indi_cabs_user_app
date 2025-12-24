@@ -29,11 +29,22 @@ class FavoritesWidget extends StatelessWidget {
         stream: firestoreService.getFavoritesStream(userId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)));
+            return const Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            );
           }
           if (snapshot.hasError) {
             debugPrint("Error fetching favorites: ${snapshot.error}");
-            return const Center(child: Text("Couldn't load favorites", style: TextStyle(color: Colors.grey)));
+            return const Center(
+              child: Text(
+                "Couldn't load favorites",
+                style: TextStyle(color: Colors.grey),
+              ),
+            );
           }
           if (!snapshot.hasData || snapshot.data!.isEmpty) {
             return const SizedBox.shrink(); // Or Text("No favorites yet!")
@@ -49,17 +60,35 @@ class FavoritesWidget extends StatelessWidget {
               final favorite = favorites[index];
               return Padding(
                 padding: const EdgeInsets.only(right: 8.0),
-                child: GestureDetector(
-                  onLongPress: () => onFavoriteLongPress(favorite),
-                  child: ActionChip(
-                     avatar: const Icon(Icons.star_border, size: 16, color: Colors.white70),
-                     label: Text(favorite.name),
-                     labelStyle: const TextStyle(color: Colors.white),
-                     backgroundColor: Colors.blueGrey[600],
-                     onPressed: () => onFavoriteTap(favorite),
-                     tooltip: favorite.address, // Show full address on hover/long press
-                     elevation: 1, pressElevation: 3,
-                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                child: Material(
+                  color: Colors.blueGrey[600],
+                  borderRadius: BorderRadius.circular(20),
+                  elevation: 1,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () => onFavoriteTap(favorite),
+                    onLongPress: () => onFavoriteLongPress(favorite),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.star_border,
+                            size: 16,
+                            color: Colors.white70,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            favorite.name,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               );
@@ -70,4 +99,3 @@ class FavoritesWidget extends StatelessWidget {
     );
   }
 }
-

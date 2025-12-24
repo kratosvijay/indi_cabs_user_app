@@ -97,6 +97,8 @@ class ConfirmPickupScreen extends StatefulWidget {
   final num? walletBalance; // **NEW:** Add parameter
   final DateTime? scheduledTime; // **NEW**
   final num? convenienceFee; // **NEW**
+  final String? guestName;
+  final String? guestPhone;
 
   const ConfirmPickupScreen({
     super.key,
@@ -116,6 +118,8 @@ class ConfirmPickupScreen extends StatefulWidget {
     this.walletBalance, // **NEW:** Add to constructor
     this.scheduledTime, // **NEW**
     this.convenienceFee, // **NEW**
+    this.guestName,
+    this.guestPhone,
   }) : assert(
          (selectedVehicle != null &&
                  calculatedFare != null) || // Daily ride needs vehicle and fare

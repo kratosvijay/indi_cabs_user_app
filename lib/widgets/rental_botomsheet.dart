@@ -61,11 +61,12 @@ class _RentalBottomSheetState extends State<RentalBottomSheet> {
   ) {
     final vehicleRules = widget.pricingRules?.vehiclePricing[vehicle.type];
     final bool isActing = vehicle.type == 'ActingDriver';
+    final bool isDark = Get.isDarkMode;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
+      backgroundColor: isDark ? Colors.grey[900] : Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -82,7 +83,7 @@ class _RentalBottomSheetState extends State<RentalBottomSheet> {
                   height: 5,
                   margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(
-                    color: Colors.grey[300],
+                    color: isDark ? Colors.grey[700] : Colors.grey[300],
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
@@ -90,9 +91,10 @@ class _RentalBottomSheetState extends State<RentalBottomSheet> {
               // Title
               Text(
                 isActing ? "Acting Driver" : vehicle.type,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : Colors.black87,
                 ),
               ),
               const SizedBox(height: 8),
@@ -103,33 +105,50 @@ class _RentalBottomSheetState extends State<RentalBottomSheet> {
                           "A professional, verified driver for your personal car.")
                     : (vehicleRules?.description ??
                           "A dedicated ${vehicle.type.toLowerCase()} for your selected package."),
-                style: TextStyle(fontSize: 16, color: Colors.grey[700]),
+                style: TextStyle(
+                  fontSize: 16,
+                  color: isDark ? Colors.grey[300] : Colors.grey[700],
+                ),
               ),
               const SizedBox(height: 20),
               // Pricing Details
               Text(
                 "Package Details",
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : Colors.black87,
                 ),
               ),
-              const Divider(height: 20),
+              Divider(height: 20, color: isDark ? Colors.grey[800] : null),
 
-              _buildFareInfoRow("Package", package.displayName),
+              _buildFareInfoRow("Package", package.displayName, isDark),
               _buildFareInfoRow(
                 "Package Price",
                 "₹${rentalPrice.toStringAsFixed(0)}",
+                isDark,
               ),
-              _buildFareInfoRow("Duration", "${package.durationHours} Hours"),
+              _buildFareInfoRow(
+                "Duration",
+                "${package.durationHours} Hours",
+                isDark,
+              ),
 
               if (!isActing)
-                _buildFareInfoRow("Distance", "${package.kmLimit} km Included"),
+                _buildFareInfoRow(
+                  "Distance",
+                  "${package.kmLimit} km Included",
+                  isDark,
+                ),
 
-              const Divider(height: 20),
-              const Text(
+              Divider(height: 20, color: isDark ? Colors.grey[800] : null),
+              Text(
                 "Extra Charges:",
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white70 : Colors.black87,
+                ),
               ),
 
               if (isActing) ...[
@@ -137,27 +156,35 @@ class _RentalBottomSheetState extends State<RentalBottomSheet> {
                   _buildFareInfoRow(
                     "Extra Time",
                     "₹${vehicleRules.perMinute.toStringAsFixed(0)} / min",
+                    isDark,
                   ),
               ] else ...[
                 _buildFareInfoRow(
                   "Extra Hour",
                   "₹${package.extraHourCharge.toStringAsFixed(0)} / hr",
+                  isDark,
                 ),
                 _buildFareInfoRow(
                   "Extra Kilometer",
                   "₹${package.extraKmCharge.toStringAsFixed(0)} / km",
+                  isDark,
                 ),
               ],
 
               if (isActing) ...[
-                const Divider(height: 20),
-                const Text(
+                Divider(height: 20, color: isDark ? Colors.grey[800] : null),
+                Text(
                   "Service Policy:",
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white70 : Colors.black87,
+                  ),
                 ),
                 _buildFareInfoRow(
                   "Food & Night Stay",
                   "Food & accommodation (for trips > 10 hours) must be provided by the user.",
+                  isDark,
                 ),
               ],
 
@@ -187,19 +214,29 @@ class _RentalBottomSheetState extends State<RentalBottomSheet> {
     );
   }
 
-  Widget _buildFareInfoRow(String title, String value) {
+  Widget _buildFareInfoRow(String title, String value, bool isDark) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: TextStyle(fontSize: 15, color: Colors.grey[800])),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 15,
+              color: isDark ? Colors.grey[400] : Colors.grey[800],
+            ),
+          ),
           const SizedBox(width: 16),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : Colors.black87,
+              ),
               textAlign: TextAlign.right,
             ),
           ),

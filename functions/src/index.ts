@@ -181,7 +181,17 @@ export const calculateFares = onCall(async (
     }
     const calculatedFares: { [key: string]: number } = {};
     Object.entries(vehiclePricingMap).forEach(([vehicleType, pricing]) => {
-      let fare = pricing.baseFare + (distanceKm * pricing.perKilometer);
+      let fare = pricing.baseFare;
+      if (distanceKm <= 12) {
+        fare += distanceKm * pricing.perKilometer;
+      } else {
+        // First 12 km at normal price
+        fare += 12 * pricing.perKilometer;
+        // Remaining km at reduced price (price - 3)
+        // Ensure price doesn't go below 0 (though unlikely for perKm)
+        const reducedRate = Math.max(0, pricing.perKilometer - 3);
+        fare += (distanceKm - 12) * reducedRate;
+      }
       fare *= surgeMultiplier;
       fare += nightCharge + safeTollCost + geofenceSurcharge;
       if (fare < pricing.minimumFare) fare = pricing.minimumFare;
@@ -265,6 +275,30 @@ export const createRideRequest = onCall(async (
     firestoreData.destinationLocation = new admin.firestore.GeoPoint(
       rideData.destinationLocation.latitude,
       rideData.destinationLocation.longitude
+    );
+  }
+
+  // **FIXED:** Convert intermediate stops to use GeoPoints
+  if (rideData.intermediateStops && Array.isArray(rideData.intermediateStops)) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    firestoreData.intermediateStops = rideData.intermediateStops.map(
+      (stop: any) => {
+        // Ensure we have a location object with lat/lng
+        if (
+          stop.location &&
+          typeof stop.location.latitude === "number" &&
+          typeof stop.location.longitude === "number"
+        ) {
+          return {
+            ...stop,
+            location: new admin.firestore.GeoPoint(
+              stop.location.latitude,
+              stop.location.longitude
+            ),
+          };
+        }
+        return stop;
+      }
     );
   }
 

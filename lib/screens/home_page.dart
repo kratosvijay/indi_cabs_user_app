@@ -6,6 +6,7 @@ import 'dart:math'; // For min/max used in bounds calculation
 import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'package:flutter/material.dart' hide Route;
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -22,6 +23,7 @@ import 'package:project_taxi_with_ai/controllers/ride_controller.dart';
 import 'package:get/get.dart';
 
 import 'package:project_taxi_with_ai/screens/multistop_ride.dart';
+import 'package:project_taxi_with_ai/screens/book_for_other_screen.dart'; // **NEW IMPORT**
 import 'package:project_taxi_with_ai/screens/notifications.dart';
 import 'package:project_taxi_with_ai/screens/ride_history.dart';
 
@@ -274,6 +276,8 @@ class _HomePageState extends State<HomePage> {
   }) async {
     if (!mounted) return;
     FocusScope.of(context).unfocus();
+    // Explicitly hide keyboard to be sure
+    await SystemChannels.textInput.invokeMethod('TextInput.hide');
     // Wait for keyboard to dismiss to prevent glitch/overflow when opening bottom sheet
     await Future.delayed(const Duration(milliseconds: 300));
 
@@ -388,7 +392,9 @@ class _HomePageState extends State<HomePage> {
       Get.back(); // Close the loading sheet
 
       // Ensure focus is cleared again as closing the sheet might restore it
+      _destinationFocusNode.unfocus(); // Explicitly unfocus the node
       FocusScope.of(context).unfocus();
+      await SystemChannels.textInput.invokeMethod('TextInput.hide');
       await Future.delayed(const Duration(milliseconds: 300));
 
       final prefs = await SharedPreferences.getInstance();
@@ -455,7 +461,18 @@ class _HomePageState extends State<HomePage> {
     if (rideType == RideType.rental) {
       _showRentalBottomSheet();
     } else if (rideType == RideType.acting) {
-      _showRentalBottomSheet(isActingDriver: true);
+      displaySnackBar(context, "Acting Driver Coming Soon!");
+    } else if (rideType == RideType.bookForOther) {
+      Get.to(
+        () => BookForOtherScreen(
+          user: _currentUser,
+          currentPosition:
+              _rideController.currentPosition.value ??
+              LocationService.defaultLocation,
+          pricingRules: _rideController.pricingRules.value,
+          walletBalance: _rideController.walletBalance.value,
+        ),
+      );
     } else if (rideType == RideType.multiStop) {
       Get.to(
         () => MultiStopScreen(
@@ -542,6 +559,17 @@ class _HomePageState extends State<HomePage> {
       etaString = "$durationMinutes min";
     }
 
+    // **MODIFIED:** Calculate real ETA for each vehicle type
+    final updatedVehicleOptions = VehicleOption.defaultOptions.map((option) {
+      final realEta = _rideController.getNearestDriverEta(option.type);
+      return VehicleOption(
+        type: option.type,
+        imagePath: option.imagePath,
+        price: option.price,
+        eta: realEta,
+      );
+    }).toList();
+
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -553,7 +581,7 @@ class _HomePageState extends State<HomePage> {
         pickupAddress: _pickupController.text,
         destinationAddress: _destinationController.text,
         isDropoffInServiceArea: isDropoffInServiceArea,
-        vehicleOptions: VehicleOption.defaultOptions,
+        vehicleOptions: updatedVehicleOptions,
         polylines: _rideController.polylines,
         isLoadingFares: isLoadingFares,
         calculatedFares: calculatedFares,
@@ -862,7 +890,7 @@ class _HomePageState extends State<HomePage> {
                       const Center(child: CircularProgressIndicator()),
                     // Custom GPS Button
                     Positioned(
-                      bottom: mapBottomPadding + 20,
+                      bottom: mapBottomPadding + 60,
                       right: 16,
                       child: Visibility(
                         visible: _destinationPosition == null,
@@ -1267,33 +1295,7 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _showFavoriteOptions(FavoritePlace favorite) async {
     if (!mounted) return;
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(favorite.name),
-        content: const Text('Manage this favorite?'),
-        actions: [
-          TextButton(
-            child: const Text(
-              'Delete',
-              style: TextStyle(color: Colors.redAccent),
-            ),
-            onPressed: () {
-              Get.back();
-              _showDeleteConfirmationDialog(favorite);
-            },
-          ),
-          TextButton(
-            child: const Text('Edit Name'),
-            onPressed: () {
-              Get.back();
-              _showEditFavoriteNameDialog(favorite);
-            },
-          ),
-          TextButton(onPressed: () => Get.back(), child: const Text('Cancel')),
-        ],
-      ),
-    );
+    _showDeleteConfirmationDialog(favorite);
   }
 
   Future<void> _showDeleteConfirmationDialog(FavoritePlace favorite) async {

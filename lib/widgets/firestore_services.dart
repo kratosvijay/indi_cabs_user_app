@@ -278,6 +278,8 @@ class FirestoreService {
     num? walletBalance,
     DateTime? scheduledTime,
     num? convenienceFee,
+    String? guestName,
+    String? guestPhone,
   }) {
     Get.to(
       () => ConfirmPickupScreen(
@@ -292,6 +294,8 @@ class FirestoreService {
         walletBalance: walletBalance,
         scheduledTime: scheduledTime,
         convenienceFee: convenienceFee,
+        guestName: guestName,
+        guestPhone: guestPhone,
         // Rental params are null for daily ride
       ),
     );

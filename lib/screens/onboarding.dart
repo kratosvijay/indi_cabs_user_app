@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:project_taxi_with_ai/screens/keepme_signed.dart';
+import 'package:project_taxi_with_ai/screens/login_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -46,7 +46,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     await prefs.setBool('hasSeenOnboarding', true);
 
     if (mounted) {
-      Get.off(() => const AuthWrapper());
+      Get.off(() => const SignInScreen());
     }
   }
 

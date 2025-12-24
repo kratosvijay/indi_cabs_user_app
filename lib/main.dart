@@ -10,7 +10,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:project_taxi_with_ai/screens/splash_screen.dart';
 
 import 'package:flutter_refresh_rate_control/flutter_refresh_rate_control.dart';
-import 'package:project_taxi_with_ai/widgets/crash_reporting_service.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'dart:async'; // For runZonedGuarded
 
 // **NEW:** Background message handler (must be a top-level function)
@@ -49,6 +49,7 @@ void main() async {
   runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      await Firebase.initializeApp();
 
       // Background message handler setup
       FirebaseMessaging.onBackgroundMessage(
@@ -64,21 +65,15 @@ void main() async {
         debugPrint("Failed to set refresh rate: $e");
       }
 
-      // Pass all uncaught errors from the framework to the crash reporter
-      FlutterError.onError = (FlutterErrorDetails details) {
-        FlutterError.presentError(details); // Log to console
-        CrashReportingService.showCrashDialog(
-          details.exception,
-          details.stack ?? StackTrace.empty,
-        );
-      };
+      // Pass all uncaught "fatal" errors from the framework to Crashlytics
+      FlutterError.onError =
+          FirebaseCrashlytics.instance.recordFlutterFatalError;
 
       runApp(const MyApp());
     },
     (error, stack) {
-      // Catch errors outside the Flutter framework
-      debugPrint("Caught global error: $error");
-      CrashReportingService.showCrashDialog(error, stack);
+      // Pass all uncaught asynchronous errors that aren't handled by the Flutter framework to Crashlytics
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
     },
   );
 }
