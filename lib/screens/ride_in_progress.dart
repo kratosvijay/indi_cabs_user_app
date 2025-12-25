@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart' hide Route;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -19,9 +20,9 @@ import 'chat_box.dart';
 import 'package:project_taxi_with_ai/controllers/ride_controller.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:flutter/services.dart';
 import 'package:project_taxi_with_ai/widgets/slide_to_cancel.dart';
 import 'edit_location.dart';
+import 'package:project_taxi_with_ai/widgets/liftable_banner_ad.dart';
 
 class RideInProgressScreen extends StatefulWidget {
   final User user;
@@ -53,6 +54,7 @@ class RideInProgressScreen extends StatefulWidget {
 
 class _RideInProgressScreenState extends State<RideInProgressScreen> {
   final Completer<GoogleMapController> _mapController = Completer();
+  GoogleMapController? _liveMapController;
   final RideController _rideController = RideController.instance;
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
@@ -72,6 +74,10 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
   late LatLng _newlyAdjustedPickup;
   String _pickupAddress = "Fetching address...";
   String _destinationAddress = "Fetching address...";
+
+  final DraggableScrollableController _sheetController =
+      DraggableScrollableController();
+  double _currentSheetSize = 0.45; // Matches initialChildSize
 
   Timer? _driverMoveTimer;
   late final String _apiKey;
@@ -101,13 +107,12 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     _apiKey = dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
     _locationService = LocationService(apiKey: _apiKey);
     _directionsService = DirectionsService(apiKey: _apiKey);
-    _startRidePin = widget.rideRequestId.substring(0, 4);
-
     // Defer heavy initialization and map rendering
     Future.delayed(const Duration(milliseconds: 500), () {
       if (mounted) {
         setState(() => _isMapReady = true);
         _setupInitialMapState();
+        _fetchRideDetails(); // Ensure we get the PINs
       }
     });
 
@@ -118,6 +123,22 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     _driverSub = _rideController.assignedDriver.listen((d) {
       if (d != null) _updateDriverMarker(d);
     });
+
+    _sheetController.addListener(() {
+      // Throttle updates to avoid overwhelming the UI/Platform Channel
+      final newSize = _sheetController.size;
+      if ((newSize - _currentSheetSize).abs() > 0.01) {
+        setState(() {
+          _currentSheetSize = newSize;
+        });
+      }
+    });
+
+    // Check initial status
+    if (_rideController.rideStatus.value == 'arrived') {
+      _driverHasArrived = true;
+      _startWaitingTimer();
+    }
   }
 
   Future<void> _setupInitialMapState() async {
@@ -142,11 +163,13 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     _driverSub?.cancel();
     _driverMoveTimer?.cancel();
     _waitingTimer?.cancel();
+    _sheetController.dispose();
     super.dispose();
   }
 
-  void _handleRideStatusChange(String status) async {
+  void _handleRideStatusChange(String rawStatus) async {
     if (!mounted) return;
+    final status = rawStatus.toLowerCase();
     if (status == 'arrived' && !_driverHasArrived) {
       setState(() => _driverHasArrived = true);
       _startWaitingTimer();
@@ -160,7 +183,18 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         _animateCameraToBounds();
       }
       if (mounted) {
-        displaySnackBar(context, "Driver has arrived at pickup location.");
+        Get.snackbar(
+          "Driver Arrived",
+          "Your driver has reached the pickup location.",
+          snackPosition: SnackPosition.TOP,
+          backgroundColor: Colors.black.withValues(alpha: 0.6),
+          colorText: Colors.white,
+          margin: const EdgeInsets.all(10),
+          borderRadius: 20,
+          barBlur: 10,
+          icon: const Icon(Icons.info_outline, color: Colors.white),
+          duration: const Duration(seconds: 4),
+        );
       }
     } else if (status == 'started' && !_isRideStarted) {
       setState(() => _isRideStarted = true);
@@ -175,7 +209,25 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         _animateCameraToBounds();
       }
       if (mounted) {
-        displaySnackBar(context, "Ride started!");
+        Get.snackbar(
+          "Ride Started",
+          "Enjoy your ride! Tracking destination...",
+          snackPosition: SnackPosition.TOP,
+          backgroundColor: Colors.deepPurple,
+          colorText: Colors.white,
+          margin: const EdgeInsets.all(10),
+          borderRadius: 20,
+          icon: const Icon(Icons.local_taxi, color: Colors.white, size: 28),
+          shouldIconPulse: true,
+          duration: const Duration(seconds: 5),
+          boxShadows: [
+            BoxShadow(
+              color: Colors.deepPurple.withValues(alpha: 0.4),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        );
       }
     } else if (status == 'completed') {
       if (mounted) {
@@ -380,18 +432,22 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
   }
 
   Future<void> _animateDriverCamera() async {
-    if (!_mapController.isCompleted || _driver == null) return;
-    final GoogleMapController controller = await _mapController.future;
+    if (_liveMapController == null || _driver == null) return;
+    final GoogleMapController controller = _liveMapController!;
     if (!mounted) return;
-    controller.animateCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(
-          target: _driver!.currentLocation,
-          zoom: 17.5,
-          tilt: 30.0,
+    try {
+      await controller.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: _driver!.currentLocation,
+            zoom: 17.5,
+            tilt: 30.0,
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      debugPrint("Driver camera animation failed: $e");
+    }
   }
 
   Future<void> _loadInitialAddresses() async {
@@ -480,20 +536,17 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
   }
 
   void _animateCameraToBounds() async {
-    if (!_mapController.isCompleted || _driver == null) return;
-    final GoogleMapController controller = await _mapController.future;
+    if (_liveMapController == null || _driver == null) return;
+    final GoogleMapController controller = _liveMapController!;
     if (!mounted) return;
 
     List<LatLng> allPoints = [];
     allPoints.add(_driver!.currentLocation);
 
     if (_isRideStarted) {
-      // If ride started, focus on Driver -> Destination
       if (!widget.isRental) {
         allPoints.add(widget.destinationPosition);
         if (widget.intermediateStops != null) {
-          // Optionally add intermediate stops if needed, or just focus on final destination
-          // for now let's keep them to ensure they are in view if close
           for (var stopData in widget.intermediateStops!) {
             final locationMap = stopData['location'] as Map<String, dynamic>;
             allPoints.add(
@@ -506,52 +559,61 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         }
       }
     } else {
-      // If ride not started (on way to pickup or arrived), focus on Driver -> Pickup
       allPoints.add(_currentPickupLocation);
     }
 
-    if (allPoints.length == 1) {
-      _isAnimating = true;
-      await controller.animateCamera(
-        CameraUpdate.newLatLngZoom(allPoints[0], 16.0),
-      );
-      _isAnimating = false;
-      return;
-    }
-
-    LatLng southwest = LatLng(
-      allPoints.map((p) => p.latitude).reduce(min),
-      allPoints.map((p) => p.longitude).reduce(min),
-    );
-    LatLng northeast = LatLng(
-      allPoints.map((p) => p.latitude).reduce(max),
-      allPoints.map((p) => p.longitude).reduce(max),
-    );
-
-    LatLngBounds bounds = LatLngBounds(
-      southwest: southwest,
-      northeast: northeast,
-    );
-    Future.delayed(const Duration(milliseconds: 100), () async {
-      if (mounted) {
-        try {
-          _isAnimating = true;
-          await controller.animateCamera(
-            CameraUpdate.newLatLngBounds(bounds, 100.0),
-          );
-          _isAnimating = false;
-        } catch (e) {
-          LatLng center = LatLng(
-            (southwest.latitude + northeast.latitude) / 2,
-            (southwest.longitude + northeast.longitude) / 2,
-          );
-          await controller.animateCamera(
-            CameraUpdate.newLatLngZoom(center, 16.0),
-          );
-          _isAnimating = false;
-        }
+    try {
+      if (allPoints.length == 1) {
+        _isAnimating = true;
+        await controller.animateCamera(
+          CameraUpdate.newLatLngZoom(allPoints[0], 16.0),
+        );
+        _isAnimating = false;
+        return;
       }
-    });
+
+      LatLng southwest = LatLng(
+        allPoints.map((p) => p.latitude).reduce(min),
+        allPoints.map((p) => p.longitude).reduce(min),
+      );
+      LatLng northeast = LatLng(
+        allPoints.map((p) => p.latitude).reduce(max),
+        allPoints.map((p) => p.longitude).reduce(max),
+      );
+
+      LatLngBounds bounds = LatLngBounds(
+        southwest: southwest,
+        northeast: northeast,
+      );
+      Future.delayed(const Duration(milliseconds: 100), () async {
+        if (mounted) {
+          try {
+            _isAnimating = true;
+            await controller.animateCamera(
+              CameraUpdate.newLatLngBounds(bounds, 100.0),
+            );
+            _isAnimating = false;
+          } catch (e) {
+            try {
+              LatLng center = LatLng(
+                (southwest.latitude + northeast.latitude) / 2,
+                (southwest.longitude + northeast.longitude) / 2,
+              );
+              await controller.animateCamera(
+                CameraUpdate.newLatLngZoom(center, 16.0),
+              );
+              _isAnimating = false;
+            } catch (e) {
+              debugPrint("Map animation failed: $e");
+              _isAnimating = false;
+            }
+          }
+        }
+      });
+    } catch (e) {
+      debugPrint("Immediate map animation failed: $e");
+      _isAnimating = false;
+    }
   }
 
   void _startWaitingTimer() {
@@ -678,50 +740,18 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     }
   }
 
-  void _shareRide() {
+  void _shareRide() async {
     final String message =
         "Track my ride with IndiCabs! \n"
         "Driver: ${_driver?.name ?? 'Assigned Driver'} (${_driver?.carNumber ?? ''})\n"
         "Vehicle: ${_driver?.carModel ?? ''}\n"
         "Status: ${_currentRideStatus.toUpperCase()}\n"
         "Pickup: $_pickupAddress\n"
-        "Dropoff: $_destinationAddress";
+        "Dropoff: $_destinationAddress\n\n"
+        "Track Live: https://projecttaxi-df0d2.web.app/track?id=${widget.rideRequestId}";
 
-    showModalBottomSheet(
-      context: context,
-      builder: (context) {
-        return SafeArea(
-          child: Wrap(
-            children: [
-              ListTile(
-                leading: const Icon(Icons.message),
-                title: const Text('Share via SMS'),
-                onTap: () async {
-                  Get.back();
-                  final Uri smsUri = Uri(
-                    scheme: 'sms',
-                    path: '',
-                    queryParameters: <String, String>{'body': message},
-                  );
-                  if (await canLaunchUrl(smsUri)) {
-                    await launchUrl(smsUri);
-                  }
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.copy),
-                title: const Text('Copy to Clipboard'),
-                onTap: () {
-                  Get.back();
-                  Clipboard.setData(ClipboardData(text: message));
-                  displaySnackBar(context, "Ride details copied to clipboard!");
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
+    // ignore: deprecated_member_use
+    await Share.share(message, subject: 'My Ride Details - IndiCabs');
   }
 
   void _navigateToHome({int delaySeconds = 0}) {
@@ -776,9 +806,21 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                   status == 'arrived' ||
                   status == 'started') {
                 if (mounted) {
-                  displaySnackBar(
-                    context,
+                  Get.snackbar(
+                    "Ride Minimized",
                     "Ride continues in background. Resume from Ride History.",
+                    snackPosition: SnackPosition.TOP,
+                    backgroundColor: Colors.blueGrey.shade800,
+                    colorText: Colors.white,
+                    margin: const EdgeInsets.all(10),
+                    borderRadius: 20,
+                    icon: const Icon(
+                      Icons.layers_outlined,
+                      color: Colors.white,
+                    ),
+                    duration: const Duration(seconds: 4),
+                    isDismissible: true,
+                    forwardAnimationCurve: Curves.easeOutBack,
                   );
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (mounted) {
@@ -807,9 +849,18 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                 status == 'arrived' ||
                 status == 'started') {
               if (mounted) {
-                displaySnackBar(
-                  context,
+                Get.snackbar(
+                  "Ride Minimized",
                   "Ride continues in background. Resume from Ride History.",
+                  snackPosition: SnackPosition.TOP,
+                  backgroundColor: Colors.blueGrey.shade800,
+                  colorText: Colors.white,
+                  margin: const EdgeInsets.all(10),
+                  borderRadius: 20,
+                  icon: const Icon(Icons.layers_outlined, color: Colors.white),
+                  duration: const Duration(seconds: 4),
+                  isDismissible: true,
+                  forwardAnimationCurve: Curves.easeOutBack,
                 );
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (mounted) {
@@ -826,74 +877,73 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
               if (!_isMapReady)
                 const Center(child: CircularProgressIndicator())
               else
-                GoogleMap(
-                  initialCameraPosition: CameraPosition(
-                    target: driver?.currentLocation ?? widget.pickupLocation,
-                    zoom: 16,
-                  ),
-                  markers: _markers,
-                  polylines: _polylines,
-                  myLocationButtonEnabled: false,
-                  zoomControlsEnabled: false,
-                  scrollGesturesEnabled: true,
-                  zoomGesturesEnabled: true,
-                  tiltGesturesEnabled: true,
-                  rotateGesturesEnabled: true,
-                  onCameraMoveStarted: () {
-                    // Google Maps Flutter 2.x onCameraMoveStarted callback doesn't provide reason in some versions or I might be using it wrong.
-                    // Actually, looking at the docs, it might be `void Function()?`.
-                    // Let's assume any move start is a gesture for now if we can't get the reason,
-                    // BUT `onCameraMoveStarted` usually doesn't pass arguments.
-                    // `onCameraMove` passes position.
-                    // If we can't distinguish, we might need another way.
-                    // However, usually `onCameraMoveStarted` is void.
-                    // Let's check if we can use `onCameraMove` to detect user interaction? No.
-                    // Let's just set locked to false on ANY camera move start?
-                    // That would break auto-zoom.
-                    // Wait, `google_maps_flutter` usually supports `CameraMoveStartedReason` in `onCameraMoveStarted`?
-                    // No, it seems `onCameraMoveStarted` is `VoidCallback`.
-                    // `onCameraIdle` is `VoidCallback`.
-                    // The `reason` is not passed.
-                    // So we can't easily distinguish gesture vs animation.
-                    // WORKAROUND: We know when WE start an animation (in `_animateCameraToBounds`).
-                    // We can set a flag `_isAnimating` = true before animating, and false after.
-                    // If `onCameraMoveStarted` triggers and `_isAnimating` is false, it's a gesture.
-                    if (!_isAnimating) {
-                      setState(() => _isCameraLocked = false);
-                    }
-                  },
-                  onMapCreated: (GoogleMapController controller) {
-                    _mapController.complete(controller);
-                    _animateCameraToBounds();
-                  },
-                  onCameraMove: _isEditingPickup
-                      ? (position) {
-                          _newlyAdjustedPickup = position.target;
-                          setState(() {
-                            _markers.removeWhere(
-                              (m) => m.markerId.value == 'pickup',
-                            );
-                            _markers.add(
-                              Marker(
-                                markerId: const MarkerId('pickup'),
-                                position: _newlyAdjustedPickup,
-                                icon: BitmapDescriptor.defaultMarkerWithHue(
-                                  BitmapDescriptor.hueGreen,
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: GoogleMap(
+                    key: const ValueKey('google_map'),
+                    padding: EdgeInsets.only(
+                      bottom: _isEditingPickup
+                          ? 0
+                          : (MediaQuery.of(context).size.height *
+                                    _currentSheetSize) +
+                                20,
+                    ),
+                    initialCameraPosition: CameraPosition(
+                      target: driver?.currentLocation ?? widget.pickupLocation,
+                      zoom: 16,
+                    ),
+                    markers: _markers,
+                    polylines: _polylines,
+                    myLocationButtonEnabled: false,
+                    zoomControlsEnabled: false,
+                    scrollGesturesEnabled: true,
+                    zoomGesturesEnabled: true,
+                    tiltGesturesEnabled: true,
+                    rotateGesturesEnabled: true,
+                    onCameraMoveStarted: () {
+                      if (!_isAnimating) {
+                        setState(() => _isCameraLocked = false);
+                      }
+                    },
+                    onMapCreated: (GoogleMapController controller) {
+                      _liveMapController = controller;
+                      if (!_mapController.isCompleted) {
+                        _mapController.complete(controller);
+                      }
+                      _animateCameraToBounds();
+                    },
+                    onCameraMove: _isEditingPickup
+                        ? (position) {
+                            _newlyAdjustedPickup = position.target;
+                            setState(() {
+                              _markers.removeWhere(
+                                (m) => m.markerId.value == 'pickup',
+                              );
+                              _markers.add(
+                                Marker(
+                                  markerId: const MarkerId('pickup'),
+                                  position: _newlyAdjustedPickup,
+                                  icon: BitmapDescriptor.defaultMarkerWithHue(
+                                    BitmapDescriptor.hueGreen,
+                                  ),
                                 ),
-                              ),
-                            );
-                          });
-                        }
-                      : null,
-                  onCameraIdle: _isEditingPickup
-                      ? () async {
-                          final newAddress = await _locationService
-                              .getAddressFromLatLng(_newlyAdjustedPickup);
-                          if (mounted) {
-                            setState(() => _pickupAddress = newAddress);
+                              );
+                            });
                           }
-                        }
-                      : null,
+                        : null,
+                    onCameraIdle: _isEditingPickup
+                        ? () async {
+                            final newAddress = await _locationService
+                                .getAddressFromLatLng(_newlyAdjustedPickup);
+                            if (mounted) {
+                              setState(() => _pickupAddress = newAddress);
+                            }
+                          }
+                        : null,
+                  ),
                 ),
               if (_isEditingPickup)
                 const Center(
@@ -911,10 +961,11 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
               else
                 _buildConfirmNewPickupButton(),
 
-              // GPS / Recenter Button
               if (!_isEditingPickup)
                 Positioned(
-                  bottom: 550, // Adjusted to be above the bottom sheet
+                  bottom:
+                      (MediaQuery.of(context).size.height * _currentSheetSize) +
+                      20,
                   right: 16,
                   child: FloatingActionButton(
                     mini: true,
@@ -930,6 +981,12 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                     ),
                   ),
                 ),
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: LiftableBannerAd(),
+              ),
             ],
           ),
         ),
@@ -945,7 +1002,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
 
     if (_driver == null) {
       return Positioned(
-        bottom: 0,
+        bottom: 30, // Above banner ad
         left: 0,
         right: 0,
         child: Container(
@@ -979,305 +1036,391 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
       }
     }
 
-    return Positioned(
-      bottom: 0,
-      left: 0,
-      right: 0,
-      child: Container(
-        padding: const EdgeInsets.all(20.0),
-        decoration: BoxDecoration(
-          color: backgroundColor,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withAlpha(20),
-              blurRadius: 20,
-              offset: const Offset(0, -5),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Timer / Status Header
-            if (_driverHasArrived)
+    return DraggableScrollableSheet(
+      controller: _sheetController,
+      initialChildSize: 0.45,
+      minChildSize: 0.20,
+      maxChildSize: 0.85,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withAlpha(20),
+                blurRadius: 20,
+                offset: const Offset(0, -5),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+              // Handle Bar
               Center(
                 child: Container(
-                  margin: const EdgeInsets.only(bottom: 16),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
+                  width: 40,
+                  height: 5,
+                  margin: const EdgeInsets.only(bottom: 10),
                   decoration: BoxDecoration(
-                    color: _isRideStarted
-                        ? Colors.blueAccent.withAlpha(30)
-                        : timerColor.withAlpha(30),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    _isRideStarted ? "Ride Started" : timerText,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: _isRideStarted ? Colors.blueAccent : timerColor,
-                    ),
+                    color: isDark ? Colors.grey[700] : Colors.grey[300],
+                    borderRadius: BorderRadius.circular(10),
                   ),
                 ),
               ),
 
-            // Driver Info Row
-            Row(
-              children: [
-                // Driver Photo
-                Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.primary, width: 2),
-                  ),
-                  child: CircleAvatar(
-                    radius: 28,
-                    backgroundColor: Colors.grey[200],
-                    backgroundImage: _driver!.photoUrl.isNotEmpty
-                        ? NetworkImage(_driver!.photoUrl)
-                        : null,
-                    child: _driver!.photoUrl.isEmpty
-                        ? const Icon(Icons.person, size: 30, color: Colors.grey)
-                        : null,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                // Driver Details Column
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        _driver!.name,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: textColor,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      // Vehicle Details: Brand Model (Number)
-                      Text(
-                        "${_driver!.vehicleBrand.isNotEmpty ? '${_driver!.vehicleBrand} ' : ''}${_driver!.vehicleModel.isNotEmpty ? _driver!.vehicleModel : _driver!.carModel} (${_driver!.carNumber})",
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: subTextColor,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      // Vehicle Class Badge
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.blueAccent.withAlpha(20),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(
-                            color: Colors.blueAccent.withAlpha(50),
-                            width: 0.5,
-                          ),
-                        ),
-                        child: Text(
-                          _driver!
-                              .vehicleType, // This now maps to vehicleClass (e.g. Sedan)
-                          style: const TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blueAccent,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Chat Button
-                Container(
-                  margin: const EdgeInsets.only(right: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.blueAccent.withAlpha(30),
-                    shape: BoxShape.circle,
-                  ),
-                  child: IconButton(
-                    icon: const Icon(Icons.chat, color: Colors.blueAccent),
-                    onPressed: () {
-                      Get.to(
-                        () => ChatScreen(
-                          rideId: widget.rideRequestId,
-                          rideCollectionPath: widget.isRental
-                              ? 'rental_requests'
-                              : 'ride_requests',
-                          currentUserId: widget.user.uid,
-                          recipientId: _driver!.id,
-                          recipientName: _driver!.name,
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                // Call Button
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.green.withAlpha(30),
-                    shape: BoxShape.circle,
-                  ),
-                  child: IconButton(
-                    icon: const Icon(Icons.phone, color: Colors.green),
-                    onPressed: () async {
-                      final Uri launchUri = Uri(
-                        scheme: 'tel',
-                        path: _driver!.phoneNumber,
-                      );
-                      if (await canLaunchUrl(launchUri)) {
-                        await launchUrl(launchUri);
-                      }
-                    },
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            const Divider(),
-            const SizedBox(height: 10),
-
-            // OTP / PIN Section
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      otpLabel,
+              // Timer / Status Header
+              if (_driverHasArrived)
+                Center(
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _isRideStarted
+                          ? Colors.blueAccent.withAlpha(30)
+                          : timerColor.withAlpha(30),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      _isRideStarted ? "Ride Started" : timerText,
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 14,
                         fontWeight: FontWeight.bold,
-                        color: subTextColor,
-                        letterSpacing: 1.0,
+                        color: _isRideStarted ? Colors.blueAccent : timerColor,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      displayOtp,
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: textColor,
-                        letterSpacing: 2.0,
-                      ),
-                    ),
-                  ],
-                ),
-                // Vehicle Type Badge
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.blueAccent.withAlpha(20),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.blueAccent.withAlpha(50)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        _getVehicleIcon(widget.selectedVehicleType),
-                        size: 16,
-                        color: Colors.blueAccent,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        widget.selectedVehicleType,
-                        style: const TextStyle(
-                          color: Colors.blueAccent,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            // Fare Display
-            Obx(() {
-              final fare = _rideController.rideData['fare'];
-              if (fare != null) {
-                return Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        "Total Fare",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: textColor,
-                        ),
-                      ),
-                      Text(
-                        "₹$fare",
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green.shade700,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }
-              return const SizedBox.shrink();
-            }),
-            const SizedBox(height: 20),
 
-            // Location Info
-            _buildLocationRow(
-              Icons.my_location,
-              "Pickup",
-              _pickupAddress,
-              onEdit: () => _handleEditLocation(true),
-            ),
-            const SizedBox(height: 16),
-            if (!widget.isRental)
-              _buildLocationRow(
-                Icons.location_on,
-                "Drop-off",
-                _destinationAddress,
-                onEdit: () => _handleEditLocation(false),
-              ),
-            // Cancel Button (only if not started)
-            if (!_isRideStarted) ...[
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: SlideToCancel(
-                  key: _sliderKey,
-                  label: "Slide to Cancel Ride",
-                  onCancelled: () {
-                    _showCancelConfirmationDialog();
-                  },
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: scrollController,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Driver Info Row
+                        Row(
+                          children: [
+                            // Driver Photo
+                            Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: AppColors.primary,
+                                  width: 2,
+                                ),
+                              ),
+                              child: CircleAvatar(
+                                radius: 28,
+                                backgroundColor: Colors.grey[200],
+                                backgroundImage: _driver!.photoUrl.isNotEmpty
+                                    ? NetworkImage(_driver!.photoUrl)
+                                    : null,
+                                child: _driver!.photoUrl.isEmpty
+                                    ? const Icon(
+                                        Icons.person,
+                                        size: 30,
+                                        color: Colors.grey,
+                                      )
+                                    : null,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            // Driver Details Column
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    _driver!.name,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: textColor,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  // Vehicle Details: Brand Model (Number)
+                                  Text(
+                                    "${_driver!.vehicleBrand.isNotEmpty ? '${_driver!.vehicleBrand} ' : ''}${_driver!.vehicleModel.isNotEmpty ? _driver!.vehicleModel : _driver!.carModel} (${_driver!.carNumber})",
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: subTextColor,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  // Vehicle Class Badge
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blueAccent.withAlpha(20),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(
+                                        color: Colors.blueAccent.withAlpha(50),
+                                        width: 0.5,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      _driver!
+                                          .vehicleType, // This now maps to vehicleClass (e.g. Sedan)
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.blueAccent,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // Chat Button
+                            Container(
+                              margin: const EdgeInsets.only(right: 10),
+                              decoration: BoxDecoration(
+                                color: Colors.blueAccent.withAlpha(30),
+                                shape: BoxShape.circle,
+                              ),
+                              child: IconButton(
+                                icon: const Icon(
+                                  Icons.chat,
+                                  color: Colors.blueAccent,
+                                ),
+                                onPressed: () {
+                                  Get.to(
+                                    () => ChatScreen(
+                                      rideId: widget.rideRequestId,
+                                      rideCollectionPath: widget.isRental
+                                          ? 'rental_requests'
+                                          : 'ride_requests',
+                                      currentUserId: widget.user.uid,
+                                      recipientId: _driver!.id,
+                                      recipientName: _driver!.name,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                            // Call Button
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.green.withAlpha(30),
+                                shape: BoxShape.circle,
+                              ),
+                              child: IconButton(
+                                icon: const Icon(
+                                  Icons.phone,
+                                  color: Colors.green,
+                                ),
+                                onPressed: () async {
+                                  final Uri launchUri = Uri(
+                                    scheme: 'tel',
+                                    path: _driver!.phoneNumber,
+                                  );
+                                  if (await canLaunchUrl(launchUri)) {
+                                    await launchUrl(launchUri);
+                                  }
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        const Divider(),
+                        const SizedBox(height: 10),
+
+                        // OTP / PIN Section
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  otpLabel,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: subTextColor,
+                                    letterSpacing: 1.0,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  displayOtp,
+                                  style: TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                    color: textColor,
+                                    letterSpacing: 2.0,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            // Vehicle Type Badge
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.blueAccent.withAlpha(20),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: Colors.blueAccent.withAlpha(50),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    _getVehicleIcon(widget.selectedVehicleType),
+                                    size: 16,
+                                    color: Colors.blueAccent,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    widget.selectedVehicleType,
+                                    style: const TextStyle(
+                                      color: Colors.blueAccent,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        // Fare Display
+                        Obx(() {
+                          final fare = _rideController.rideData['fare'];
+                          if (fare != null) {
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 10),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    "Total Fare",
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: textColor,
+                                    ),
+                                  ),
+                                  Text(
+                                    "₹$fare",
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.green.shade700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+                          return const SizedBox.shrink();
+                        }),
+                        const SizedBox(height: 20),
+
+                        // Location Info
+                        _buildLocationRow(
+                          Icons.my_location,
+                          "Pickup",
+                          _pickupAddress,
+                          onEdit: () => _handleEditLocation(true),
+                        ),
+                        const SizedBox(height: 16),
+                        if (!widget.isRental)
+                          _buildLocationRow(
+                            Icons.location_on,
+                            "Drop-off",
+                            _destinationAddress,
+                            onEdit: () => _handleEditLocation(false),
+                          ),
+                        // Cancel Button (only if not started)
+                        if (!_isRideStarted &&
+                            _currentRideStatus != 'started' &&
+                            _currentRideStatus != 'on_trip') ...[
+                          const SizedBox(height: 20),
+                          SizedBox(
+                            width: double.infinity,
+                            child: SlideToCancel(
+                              key: _sliderKey,
+                              label: "Slide to Cancel Ride",
+                              onCancelled: () {
+                                _showCancelConfirmationDialog();
+                              },
+                            ),
+                          ),
+                        ],
+
+                        // --- Placeholder for Future Ads ---
+                        Container(
+                          height: 300,
+                          alignment: Alignment.center,
+                          margin: const EdgeInsets.only(top: 40),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? Colors.black12
+                                : Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isDark
+                                  ? Colors.white10
+                                  : Colors.grey.shade200,
+                            ),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.ad_units_outlined,
+                                size: 40,
+                                color: subTextColor.withValues(alpha: 0.5),
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                "Ad Space Placeholder",
+                                style: TextStyle(
+                                  color: subTextColor.withValues(alpha: 0.5),
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Extra padding to ensure content isn't hidden by bottom insets
+                        SizedBox(
+                          height: 50 + MediaQuery.of(context).padding.bottom,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ],
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -1449,7 +1592,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
 
   Widget _buildConfirmNewPickupButton() {
     return Positioned(
-      bottom: 0,
+      bottom: 30, // Above banner ad
       left: 0,
       right: 0,
       child: SafeArea(

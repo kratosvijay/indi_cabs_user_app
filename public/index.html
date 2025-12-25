@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Indi Cabs - Live Ride Tracking</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+
+        #status-card {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            padding: 20px;
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            transition: transform 0.3s ease;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        h2 {
+            margin: 0 0 10px 0;
+            font-size: 18px;
+            color: #333;
+        }
+
+        .info-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .info-row span {
+            font-size: 14px;
+            color: #666;
+            margin-left: 8px;
+        }
+
+        .driver-photo {
+            width: 50px;
+            height: 50px;
+            border-radius: 25px;
+            background: #eee;
+            margin-right: 15px;
+            object-fit: cover;
+        }
+
+        .status-badge {
+            background: #e3f2fd;
+            color: #1565c0;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            display: inline-block;
+            margin-bottom: 10px;
+        }
+
+        .status-badge.success {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+    </style>
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+    <!-- Google Maps API -->
+    <!-- REPLACE YOUR_API_KEY WITH YOUR REAL GOOGLE MAPS API KEY -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDxGUTTcU-yMjVfqbhSPeg8GGvfSrqtmSo&callback=initMap"
+        async defer></script>
+</head>
+
+<body>
+    <div id="map"></div>
+
+    <div id="status-card" class="hidden">
+        <div id="status-badge" class="status-badge">Finding Driver...</div>
+        <div style="display: flex; align-items: center;">
+            <img id="driver-photo" class="driver-photo" src="" alt="Driver" />
+            <div>
+                <h2 id="driver-name">Driver Name</h2>
+                <div class="info-row">
+                    <span>🚗</span> <span id="vehicle-info">Vehicle Model • Number</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // TODO: REPLACE WITH YOUR FIREBASE CONFIG
+        const firebaseConfig = {
+            apiKey: "AIzaSyAX545tVUg5GV2KJRPRCKz-kPYyL0H9Dfc",
+            authDomain: "projecttaxi-df0d2.firebaseapp.com",
+            projectId: "projecttaxi-df0d2",
+            storageBucket: "projecttaxi-df0d2.firebasestorage.app",
+            messagingSenderId: "854114457795",
+            appId: "1:854114457795:web:ddd82aca3b5a0739b7ea76",
+            measurementId: "G-L0SQG4NDQP"
+        };
+
+        // Initialize Firebase
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.firestore();
+
+        let map;
+        let driverMarker;
+        const rideId = new URLSearchParams(window.location.search).get('id');
+
+        function initMap() {
+            map = new google.maps.Map(document.getElementById("map"), {
+                center: { lat: 20.5937, lng: 78.9629 }, // Default Center
+                zoom: 15,
+                disableDefaultUI: true,
+            });
+
+            if (rideId) {
+                startTracking();
+            } else {
+                alert("No ride ID provided!");
+            }
+        }
+
+        function startTracking() {
+            // Listen to Ride Request
+            db.collection('ride_requests').doc(rideId).onSnapshot((doc) => {
+                if (doc && doc.exists) {
+                    const data = doc.data();
+                    updateUI(data);
+
+                    // Listen to Driver Location if assigned
+                    if (data.driverId) {
+                        db.collection('drivers').doc(data.driverId).onSnapshot((driverDoc) => {
+                            if (driverDoc.exists) {
+                                const driverData = driverDoc.data();
+                                updateMap(driverData.currentLocation, driverData.heading);
+
+                                // Update Driver Info
+                                const dName = driverData.firstName || driverData.name || "Assigned Driver";
+                                document.getElementById('driver-name').innerText = dName;
+                                document.getElementById('vehicle-info').innerText = (driverData.vehicleType || driverData.carModel || "") + " • " + (driverData.vehicleNumber || driverData.carNumber || "");
+                                if (driverData.photoUrl) {
+                                    document.getElementById('driver-photo').src = driverData.photoUrl;
+                                }
+                            }
+                        });
+                    }
+                } else {
+                    document.getElementById('status-badge').innerText = "Ride Not Found";
+                    document.getElementById('status-card').classList.remove('hidden');
+                }
+            }, (error) => {
+                console.error("Ride Listener Error: " + error.message);
+            });
+        }
+
+        function updateUI(data) {
+            const card = document.getElementById('status-card');
+            card.classList.remove('hidden');
+
+            // Status
+            const rawStatus = (data.status || 'Unknown');
+            const statusEl = document.getElementById('status-badge');
+            statusEl.innerText = rawStatus.toUpperCase().replace('_', ' ');
+
+            // Color Logic
+            const s = rawStatus.toLowerCase();
+            if (s.includes('start') || s.includes('trip') || s.includes('arriv')) {
+                statusEl.classList.add('success');
+            } else {
+                statusEl.classList.remove('success');
+            }
+        }
+
+        function updateMap(location, heading) {
+            if (!location) return;
+
+            const latLng = { lat: location.latitude, lng: location.longitude };
+
+            if (!driverMarker) {
+                driverMarker = new google.maps.Marker({
+                    position: latLng,
+                    map: map,
+                    icon: {
+                        path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                        scale: 6,
+                        fillColor: "blue",
+                        fillOpacity: 1,
+                        strokeWeight: 2,
+                        rotation: heading || 0
+                    },
+                    title: "Driver"
+                });
+            } else {
+                driverMarker.setPosition(latLng);
+                const icon = driverMarker.getIcon();
+                icon.rotation = heading || 0;
+                driverMarker.setIcon(icon);
+            }
+
+            map.panTo(latLng);
+        }
+    </script>
+</body>
+
+</html>

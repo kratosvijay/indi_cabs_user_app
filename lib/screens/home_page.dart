@@ -16,6 +16,7 @@ import 'package:flutter/gestures.dart'; // For gestureRecognizers
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:project_taxi_with_ai/screens/about.dart';
+import 'package:project_taxi_with_ai/widgets/liftable_banner_ad.dart';
 
 // Import Models, Services, Widgets
 import 'package:project_taxi_with_ai/screens/login_screen.dart';
@@ -461,7 +462,7 @@ class _HomePageState extends State<HomePage> {
     if (rideType == RideType.rental) {
       _showRentalBottomSheet();
     } else if (rideType == RideType.acting) {
-      displaySnackBar(context, "Acting Driver Coming Soon!");
+      _showRentalBottomSheet(isActingDriver: true);
     } else if (rideType == RideType.bookForOther) {
       Get.to(
         () => BookForOtherScreen(
@@ -804,7 +805,7 @@ class _HomePageState extends State<HomePage> {
                   _selectedServiceType == RideType.acting
               ? 290
               : 100)
-        : 0;
+        : 30; // 30 for collapsed banner ad height
 
     return Scaffold(
       key: _scaffoldKey,
@@ -917,15 +918,21 @@ class _HomePageState extends State<HomePage> {
                       bottom: 0,
                       left: 0,
                       right: 0,
-                      child: Visibility(
-                        visible: _destinationPosition == null,
-                        replacement: Container(),
-                        child: BottomBarWidget(
-                          key: _bottomBarKey, // **NEW:** Assign key
-                          selectedServiceType: _selectedServiceType,
-                          onServiceTypeSelected: _handleServiceTypeSelected,
-                          onPredefinedDestinationTap: _handlePredefinedTap,
-                        ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Visibility(
+                            visible: _destinationPosition == null,
+                            replacement: Container(),
+                            child: BottomBarWidget(
+                              key: _bottomBarKey,
+                              selectedServiceType: _selectedServiceType,
+                              onServiceTypeSelected: _handleServiceTypeSelected,
+                              onPredefinedDestinationTap: _handlePredefinedTap,
+                            ),
+                          ),
+                          const LiftableBannerAd(),
+                        ],
                       ),
                     ),
                     // Search UI
@@ -1144,7 +1151,7 @@ class _HomePageState extends State<HomePage> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  "Version 1.0.0",
+                  "Version 1.2.1",
                   style: TextStyle(
                     color: Theme.of(context).disabledColor,
                     fontSize: 12,

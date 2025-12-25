@@ -14,6 +14,7 @@ import '../widgets/snackbar.dart'; // Import snackbar
 import 'home_page.dart';
 import 'package:project_taxi_with_ai/widgets/pro_library.dart'; // Import Pro Library
 import 'package:project_taxi_with_ai/app_colors.dart'; // Import AppColors
+import 'package:project_taxi_with_ai/widgets/liftable_banner_ad.dart';
 
 class SearchingForRideScreen extends StatefulWidget {
   final User user;
@@ -646,6 +647,12 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
                     ),
                 ],
               ),
+            ),
+            const Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: LiftableBannerAd(),
             ),
           ],
         ),

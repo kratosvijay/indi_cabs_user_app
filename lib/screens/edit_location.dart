@@ -5,8 +5,7 @@ import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
-import 'package:project_taxi_with_ai/widgets/data_models.dart';
-import 'package:uuid/uuid.dart';
+
 import 'package:project_taxi_with_ai/app_colors.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:project_taxi_with_ai/widgets/snackbar.dart';
@@ -23,18 +22,12 @@ class EditLocationScreen extends StatefulWidget {
 
 class _EditLocationScreenState extends State<EditLocationScreen> {
   final Completer<GoogleMapController> _mapController = Completer();
-  final TextEditingController _searchController = TextEditingController();
-  final FocusNode _searchFocusNode = FocusNode();
 
   late LatLng _selectedLocation;
   String _selectedAddress = "Loading...";
 
   // --- Places API State ---
   late final String _apiKey;
-  Timer? _debounce;
-  final Uuid _uuid = const Uuid();
-  String? _sessionToken;
-  List<PlaceAutocompletePrediction> _predictions = [];
 
   @override
   void initState() {
@@ -46,94 +39,12 @@ class _EditLocationScreenState extends State<EditLocationScreen> {
       throw Exception("API Key not found in .env file");
     }
     _apiKey = apiKey;
-    _sessionToken = _uuid.v4();
-
-    _searchController.addListener(_onSearchChanged);
     _getAddressFromLatLng(_selectedLocation);
   }
 
   @override
   void dispose() {
-    _searchController.dispose();
-    _searchFocusNode.dispose();
-    _debounce?.cancel();
     super.dispose();
-  }
-
-  void _onSearchChanged() {
-    // No setState here to avoid rebuilding map while typing
-    if (!_searchFocusNode.hasFocus) return;
-    if (_debounce?.isActive ?? false) _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 500), () {
-      if (_searchController.text.isNotEmpty) {
-        _fetchAutocompleteResults(_searchController.text);
-      } else {
-        setState(() => _predictions = []);
-      }
-    });
-  }
-
-  Future<void> _fetchAutocompleteResults(String input) async {
-    if (_sessionToken == null) return;
-    final Uri uri = Uri.parse(
-      'https://places.googleapis.com/v1/places:autocomplete',
-    );
-    final Map<String, String> headers = {
-      'Content-Type': 'application/json',
-      'X-Goog-Api-Key': _apiKey,
-    };
-    final Map<String, dynamic> body = {
-      'input': input,
-      'sessionToken': _sessionToken,
-      'includedRegionCodes': ['in'],
-    };
-    final response = await http.post(
-      uri,
-      headers: headers,
-      body: jsonEncode(body),
-    );
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      if (data['suggestions'] != null && mounted) {
-        setState(() {
-          _predictions = (data['suggestions'] as List)
-              .map((p) => PlaceAutocompletePrediction.fromJson(p))
-              .toList();
-        });
-      }
-    }
-  }
-
-  Future<void> _onPlaceSelected(String placeId) async {
-    if (_sessionToken == null) return;
-    final Uri uri = Uri.parse(
-      'https://places.googleapis.com/v1/places/$placeId',
-    );
-    final Map<String, String> headers = {
-      'Content-Type': 'application/json',
-      'X-Goog-Api-Key': _apiKey,
-      'X-Goog-FieldMask': 'displayName,location',
-    };
-    final response = await http.get(uri, headers: headers);
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      final location = data['location'];
-      if (location != null) {
-        final newLocation = LatLng(location['latitude'], location['longitude']);
-        setState(() {
-          _selectedLocation = newLocation;
-          _selectedAddress = data['displayName']?['text'] ?? 'Unknown place';
-          // Update text only if we selected a place
-          _searchController.text = _selectedAddress;
-          _predictions = [];
-        });
-        final controller = await _mapController.future;
-        controller.animateCamera(CameraUpdate.newLatLng(newLocation));
-        _sessionToken = _uuid.v4();
-      }
-    }
   }
 
   Future<void> _getAddressFromLatLng(LatLng position) async {
@@ -148,10 +59,6 @@ class _EditLocationScreenState extends State<EditLocationScreen> {
           final address = data['results'][0]['formatted_address'];
           setState(() {
             _selectedAddress = address;
-            // CRITICAL: Do NOT update text field if user is typing/searching
-            if (!_searchFocusNode.hasFocus) {
-              _searchController.text = address;
-            }
           });
         }
       }
@@ -260,122 +167,6 @@ class _EditLocationScreenState extends State<EditLocationScreen> {
                   ),
                 ],
               ),
-            ),
-          ),
-
-          // 3. Floating Search Bar
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 10,
-            left: 60, // Space for back button
-            right: 20,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    color: isDark ? Colors.grey[900] : Colors.white,
-                    borderRadius: BorderRadius.circular(30),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.1),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: TextField(
-                    controller: _searchController,
-                    focusNode: _searchFocusNode,
-                    style: TextStyle(
-                      color: isDark ? Colors.white : Colors.black87,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: 'Search location...',
-                      hintStyle: TextStyle(
-                        color: isDark ? Colors.grey[400] : Colors.grey[600],
-                      ),
-                      prefixIcon: Icon(
-                        Icons.search,
-                        color: isDark ? Colors.grey[400] : Colors.grey[600],
-                      ),
-                      suffixIcon: _searchController.text.isNotEmpty
-                          ? GestureDetector(
-                              onTap: () {
-                                _searchController.clear();
-                                // Ensure focus remains or is regained
-                                if (!_searchFocusNode.hasFocus) {
-                                  _searchFocusNode.requestFocus();
-                                }
-                                setState(() {
-                                  _predictions = [];
-                                });
-                              },
-                              child: Icon(
-                                Icons.clear,
-                                color: isDark
-                                    ? Colors.grey[400]
-                                    : Colors.grey[600],
-                              ),
-                            )
-                          : const SizedBox.shrink(),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 14,
-                      ),
-                    ),
-                    onChanged: (value) {
-                      setState(() {}); // Rebuild to toggle clear button
-                    },
-                  ),
-                ),
-                // Autocomplete Predictions
-                if (_predictions.isNotEmpty)
-                  Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    decoration: BoxDecoration(
-                      color: isDark ? Colors.grey[900] : Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.1),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    constraints: const BoxConstraints(maxHeight: 250),
-                    child: ListView.separated(
-                      padding: EdgeInsets.zero,
-                      shrinkWrap: true,
-                      itemCount: _predictions.length,
-                      separatorBuilder: (ctx, i) => Divider(
-                        height: 1,
-                        color: isDark ? Colors.grey[800] : Colors.grey[200],
-                      ),
-                      itemBuilder: (context, index) {
-                        final prediction = _predictions[index];
-                        return ListTile(
-                          leading: const Icon(
-                            Icons.location_on_outlined,
-                            size: 20,
-                          ),
-                          title: Text(
-                            prediction.description,
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: isDark ? Colors.white : Colors.black87,
-                            ),
-                          ),
-                          onTap: () {
-                            FocusScope.of(context).unfocus();
-                            _onPlaceSelected(prediction.placeId);
-                          },
-                        );
-                      },
-                    ),
-                  ),
-              ],
             ),
           ),
 

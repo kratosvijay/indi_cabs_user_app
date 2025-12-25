@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:project_taxi_with_ai/widgets/snackbar.dart';
 import 'package:project_taxi_with_ai/widgets/pro_library.dart';
 
@@ -64,11 +65,17 @@ class _ProfilePageState extends State<ProfilePage> {
     // Check for social login providers or verified email
     if (freshUser.emailVerified) {
       _isEmailReadOnly = true;
-      if (mounted) {
+
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'email_verified_shown_${freshUser.uid}';
+      final alreadyShown = prefs.getBool(key) ?? false;
+
+      if (!alreadyShown && mounted) {
         // Show snackbar after build
         WidgetsBinding.instance.addPostFrameCallback((_) {
           displaySnackBar(context, "Email Verified", isError: false);
         });
+        await prefs.setBool(key, true);
       }
     } else {
       for (final provider in freshUser.providerData) {
@@ -84,10 +91,25 @@ class _ProfilePageState extends State<ProfilePage> {
         .collection('users')
         .doc(freshUser.uid)
         .get();
+
+    String firstName = '';
+    String lastName = '';
+
+    // Parse displayName as fallback
+    if (freshUser.displayName != null && freshUser.displayName!.isNotEmpty) {
+      final names = freshUser.displayName!.split(' ');
+      if (names.isNotEmpty) {
+        firstName = names.first;
+        if (names.length > 1) {
+          lastName = names.sublist(1).join(' ');
+        }
+      }
+    }
+
     if (userDoc.exists) {
       final userData = userDoc.data() as Map<String, dynamic>;
-      _initialFirstName = userData['firstName'] ?? '';
-      _initialLastName = userData['lastName'] ?? '';
+      _initialFirstName = userData['firstName'] ?? firstName;
+      _initialLastName = userData['lastName'] ?? lastName;
       _initialEmail = userData['email'] ?? '';
 
       _firstNameController.text = _initialFirstName;
@@ -95,7 +117,12 @@ class _ProfilePageState extends State<ProfilePage> {
       _emailController.text = _initialEmail;
       _phoneController.text = userData['phoneNumber'] ?? '';
     } else {
+      _initialFirstName = firstName;
+      _initialLastName = lastName;
       _initialEmail = freshUser.email ?? '';
+
+      _firstNameController.text = _initialFirstName;
+      _lastNameController.text = _initialLastName;
       _emailController.text = _initialEmail;
       _phoneController.text = freshUser.phoneNumber ?? '';
     }
