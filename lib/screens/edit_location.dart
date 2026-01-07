@@ -10,6 +10,8 @@ import 'package:project_taxi_with_ai/app_colors.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:project_taxi_with_ai/widgets/snackbar.dart';
 import 'package:project_taxi_with_ai/widgets/pro_library.dart';
+import 'package:project_taxi_with_ai/widgets/places_service.dart';
+import 'package:project_taxi_with_ai/widgets/data_models.dart';
 
 class EditLocationScreen extends StatefulWidget {
   final LatLng initialLocation;
@@ -28,6 +30,10 @@ class _EditLocationScreenState extends State<EditLocationScreen> {
 
   // --- Places API State ---
   late final String _apiKey;
+  late final PlacesService _placesService;
+  final TextEditingController _searchController = TextEditingController();
+  List<PlaceAutocompletePrediction> _searchResults = [];
+  bool _isSearching = false;
 
   @override
   void initState() {
@@ -39,12 +45,108 @@ class _EditLocationScreenState extends State<EditLocationScreen> {
       throw Exception("API Key not found in .env file");
     }
     _apiKey = apiKey;
+    _placesService = PlacesService(apiKey: _apiKey);
     _getAddressFromLatLng(_selectedLocation);
   }
 
   @override
   void dispose() {
+    _searchController.dispose();
+    _placesService.cancelDebounce();
     super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    if (value.isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _isSearching = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _isSearching = true;
+    });
+
+    _placesService.fetchAutocompleteDebounced(
+      value,
+      _selectedLocation, // Bias results to the current map location
+      (results) {
+        if (mounted) {
+          setState(() {
+            _searchResults = results;
+            _isSearching = false;
+          });
+        }
+      },
+    );
+  }
+
+  // --- Helper: Ray-Casting Algorithm for Point in Polygon ---
+  bool _isPointInPolygon(LatLng point, List<LatLng> polygon) {
+    int intersectCount = 0;
+    for (int j = 0; j < polygon.length - 1; j++) {
+      if (_rayCastIntersect(point, polygon[j], polygon[j + 1])) {
+        intersectCount++;
+      }
+    }
+    return (intersectCount % 2) == 1; // Odd = inside, Even = outside
+  }
+
+  bool _rayCastIntersect(LatLng point, LatLng vertA, LatLng vertB) {
+    double aY = vertA.latitude;
+    double bY = vertB.latitude;
+    double aX = vertA.longitude;
+    double bX = vertB.longitude;
+    double pY = point.latitude;
+    double pX = point.longitude;
+
+    if ((aY > pY && bY > pY) || (aY < pY && bY < pY) || (aX < pX && bX < pX)) {
+      return false; // The segment is strictly above, below, or to the left of the point
+    }
+
+    double m = (aY - bY) / (aX - bX); // Slope
+    double bee = (-aX) * m + aY; // Y-intercept
+    double x = (pY - bee) / m; // X-coordinate of intersection
+
+    return x > pX;
+  }
+
+  Future<void> _onSearchResultSelected(
+    PlaceAutocompletePrediction prediction,
+  ) async {
+    // Hide keyboard
+    FocusManager.instance.primaryFocus?.unfocus();
+
+    // Clear search and results
+    _searchController.clear();
+    setState(() {
+      _searchResults = [];
+      _isSearching = false;
+    });
+
+    try {
+      final details = await _placesService.getPlaceDetails(prediction.placeId);
+      if (details != null && mounted) {
+        // **VALIDATION:** Check if inside service area
+        if (!_isPointInPolygon(details.location, chennaiBoundary)) {
+          displaySnackBar(context, "Location is outside our service area.");
+          return;
+        }
+
+        final controller = await _mapController.future;
+        controller.animateCamera(
+          CameraUpdate.newLatLngZoom(details.location, 17),
+        );
+        setState(() {
+          _selectedLocation = details.location;
+          _selectedAddress = details.address;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error getting place details: $e");
+    }
   }
 
   Future<void> _getAddressFromLatLng(LatLng position) async {
@@ -66,6 +168,15 @@ class _EditLocationScreenState extends State<EditLocationScreen> {
   }
 
   void _saveLocation() {
+    // **VALIDATION:** Check if inside service area
+    if (!_isPointInPolygon(_selectedLocation, chennaiBoundary)) {
+      displaySnackBar(
+        context,
+        "Selected location is outside our service area.",
+      );
+      return;
+    }
+
     Get.back(
       result: {'location': _selectedLocation, 'address': _selectedAddress},
     );
@@ -167,6 +278,112 @@ class _EditLocationScreenState extends State<EditLocationScreen> {
                   ),
                 ],
               ),
+            ),
+          ),
+
+          // 3. Search Bar
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 8,
+            left: 60, // Space for back button
+            right: 16,
+            child: Column(
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.grey[800] : Colors.white,
+                    borderRadius: BorderRadius.circular(30),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: _onSearchChanged,
+                    style: TextStyle(
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: "Search address...",
+                      hintStyle: TextStyle(
+                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 14,
+                      ),
+                      suffixIcon: _isSearching
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: Center(
+                                child: SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              ),
+                            )
+                          : Icon(
+                              Icons.search,
+                              color: isDark
+                                  ? Colors.grey[400]
+                                  : Colors.grey[600],
+                            ),
+                    ),
+                  ),
+                ),
+                if (_searchResults.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.grey[800] : Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.1),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    constraints: const BoxConstraints(maxHeight: 200),
+                    child: ListView.separated(
+                      padding: EdgeInsets.zero,
+                      shrinkWrap: true,
+                      itemCount: _searchResults.length,
+                      separatorBuilder: (context, index) => Divider(
+                        height: 1,
+                        color: isDark ? Colors.grey[700] : Colors.grey[200],
+                      ),
+                      itemBuilder: (context, index) {
+                        final result = _searchResults[index];
+                        return ListTile(
+                          dense: true,
+                          leading: const Icon(
+                            Icons.location_on,
+                            size: 20,
+                            color: Colors.grey,
+                          ),
+                          title: Text(
+                            result.description,
+                            style: TextStyle(
+                              color: isDark ? Colors.white : Colors.black87,
+                              fontSize: 14,
+                            ),
+                          ),
+                          onTap: () => _onSearchResultSelected(result),
+                        );
+                      },
+                    ),
+                  ),
+              ],
             ),
           ),
 

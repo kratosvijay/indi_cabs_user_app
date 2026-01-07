@@ -37,8 +37,9 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
   // Services
   late final PlacesService _placesService;
   late final DirectionsService _directionsService;
-  final HttpsCallable _calculateFaresCallable = FirebaseFunctions.instance
-      .httpsCallable('calculateFares');
+  final HttpsCallable _calculateFaresCallable = FirebaseFunctions.instanceFor(
+    region: 'asia-south1',
+  ).httpsCallable('calculateFares');
 
   // Controllers
   final TextEditingController _contactController = TextEditingController();

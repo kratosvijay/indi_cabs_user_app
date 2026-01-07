@@ -33,8 +33,9 @@ class SupportChatScreen extends StatefulWidget {
 
 class _SupportChatScreenState extends State<SupportChatScreen> {
   final TextEditingController _controller = TextEditingController();
-  final HttpsCallable _chatbotCallable = FirebaseFunctions.instance
-      .httpsCallable('getChatbotResponse');
+  final HttpsCallable _chatbotCallable = FirebaseFunctions.instanceFor(
+    region: 'asia-south1',
+  ).httpsCallable('getChatbotResponse');
   final ScrollController _scrollController = ScrollController();
 
   final List<ChatMessage> _messages = [

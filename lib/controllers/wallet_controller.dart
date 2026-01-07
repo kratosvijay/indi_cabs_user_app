@@ -16,10 +16,12 @@ class WalletController extends GetxController {
   late Razorpay _razorpay;
   int _amountToVerify = 0;
 
-  final HttpsCallable _createOrderCallable = FirebaseFunctions.instance
-      .httpsCallable('createWalletOrder');
-  final HttpsCallable _verifyPaymentCallable = FirebaseFunctions.instance
-      .httpsCallable('verifyWalletPayment');
+  final HttpsCallable _createOrderCallable = FirebaseFunctions.instanceFor(
+    region: 'asia-south1',
+  ).httpsCallable('createWalletOrder');
+  final HttpsCallable _verifyPaymentCallable = FirebaseFunctions.instanceFor(
+    region: 'asia-south1',
+  ).httpsCallable('verifyWalletPayment');
 
   @override
   void onInit() {

@@ -125,6 +125,11 @@
 
         let map;
         let driverMarker;
+        let pickupMarker;
+        let destinationMarker;
+        let directionsService;
+        let directionsRenderer;
+
         const rideId = new URLSearchParams(window.location.search).get('id');
 
         function initMap() {
@@ -132,6 +137,16 @@
                 center: { lat: 20.5937, lng: 78.9629 }, // Default Center
                 zoom: 15,
                 disableDefaultUI: true,
+            });
+
+            directionsService = new google.maps.DirectionsService();
+            directionsRenderer = new google.maps.DirectionsRenderer({
+                map: map,
+                suppressMarkers: true, // We will use custom markers
+                polylineOptions: {
+                    strokeColor: '#000000',
+                    strokeWeight: 4
+                }
             });
 
             if (rideId) {
@@ -147,6 +162,7 @@
                 if (doc && doc.exists) {
                     const data = doc.data();
                     updateUI(data);
+                    updateRouteAndMarkers(data);
 
                     // Listen to Driver Location if assigned
                     if (data.driverId) {
@@ -192,6 +208,67 @@
             }
         }
 
+        let lastPickupLat = 0;
+        let lastDestLat = 0;
+
+        function updateRouteAndMarkers(data) {
+            // Handle different field names (pickup vs pickupLocation)
+            const pickup = data.pickup || data.pickupLocation;
+            const destination = data.destination || data.destinationLocation;
+
+            if (pickup) {
+                const pLatLng = { lat: pickup.latitude, lng: pickup.longitude };
+                if (!pickupMarker) {
+                    pickupMarker = new google.maps.Marker({
+                        position: pLatLng,
+                        map: map,
+                        title: "Pickup",
+                        icon: {
+                            url: "http://maps.google.com/mapfiles/ms/icons/green-dot.png"
+                        }
+                    });
+                } else {
+                    pickupMarker.setPosition(pLatLng);
+                }
+            }
+
+            if (destination) {
+                const dLatLng = { lat: destination.latitude, lng: destination.longitude };
+                if (!destinationMarker) {
+                    destinationMarker = new google.maps.Marker({
+                        position: dLatLng,
+                        map: map,
+                        title: "Drop",
+                        icon: {
+                            url: "http://maps.google.com/mapfiles/ms/icons/red-dot.png"
+                        }
+                    });
+                } else {
+                    destinationMarker.setPosition(dLatLng);
+                }
+            }
+
+            // Draw Route if both exist and changed
+            if (pickup && destination) {
+                if (Math.abs(pickup.latitude - lastPickupLat) > 0.0001 || Math.abs(destination.latitude - lastDestLat) > 0.0001) {
+                    lastPickupLat = pickup.latitude;
+                    lastDestLat = destination.latitude;
+
+                    directionsService.route({
+                        origin: { lat: pickup.latitude, lng: pickup.longitude },
+                        destination: { lat: destination.latitude, lng: destination.longitude },
+                        travelMode: 'DRIVING'
+                    }, (response, status) => {
+                        if (status === 'OK') {
+                            directionsRenderer.setDirections(response);
+                        } else {
+                            console.log('Directions request failed due to ' + status);
+                        }
+                    });
+                }
+            }
+        }
+
         function updateMap(location, heading) {
             if (!location) return;
 
@@ -218,7 +295,10 @@
                 driverMarker.setIcon(icon);
             }
 
-            map.panTo(latLng);
+            // Only pan if we don't have a route bound, otherwise let the user control or just center roughly
+            // Actually, if we are tracking, we might want to stay centered on the driver?
+            // For now, let's keep the existing logic but maybe check bounds if route exists
+            // map.panTo(latLng); 
         }
     </script>
 </body>

@@ -1,0 +1,35 @@
+{
+    "city_name": "Chennai",
+    "currency_symbol": "₹",
+    "isSurgeActive": false,
+    "surgeMultiplier": 1,
+    "vehicle_types": {
+        "ActingDriver": {
+            "baseFare": 150,
+            "description": "A verified driver for your personal car. You provide the car, we provide the driver.",
+            "minimumFare": 250,
+            "perKilometer": 0,
+            "perMinute": 2
+        },
+        "Auto": {
+            "baseFare": 30,
+            "minimumFare": 125,
+            "perKilometer": 20
+        },
+        "Hatchback": {
+            "baseFare": 50,
+            "minimumFare": 150,
+            "perKilometer": 22
+        },
+        "SUV": {
+            "baseFare": 100,
+            "minimumFare": 200,
+            "perKilometer": 32
+        },
+        "Sedan": {
+            "baseFare": 55,
+            "minimumFare": 170,
+            "perKilometer": 24
+        }
+    }
+}

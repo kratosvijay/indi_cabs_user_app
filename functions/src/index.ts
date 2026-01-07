@@ -4,6 +4,9 @@ import {
   HttpsError,
   CallableRequest,
 } from "firebase-functions/v2/https";
+import {setGlobalOptions} from "firebase-functions/v2";
+
+setGlobalOptions({region: "asia-south1"});
 // **FIXED:** Re-added 'onDocumentUpdated' and added required types
 import {
   onDocumentUpdated,
@@ -39,18 +42,21 @@ interface VehiclePricing {
   baseFare: number;
   minimumFare: number;
   perKilometer: number;
-  perMinute: number;
-  description: string;
+  perMinute?: number;
+  description?: string;
 }
 
 interface PricingRules {
-  cityName: string;
-  currencySymbol: string;
+  city_name: string;
+  currency_symbol: string;
+  isSurgeActive: boolean;
+  surgeMultiplier: number;
   vehicle_types: { [key: string]: VehiclePricing };
 }
 
 interface CalculateFaresData {
   distanceMeters: number;
+  durationSeconds?: number;
   tollCost: number;
   pickupLocation: { latitude: number; longitude: number; };
 }
@@ -103,7 +109,9 @@ function generatePin(): string {
 }
 
 /**
- * Calculates ride fares based on distance, time, and geofences.
+ * Calculates fares based on distance, time, and rules from Firestore.
+ * @param {CallableRequest<CalculateFaresData>} request The request object.
+ * @return {Promise<any>}
  */
 export const calculateFares = onCall(async (
   request: CallableRequest<CalculateFaresData>
@@ -150,16 +158,27 @@ export const calculateFares = onCall(async (
         "internal", "Could not determine time zone data."
       );
     }
+
+    // Default time-based logic override check
+    // If database says isSurgeActive is true, use db multiplier.
+    // Otherwise fallback to existing time-based logic.
     let surgeMultiplier = 1.0;
-    let nightCharge = 0.0;
-    const isWeekend = currentDayString === "Sat" || currentDayString === "Sun";
-    if (isWeekend) {
-      if (currentHour >= 15 && currentHour < 21) surgeMultiplier = 1.20;
+    if (rules.isSurgeActive && rules.surgeMultiplier) {
+      surgeMultiplier = rules.surgeMultiplier;
     } else {
-      const isMorningSurge = currentHour >= 8 && currentHour < 11;
-      const isEveningSurge = currentHour >= 17 && currentHour < 21;
-      if (isMorningSurge || isEveningSurge) surgeMultiplier = 1.20;
+      // Fallback to time-based surge logic if not explicitly active in DB
+      const isWeekend = currentDayString === "Sat" ||
+        currentDayString === "Sun";
+      if (isWeekend) {
+        if (currentHour >= 15 && currentHour < 21) surgeMultiplier = 1.20;
+      } else {
+        const isMorningSurge = currentHour >= 8 && currentHour < 11;
+        const isEveningSurge = currentHour >= 17 && currentHour < 21;
+        if (isMorningSurge || isEveningSurge) surgeMultiplier = 1.20;
+      }
     }
+
+    let nightCharge = 0.0;
     if (currentHour >= 22 || currentHour < 6) {
       nightCharge = 50.0;
     }
@@ -182,19 +201,33 @@ export const calculateFares = onCall(async (
     const calculatedFares: { [key: string]: number } = {};
     Object.entries(vehiclePricingMap).forEach(([vehicleType, pricing]) => {
       let fare = pricing.baseFare;
+
+      // 1. Distance Charge
       if (distanceKm <= 12) {
         fare += distanceKm * pricing.perKilometer;
       } else {
         // First 12 km at normal price
         fare += 12 * pricing.perKilometer;
         // Remaining km at reduced price (price - 3)
-        // Ensure price doesn't go below 0 (though unlikely for perKm)
         const reducedRate = Math.max(0, pricing.perKilometer - 3);
         fare += (distanceKm - 12) * reducedRate;
       }
+
+      // 2. Time Charge (new)
+      if (pricing.perMinute && request.data.durationSeconds) {
+        const durationMinutes = request.data.durationSeconds / 60.0;
+        fare += (durationMinutes * pricing.perMinute);
+      }
+
+      // 3. Surge
       fare *= surgeMultiplier;
+
+      // 4. Extras (Night, Toll, Geofence)
       fare += nightCharge + safeTollCost + geofenceSurcharge;
+
+      // 5. Minimum Fare
       if (fare < pricing.minimumFare) fare = pricing.minimumFare;
+
       calculatedFares[vehicleType] = Math.round(fare);
     });
     const result = {
@@ -282,6 +315,7 @@ export const createRideRequest = onCall(async (
   if (rideData.intermediateStops && Array.isArray(rideData.intermediateStops)) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     firestoreData.intermediateStops = rideData.intermediateStops.map(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (stop: any) => {
         // Ensure we have a location object with lat/lng
         if (

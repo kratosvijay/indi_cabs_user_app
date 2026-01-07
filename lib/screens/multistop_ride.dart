@@ -39,8 +39,9 @@ class _MultiStopScreenState extends State<MultiStopScreen>
   late final PlacesService _placesService;
   late final DirectionsService _directionsService;
   late final MapService _mapService;
-  final HttpsCallable _calculateFaresCallable = FirebaseFunctions.instance
-      .httpsCallable('calculateFares');
+  final HttpsCallable _calculateFaresCallable = FirebaseFunctions.instanceFor(
+    region: 'asia-south1',
+  ).httpsCallable('calculateFares');
 
   // Animation
   late AnimationController _animationController;
@@ -748,6 +749,7 @@ class _MultiStopScreenState extends State<MultiStopScreen>
     // 3. Calculate fare using Cloud Function
     final faresResult = await _calculateFares(
       distanceMeters: routeDetails.distanceMeters,
+      durationSeconds: routeDetails.durationSeconds,
       tollCost: routeDetails.tollCost,
       pickupLocation: pickup,
     );
@@ -835,12 +837,14 @@ class _MultiStopScreenState extends State<MultiStopScreen>
   // --- Cloud Function Call Helper ---
   Future<Map<String, num>?> _calculateFares({
     required int distanceMeters,
+    required int durationSeconds,
     required num tollCost,
     required LatLng pickupLocation,
   }) async {
     try {
       final result = await _calculateFaresCallable.call<Map<dynamic, dynamic>>({
         'distanceMeters': distanceMeters,
+        'durationSeconds': durationSeconds,
         'tollCost': tollCost,
         'pickupLocation': {
           'latitude': pickupLocation.latitude,

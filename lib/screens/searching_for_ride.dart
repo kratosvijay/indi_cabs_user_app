@@ -82,6 +82,8 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
   Timer? _tipTimer;
   String? _resolvedRideRequestId; // To store the ID once resolved
   bool _isCancelling = false; // **NEW**
+  bool _isDriverFound =
+      false; // **NEW:** Track if driver is found for immediate UI feedback
 
   @override
   void initState() {
@@ -342,26 +344,41 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
             "SearchingForRideScreen: Snapshot received. Status: $status, DriverId: $driverId",
           );
 
-          if (status == 'accepted' && driverId != null && driverId.isNotEmpty) {
-            debugPrint("Driver found! Navigating to RideInProgressScreen.");
-            _rideStatusSubscription?.cancel();
-            _rideStatusSubscription = null;
+          if (status == 'accepted') {
+            // **NEW:** Immediate UI Feedback
+            if (!_isDriverFound) {
+              setState(() => _isDriverFound = true);
+              // Also stop the tip timer as we don't need to boost anymore
+              _tipTimer?.cancel();
+              _showTipCard = false;
+            }
 
-            Get.off(
-              () => RideInProgressScreen(
-                user: widget.user,
-                pickupLocation: widget.pickupLocation,
-                destinationPosition: widget.destinationPosition,
-                isRental: widget.isRental,
-                rideRequestId: _resolvedRideRequestId!,
-                selectedVehicleType: widget.isRental
-                    ? widget.rentalVehicleType!
-                    : (widget.selectedVehicle?.type ?? "Multi-Stop"),
-                rentalPackage: widget.rentalPackage,
-                driverId: driverId,
-                intermediateStops: widget.intermediateStops,
-              ),
-            );
+            if (driverId != null && driverId.isNotEmpty) {
+              debugPrint("Driver found! Navigating to RideInProgressScreen.");
+              _rideStatusSubscription?.cancel();
+              _rideStatusSubscription = null;
+
+              // **OPTIMIZATION:** Small delay to let the UI update show "Driver Found!" briefly
+              // unless it's critical to move instanly.
+              // But the user complained about delay, so we move instantly.
+              Get.off(
+                () => RideInProgressScreen(
+                  user: widget.user,
+                  pickupLocation: widget.pickupLocation,
+                  destinationPosition: widget.destinationPosition,
+                  isRental: widget.isRental,
+                  rideRequestId: _resolvedRideRequestId!,
+                  selectedVehicleType: widget.isRental
+                      ? widget.rentalVehicleType!
+                      : (widget.selectedVehicle?.type ?? "Multi-Stop"),
+                  rentalPackage: widget.rentalPackage,
+                  driverId: driverId,
+                  intermediateStops: widget.intermediateStops,
+                ),
+              );
+            } else {
+              debugPrint("Status accepted but DriverID is missing/empty!");
+            }
           } else if (status == 'cancelled' || status == 'no_drivers_found') {
             debugPrint(
               "SearchingForRideScreen: Ride cancelled or no drivers found",
@@ -486,6 +503,8 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
     final bool isScheduled = widget.scheduledTime != null;
     final String title = isScheduled
         ? "Your Ride is Scheduled!"
+        : _isDriverFound
+        ? "Driver Found! Connecting..."
         : "Searching for a Ride...";
 
     final bool isDark = Theme.of(context).brightness == Brightness.dark;

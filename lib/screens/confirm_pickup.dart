@@ -167,8 +167,9 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
   late final FirestoreService _firestoreService;
   late final DirectionsService _directionsService;
   late final MapService _mapService;
-  final HttpsCallable _calculateFaresCallable = FirebaseFunctions.instance
-      .httpsCallable('calculateFares');
+  final HttpsCallable _calculateFaresCallable = FirebaseFunctions.instanceFor(
+    region: 'asia-south1',
+  ).httpsCallable('calculateFares');
 
   @override
   void initState() {
@@ -378,6 +379,7 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
 
       final faresResult = await _calculateFares(
         distanceMeters: newRouteDetails.distanceMeters,
+        durationSeconds: newRouteDetails.durationSeconds,
         tollCost: newRouteDetails.tollCost,
         pickupLocation: _adjustablePickupLocation,
       );
@@ -431,12 +433,14 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
 
   Future<Map<String, num>?> _calculateFares({
     required int distanceMeters,
+    required int durationSeconds,
     required num tollCost,
     required LatLng pickupLocation,
   }) async {
     try {
       final result = await _calculateFaresCallable.call<Map<dynamic, dynamic>>({
         'distanceMeters': distanceMeters,
+        'durationSeconds': durationSeconds,
         'tollCost': tollCost,
         'pickupLocation': {
           'latitude': pickupLocation.latitude,

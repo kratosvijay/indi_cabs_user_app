@@ -81,8 +81,9 @@ class _HomePageState extends State<HomePage> {
   // late final FirestoreService _firestoreService;
   // late final StorageService _storageService;
 
-  final HttpsCallable _calculateFaresCallable = FirebaseFunctions.instance
-      .httpsCallable('calculateFares');
+  final HttpsCallable _calculateFaresCallable = FirebaseFunctions.instanceFor(
+    region: 'asia-south1',
+  ).httpsCallable('calculateFares');
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
 
   // --- State Variables ---
@@ -336,6 +337,7 @@ class _HomePageState extends State<HomePage> {
         if (routeDetails != null) {
           calculatedFares = await _calculateFares(
             distanceMeters: routeDetails.distanceMeters,
+            durationSeconds: routeDetails.durationSeconds,
             tollCost: routeDetails.tollCost,
             pickupLocation: _rideController.currentPosition.value!,
           );
@@ -491,12 +493,14 @@ class _HomePageState extends State<HomePage> {
   // --- Cloud Function Call ---
   Future<Map<String, num>?> _calculateFares({
     required int distanceMeters,
+    required int durationSeconds,
     required num tollCost,
     required LatLng pickupLocation,
   }) async {
     try {
       final result = await _calculateFaresCallable.call<Map<dynamic, dynamic>>({
         'distanceMeters': distanceMeters,
+        'durationSeconds': durationSeconds,
         'tollCost': tollCost,
         'pickupLocation': {
           'latitude': pickupLocation.latitude,

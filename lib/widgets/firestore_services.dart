@@ -12,7 +12,9 @@ typedef NavigationCallback = void Function(Widget destination);
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
-  final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
+    region: 'asia-south1',
+  );
 
   // --- Favorites ---
   Stream<List<FavoritePlace>> getFavoritesStream(String userId) {

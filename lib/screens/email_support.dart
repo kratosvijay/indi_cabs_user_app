@@ -14,8 +14,9 @@ class EmailSupportScreen extends StatefulWidget {
 class _EmailSupportScreenState extends State<EmailSupportScreen> {
   final _subjectController = TextEditingController();
   final _bodyController = TextEditingController();
-  final HttpsCallable _sendEmailCallable = FirebaseFunctions.instance
-      .httpsCallable('sendSupportEmail');
+  final HttpsCallable _sendEmailCallable = FirebaseFunctions.instanceFor(
+    region: 'asia-south1',
+  ).httpsCallable('sendSupportEmail');
   bool _isLoading = false;
 
   @override

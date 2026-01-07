@@ -70,6 +70,11 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
   late LatLng _currentPickupLocation;
   LatLng? _pickupLocation;
   LatLng get pickupLocation => _pickupLocation ?? widget.pickupLocation;
+
+  LatLng? _destinationLocation;
+  LatLng get destinationLocation =>
+      _destinationLocation ?? widget.destinationPosition;
+
   bool _isEditingPickup = false;
   late LatLng _newlyAdjustedPickup;
   String _pickupAddress = "Fetching address...";
@@ -98,9 +103,13 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
 
   StreamSubscription? _statusSub;
   StreamSubscription? _driverSub;
+  final ValueNotifier<double> _sheetExtentNotifier = ValueNotifier(
+    0.45,
+  ); // **FIX:** Initialize at declaration
   @override
   void initState() {
     super.initState();
+    // _sheetExtentNotifier initialized at declaration
     _currentPickupLocation = widget.pickupLocation;
     _pickupLocation = widget.pickupLocation; // Initialize _pickupLocation
     _newlyAdjustedPickup = widget.pickupLocation;
@@ -164,6 +173,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     _driverMoveTimer?.cancel();
     _waitingTimer?.cancel();
     _sheetController.dispose();
+    _sheetExtentNotifier.dispose(); // **FIX:** Dispose here
     super.dispose();
   }
 
@@ -770,6 +780,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
     return Obx(() {
       final status = _rideController.rideStatus.value;
@@ -789,6 +800,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
       }
 
       return Scaffold(
+        backgroundColor: Colors.white,
         appBar: ProAppBar(
           title: Text(
             _isEditingPickup
@@ -872,122 +884,162 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
               _navigateToHome();
             }
           },
-          child: Stack(
-            children: [
-              if (!_isMapReady)
-                const Center(child: CircularProgressIndicator())
-              else
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: GoogleMap(
-                    key: const ValueKey('google_map'),
-                    padding: EdgeInsets.only(
-                      bottom: _isEditingPickup
-                          ? 0
-                          : (MediaQuery.of(context).size.height *
-                                    _currentSheetSize) +
-                                20,
-                    ),
-                    initialCameraPosition: CameraPosition(
-                      target: driver?.currentLocation ?? widget.pickupLocation,
-                      zoom: 16,
-                    ),
-                    markers: _markers,
-                    polylines: _polylines,
-                    myLocationButtonEnabled: false,
-                    zoomControlsEnabled: false,
-                    scrollGesturesEnabled: true,
-                    zoomGesturesEnabled: true,
-                    tiltGesturesEnabled: true,
-                    rotateGesturesEnabled: true,
-                    onCameraMoveStarted: () {
-                      if (!_isAnimating) {
-                        setState(() => _isCameraLocked = false);
-                      }
-                    },
-                    onMapCreated: (GoogleMapController controller) {
-                      _liveMapController = controller;
-                      if (!_mapController.isCompleted) {
-                        _mapController.complete(controller);
-                      }
-                      _animateCameraToBounds();
-                    },
-                    onCameraMove: _isEditingPickup
-                        ? (position) {
-                            _newlyAdjustedPickup = position.target;
-                            setState(() {
-                              _markers.removeWhere(
-                                (m) => m.markerId.value == 'pickup',
-                              );
-                              _markers.add(
-                                Marker(
-                                  markerId: const MarkerId('pickup'),
-                                  position: _newlyAdjustedPickup,
-                                  icon: BitmapDescriptor.defaultMarkerWithHue(
-                                    BitmapDescriptor.hueGreen,
-                                  ),
-                                ),
-                              );
-                            });
-                          }
-                        : null,
-                    onCameraIdle: _isEditingPickup
-                        ? () async {
-                            final newAddress = await _locationService
-                                .getAddressFromLatLng(_newlyAdjustedPickup);
-                            if (mounted) {
-                              setState(() => _pickupAddress = newAddress);
-                            }
-                          }
-                        : null,
-                  ),
-                ),
-              if (_isEditingPickup)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.only(bottom: 40.0),
-                    child: Icon(
-                      Icons.location_pin,
-                      color: Colors.green,
-                      size: 40,
-                    ),
-                  ),
-                ),
-              if (!_isEditingPickup)
-                _buildDriverDetailsCard(displayOtp, otpLabel)
-              else
-                _buildConfirmNewPickupButton(),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final double availableHeight = constraints.maxHeight;
+              return Stack(
+                children: [
+                  if (!_isMapReady)
+                    const Center(child: CircularProgressIndicator())
+                  else
+                    // **MODIFIED:** Wrap GoogleMap in ValueListenableBuilder for smooth resizing
+                    ValueListenableBuilder<double>(
+                      valueListenable: _sheetExtentNotifier,
+                      builder: (context, sheetExtent, child) {
+                        // Calculate bottom padding based on sheet extent
+                        // **FIX:** We now use Google Maps padding instead of resizing the container.
+                        // This ensures the map fills the WHOLE screen (behind the sheet)
+                        // preventing any white gaps, while the "camera" respects the sheet height.
+                        final double bottomPadding =
+                            availableHeight * sheetExtent;
 
-              if (!_isEditingPickup)
-                Positioned(
-                  bottom:
-                      (MediaQuery.of(context).size.height * _currentSheetSize) +
-                      20,
-                  right: 16,
-                  child: FloatingActionButton(
-                    mini: true,
-                    backgroundColor: Colors.white,
-                    foregroundColor: Colors.black87,
-                    onPressed: () {
-                      setState(() => _isCameraLocked = true);
-                      _animateCameraToBounds();
-                    },
-                    child: Icon(
-                      _isCameraLocked ? Icons.gps_fixed : Icons.gps_not_fixed,
-                      color: _isCameraLocked ? Colors.blue : Colors.black54,
+                        return Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          bottom: 0, // **FIX:** Fill entire screen
+                          child: GoogleMap(
+                            key: const ValueKey('google_map'),
+                            // **FIX:** Dynamic padding pushes the Google Logo & Camera center up
+                            padding: EdgeInsets.only(
+                              bottom: _isEditingPickup ? 0 : bottomPadding,
+                            ),
+                            initialCameraPosition: CameraPosition(
+                              target:
+                                  driver?.currentLocation ??
+                                  widget.pickupLocation,
+                              zoom: 16,
+                            ),
+                            markers: _markers,
+                            polylines: _polylines,
+                            myLocationButtonEnabled: false,
+                            zoomControlsEnabled: false,
+                            scrollGesturesEnabled: true,
+                            zoomGesturesEnabled: true,
+                            tiltGesturesEnabled: true,
+                            rotateGesturesEnabled: true,
+                            onCameraMoveStarted: () {
+                              if (!_isAnimating) {
+                                setState(() => _isCameraLocked = false);
+                              }
+                            },
+                            onMapCreated: (GoogleMapController controller) {
+                              _liveMapController = controller;
+                              if (!_mapController.isCompleted) {
+                                _mapController.complete(controller);
+                              }
+                              _animateCameraToBounds();
+                            },
+                            onCameraMove: _isEditingPickup
+                                ? (position) {
+                                    _newlyAdjustedPickup = position.target;
+                                    setState(() {
+                                      _markers.removeWhere(
+                                        (m) => m.markerId.value == 'pickup',
+                                      );
+                                      _markers.add(
+                                        Marker(
+                                          markerId: const MarkerId('pickup'),
+                                          position: _newlyAdjustedPickup,
+                                          icon:
+                                              BitmapDescriptor.defaultMarkerWithHue(
+                                                BitmapDescriptor.hueGreen,
+                                              ),
+                                        ),
+                                      );
+                                    });
+                                  }
+                                : null,
+                            onCameraIdle: _isEditingPickup
+                                ? () async {
+                                    final newAddress = await _locationService
+                                        .getAddressFromLatLng(
+                                          _newlyAdjustedPickup,
+                                        );
+                                    if (mounted) {
+                                      setState(
+                                        () => _pickupAddress = newAddress,
+                                      );
+                                    }
+                                  }
+                                : null,
+                          ),
+                        );
+                      },
                     ),
+                  if (_isEditingPickup)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.only(bottom: 40.0),
+                        child: Icon(
+                          Icons.location_pin,
+                          color: Colors.green,
+                          size: 40,
+                        ),
+                      ),
+                    ),
+
+                  // **MODIFIED:** Wrap DraggableScrollableSheet in NotificationListener
+                  if (!_isEditingPickup)
+                    NotificationListener<DraggableScrollableNotification>(
+                      onNotification: (notification) {
+                        // Update the notifier with the current extent
+                        _sheetExtentNotifier.value = notification.extent;
+                        return true;
+                      },
+                      child: _buildDriverDetailsCard(displayOtp, otpLabel),
+                    )
+                  else
+                    _buildConfirmNewPickupButton(),
+
+                  if (!_isEditingPickup)
+                    // **MODIFIED:** Position floating button relative to sheet top using ValueListenableBuilder
+                    ValueListenableBuilder<double>(
+                      valueListenable: _sheetExtentNotifier,
+                      builder: (context, sheetExtent, child) {
+                        return Positioned(
+                          bottom: (availableHeight * sheetExtent) + 16,
+                          right: 16,
+                          child: FloatingActionButton(
+                            mini: true,
+                            backgroundColor: Colors.white,
+                            foregroundColor: Colors.black87,
+                            onPressed: () {
+                              setState(() => _isCameraLocked = true);
+                              _animateCameraToBounds();
+                            },
+                            child: Icon(
+                              _isCameraLocked
+                                  ? Icons.gps_fixed
+                                  : Icons.gps_not_fixed,
+                              color: _isCameraLocked
+                                  ? Colors.blue
+                                  : Colors.black54,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: LiftableBannerAd(),
                   ),
-                ),
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: LiftableBannerAd(),
-              ),
-            ],
+                ],
+              );
+            },
           ),
         ),
       );
@@ -1095,6 +1147,20 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                     ),
                   ),
                 ),
+
+              // Ride ID
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 8.0),
+                  child: SelectableText(
+                    "Ride ID: ${widget.rideRequestId}",
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: isDark ? Colors.grey[400] : Colors.grey[600],
+                    ),
+                  ),
+                ),
+              ),
 
               Expanded(
                 child: SingleChildScrollView(
@@ -1424,10 +1490,26 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     );
   }
 
+  int _destinationEditCount = 0; // Track edits
+
   Future<void> _handleEditLocation(bool isPickup) async {
+    // Check edit limit for destination
+    if (!isPickup) {
+      if (_destinationEditCount >= 3) {
+        if (mounted) {
+          displaySnackBar(
+            context,
+            "You can only edit the drop location 3 times.",
+            isError: true,
+          );
+        }
+        return;
+      }
+    }
+
     final initialLocation = isPickup
-        ? widget.pickupLocation
-        : widget.destinationPosition;
+        ? pickupLocation // Getter is non-nullable
+        : destinationLocation; // Use persistent state
 
     final result = await Get.to(
       () => EditLocationScreen(initialLocation: initialLocation),
@@ -1437,60 +1519,141 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
       final LatLng newLocation = result['location'];
       final String newAddress = result['address'];
 
+      debugPrint("Edit Location Result: $newAddress, $newLocation");
+
       setState(() {
         if (isPickup) {
           _pickupAddress = newAddress;
           _pickupLocation = newLocation;
         } else {
           _destinationAddress = newAddress;
+          _destinationLocation = newLocation; // Update persistent state
+          _destinationEditCount++; // Increment count
         }
       });
 
-      if (!isPickup) {
-        // Recalculate Fare
-        final newFares = await _rideController.calculateFare(
-          pickup: pickupLocation,
-          destination: newLocation,
+      // Recalculate Fare (as per user request: based on pickup location)
+      // Even if editing destination, we use the current pickup location.
+      final LatLng currentPickup = pickupLocation;
+
+      final LatLng targetPickup = isPickup ? newLocation : currentPickup;
+      final LatLng targetDestination = isPickup
+          ? destinationLocation
+          : newLocation;
+
+      // Handle the case where we edited pickup: destination remains widget.destination (or should we track _destinationLocation too? For now, ride_in_progress usually has fixed destination unless edited)
+      // Actually, if we edit pickup, destination is widget.destinationPosition. // OLD logic (commented out explanation)
+      // If we edit destination, pickup is currentPickup.
+
+      // Removed duplicate definitions
+
+      try {
+        debugPrint(
+          "Recalculating fare from $targetPickup to $targetDestination",
         );
 
+        debugPrint("Calling calculateFares...");
+        final newFares = await _rideController.calculateFare(
+          pickup: targetPickup,
+          destination: targetDestination,
+        );
+
+        debugPrint("Cloud Function response (newFares): $newFares");
+        debugPrint("Selected Vehicle Type: '${widget.selectedVehicleType}'");
+
         if (newFares != null) {
-          final newFare = newFares[widget.selectedVehicleType];
-          if (newFare != null) {
-            // Update Firestore
-            await FirebaseFirestore.instance
-                .collection('ride_requests')
-                .doc(widget.rideRequestId)
-                .update({
-                  'destination': {
-                    'latitude': newLocation.latitude,
-                    'longitude': newLocation.longitude,
-                  },
-                  'destinationAddress': newAddress,
-                  'fare': newFare,
-                });
-            if (mounted) {
-              displaySnackBar(
-                context,
-                "Destination updated. New fare: ₹$newFare",
-                isError: false,
+          String vehicleType = widget.selectedVehicleType;
+
+          // Debug keys available
+          debugPrint("Available keys in newFares: ${newFares.keys.toList()}");
+
+          // Fix: If type is generic "Ride" or not found, try to find correct type from live data
+          if (vehicleType == 'Ride' || !newFares.containsKey(vehicleType)) {
+            final rideData = _rideController.rideData;
+            debugPrint(
+              "Checking rideData for vehicle type... Current rideData keys: ${rideData.keys}",
+            );
+
+            final classFromData = rideData['vehicleClass'] as String?;
+            final typeFromData = rideData['vehicleType'] as String?;
+
+            if (classFromData != null && newFares.containsKey(classFromData)) {
+              vehicleType = classFromData;
+              debugPrint(
+                "Recovered vehicle type from rideData (vehicleClass): $vehicleType",
+              );
+            } else if (typeFromData != null &&
+                newFares.containsKey(typeFromData)) {
+              vehicleType = typeFromData;
+              debugPrint(
+                "Recovered vehicle type from rideData (vehicleType): $vehicleType",
+              );
+            } else if (newFares.containsKey('Sedan')) {
+              // Ultimate fallback if 'Ride' is completely ambiguous but likely basic car
+              vehicleType = 'Sedan';
+              debugPrint("Fallback to default 'Sedan'");
+            }
+          }
+
+          // Try exact match, then case-insensitive match
+          num? newFare = newFares[vehicleType];
+
+          if (newFare == null) {
+            debugPrint("Exact match failed. Trying case-insensitive...");
+            final lowerType = vehicleType.toLowerCase();
+            final entry = newFares.entries.firstWhere(
+              (e) => e.key.toLowerCase() == lowerType,
+              orElse: () => const MapEntry('', -1),
+            );
+
+            if (entry.value != -1) {
+              newFare = entry.value;
+              debugPrint(
+                "Found case-insensitive match: '${entry.key}' -> $newFare",
               );
             }
           }
-        }
-      } else {
-        // Update Pickup in Firestore
-        await FirebaseFirestore.instance
-            .collection('ride_requests')
-            .doc(widget.rideRequestId)
-            .update({
-              'pickup': {
+
+          if (newFare != null) {
+            debugPrint("Updating fare to: $newFare");
+
+            // Update Firestore
+            final updateData = <String, dynamic>{'fare': newFare};
+
+            if (isPickup) {
+              updateData['pickup'] = {
                 'latitude': newLocation.latitude,
                 'longitude': newLocation.longitude,
-              },
-              'pickupAddress': newAddress,
-            });
+              };
+              updateData['pickupAddress'] = newAddress;
+            } else {
+              updateData['destination'] = {
+                'latitude': newLocation.latitude,
+                'longitude': newLocation.longitude,
+              };
+              updateData['destinationAddress'] = newAddress;
+            }
+
+            await FirebaseFirestore.instance
+                .collection('ride_requests')
+                .doc(widget.rideRequestId)
+                .update(updateData);
+
+            if (mounted) {
+              displaySnackBar(
+                context,
+                "Location updated. New fare: ₹$newFare",
+                isError: false,
+              );
+            }
+          } else {
+            debugPrint("Fare not found for vehicle type: $vehicleType");
+          }
+        }
+      } catch (e) {
+        debugPrint("Error updating location/fare: $e");
         if (mounted) {
-          displaySnackBar(context, "Pickup location updated.", isError: false);
+          displaySnackBar(context, "Error updating fare: $e", isError: true);
         }
       }
     }

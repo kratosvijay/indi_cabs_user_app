@@ -17,7 +17,8 @@ import 'package:project_taxi_with_ai/widgets/directions_service.dart';
 import 'package:project_taxi_with_ai/widgets/firestore_services.dart';
 import 'package:project_taxi_with_ai/widgets/storage.service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:flutter_tts/flutter_tts.dart'; // **NEW**
+import 'package:flutter_tts/flutter_tts.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 class RideController extends GetxController {
   static RideController get instance => Get.find();
@@ -460,8 +461,9 @@ class RideController extends GetxController {
   }
 
   final RxMap<String, dynamic> rideData = <String, dynamic>{}.obs;
-  final HttpsCallable _calculateFaresCallable = FirebaseFunctions.instance
-      .httpsCallable('calculateFares');
+  final HttpsCallable _calculateFaresCallable = FirebaseFunctions.instanceFor(
+    region: 'asia-south1',
+  ).httpsCallable('calculateFares');
 
   void listenToRideStatus(String rideId) {
     _rideStatusSubscription?.cancel();
@@ -490,6 +492,33 @@ class RideController extends GetxController {
     required LatLng pickup,
     required LatLng destination,
   }) async {
+    debugPrint("!!! DEBUG START: calculateFare !!!");
+    String currentProjectId = "Unknown";
+    try {
+      currentProjectId = Firebase.app().options.projectId;
+      debugPrint("!!! DEBUG: Firebase Project ID: $currentProjectId !!!");
+    } catch (e) {
+      debugPrint("!!! DEBUG ERROR: Could not get Project ID: $e !!!");
+    }
+
+    debugPrint("!!! DEBUG: Checking Firestore for pricing_rules/Chennai !!!");
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('pricing_rules')
+          .doc('Chennai')
+          .get();
+      if (doc.exists) {
+        debugPrint("!!! DEBUG: FOUND 'Chennai' doc. Data: ${doc.data()} !!!");
+      } else {
+        debugPrint(
+          "!!! DEBUG: CRITICAL MISSING - 'Chennai' doc does NOT exist in $currentProjectId !!!",
+        );
+      }
+    } catch (e) {
+      debugPrint("!!! DEBUG ERROR: Firestore Check Failed: $e !!!");
+    }
+    debugPrint("!!! DEBUG END: Pre-check complete !!!");
+
     try {
       // 1. Get Directions to calculate distance
       final routeDetails = await directionsService.getDirections(
@@ -505,6 +534,7 @@ class RideController extends GetxController {
       // 2. Call Cloud Function with distance
       final result = await _calculateFaresCallable.call<Map<dynamic, dynamic>>({
         'distanceMeters': routeDetails.distanceMeters,
+        'durationSeconds': routeDetails.durationSeconds,
         'tollCost': routeDetails.tollCost,
         'pickupLocation': {
           'latitude': pickup.latitude,
@@ -518,7 +548,15 @@ class RideController extends GetxController {
       }
       return null;
     } catch (e) {
-      debugPrint("Error calculating fare: $e");
+      debugPrint("DEBUG MODIFIED: Error calling calculateFares function: $e");
+      debugPrint("Error Runtime Type: ${e.runtimeType}");
+      if (e is FirebaseFunctionsException) {
+        debugPrint(
+          "Code: ${e.code}, Message: ${e.message}, Details: ${e.details}",
+        );
+      } else {
+        debugPrint("Exception is NOT FirebaseFunctionsException. It is: $e");
+      }
       return null;
     }
   }
@@ -547,9 +585,9 @@ class RideController extends GetxController {
 
     try {
       // Call the Cloud Function
-      final result = await FirebaseFunctions.instance
-          .httpsCallable('bridgeCall')
-          .call({'rideId': currentRideId.value});
+      final result = await FirebaseFunctions.instanceFor(
+        region: 'asia-south1',
+      ).httpsCallable('bridgeCall').call({'rideId': currentRideId.value});
 
       final data = result.data as Map<dynamic, dynamic>;
       if (data['success'] == true) {

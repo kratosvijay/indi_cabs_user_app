@@ -617,6 +617,112 @@ class _RideConfirmationBottomSheetState
             onTap: widget.onEditDropoff,
             onSaveFavorite: widget.onSaveDropoffFavorite,
           ),
+
+          // **NEW:** Show Distance and Time below Drop-off
+          if (widget.routeDetails != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 12, bottom: 4),
+              child: Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.grey[800] : Colors.grey[100],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    // Total Distance
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "TOTAL DISTANCE",
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: isDark
+                                  ? Colors.grey[400]
+                                  : Colors.grey[600],
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.directions_car_filled,
+                                size: 20,
+                                color: AppColors.primary,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                "${(widget.routeDetails!.distanceMeters / 1000).toStringAsFixed(1)} km",
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Divider
+                    Container(
+                      height: 30,
+                      width: 1,
+                      color: isDark ? Colors.grey[600] : Colors.grey[300],
+                    ),
+                    const SizedBox(width: 16),
+                    // Time to Travel
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "TIME TO TRAVEL",
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: isDark
+                                  ? Colors.grey[400]
+                                  : Colors.grey[600],
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.access_time_filled,
+                                size: 20,
+                                color: AppColors.primary,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                _formatDuration(
+                                  widget.routeDetails!.durationSeconds,
+                                ),
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
           const SizedBox(height: 16),
 
           // Vehicle Options List
@@ -876,5 +982,21 @@ class _RideConfirmationBottomSheetState
         ],
       ),
     );
+  }
+
+  String _formatDuration(int seconds) {
+    if (seconds < 60) return "1 min";
+    final int minutes = (seconds / 60).round();
+    if (minutes < 60) {
+      return "$minutes min";
+    } else {
+      final int hours = minutes ~/ 60;
+      final int remainingMinutes = minutes % 60;
+      if (remainingMinutes == 0) {
+        return "$hours hr";
+      } else {
+        return "$hours hr $remainingMinutes min";
+      }
+    }
   }
 }
