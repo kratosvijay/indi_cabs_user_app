@@ -422,14 +422,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.0"
-  flutter_refresh_rate_control:
-    dependency: "direct main"
-    description:
-      name: flutter_refresh_rate_control
-      sha256: "8cf45655323adf10ccc07effbb29aaf52264016733caacaf7dddd4b2638b8e69"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.0.4+1"
   flutter_svg:
     dependency: "direct main"
     description:

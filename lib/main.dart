@@ -9,7 +9,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:project_taxi_with_ai/screens/splash_screen.dart';
 
-import 'package:flutter_refresh_rate_control/flutter_refresh_rate_control.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'dart:async'; // For runZonedGuarded
 
@@ -45,29 +44,19 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 }
 
 void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+
+  // Pass all uncaught "fatal" errors from the framework to Crashlytics
+  FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+
   // Wrap app execution in a zone to catch errors
   runZonedGuarded(
-    () async {
-      WidgetsFlutterBinding.ensureInitialized();
-      await Firebase.initializeApp();
-
+    () {
       // Background message handler setup
       FirebaseMessaging.onBackgroundMessage(
         _firebaseMessagingBackgroundHandler,
       );
-
-      // Set high refresh rate
-      try {
-        final refreshRateControl = FlutterRefreshRateControl();
-        await refreshRateControl.requestHighRefreshRate();
-        debugPrint("Requested high refresh rate");
-      } catch (e) {
-        debugPrint("Failed to set refresh rate: $e");
-      }
-
-      // Pass all uncaught "fatal" errors from the framework to Crashlytics
-      FlutterError.onError =
-          FirebaseCrashlytics.instance.recordFlutterFatalError;
 
       runApp(const MyApp());
     },
