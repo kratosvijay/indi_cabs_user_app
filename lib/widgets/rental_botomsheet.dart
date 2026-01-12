@@ -538,7 +538,7 @@ class _RentalBottomSheetState extends State<RentalBottomSheet> {
               ),
               label: Text(
                 _scheduledTime == null
-                    ? "Book Now"
+                    ? "Ride Later"
                     : "Scheduled for ${DateFormat('dd MMM, hh:mm a').format(_scheduledTime!)}",
                 style: TextStyle(
                   fontWeight: _scheduledTime == null

@@ -181,9 +181,12 @@ class BottomBarWidget extends StatelessWidget {
     final unselectedColor = isDark
         ? Colors.grey.shade400
         : Colors.grey.shade600;
+
+    // Background color
     final backgroundColor = isSelected
         ? (isDark ? Colors.blue.withValues(alpha: 0.2) : Colors.blue.shade50)
         : (isDark ? Colors.grey[800] : Colors.white);
+
     final textColor = isSelected
         ? selectedColor
         : (isDark ? Colors.white70 : Colors.black87);
@@ -191,19 +194,31 @@ class BottomBarWidget extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
-      child: SizedBox(
-        width: 115,
-        height: 110, // Fixed height so all cards are equal size
-        child: Card(
-          elevation: isSelected ? 4 : 1.5,
+      child: AnimatedScale(
+        scale: isSelected ? 1.05 : 1.0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOutCubic,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOutCubic,
+          width: 115,
+          height: 110,
           margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-          shape: RoundedRectangleBorder(
+          decoration: BoxDecoration(
+            color: backgroundColor,
             borderRadius: BorderRadius.circular(10),
-            side: isSelected
-                ? BorderSide(color: selectedColor, width: 1.5)
-                : BorderSide.none,
+            border: Border.all(
+              color: isSelected ? selectedColor : Colors.transparent,
+              width: 2.0, // Constant width to prevent layout jitter inside
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isSelected ? 0.2 : 0.05),
+                blurRadius: isSelected ? 8 : 4,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-          color: backgroundColor,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
             child: Column(

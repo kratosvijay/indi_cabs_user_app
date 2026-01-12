@@ -14,6 +14,7 @@ import 'package:project_taxi_with_ai/widgets/location_service.dart';
 
 import '../widgets/snackbar.dart';
 import 'package:project_taxi_with_ai/widgets/pro_library.dart';
+import 'package:project_taxi_with_ai/widgets/rental_timer_slider.dart';
 import 'package:project_taxi_with_ai/app_colors.dart';
 import 'home_page.dart';
 import 'chat_box.dart';
@@ -82,7 +83,6 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
 
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
-  double _currentSheetSize = 0.45; // Matches initialChildSize
 
   Timer? _driverMoveTimer;
   late final String _apiKey;
@@ -125,7 +125,11 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
       }
     });
 
-    _rideController.listenToRideStatus(widget.rideRequestId);
+    // **FIX:** Support rental requests collection
+    _rideController.listenToRideStatus(
+      widget.rideRequestId,
+      isRental: widget.isRental,
+    );
     _rideController.listenToDriverLocation(widget.driverId);
 
     _statusSub = _rideController.rideStatus.listen(_handleRideStatusChange);
@@ -133,20 +137,14 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
       if (d != null) _updateDriverMarker(d);
     });
 
-    _sheetController.addListener(() {
-      // Throttle updates to avoid overwhelming the UI/Platform Channel
-      final newSize = _sheetController.size;
-      if ((newSize - _currentSheetSize).abs() > 0.01) {
-        setState(() {
-          _currentSheetSize = newSize;
-        });
-      }
-    });
-
     // Check initial status
-    if (_rideController.rideStatus.value == 'arrived') {
+    final currentStatus = _rideController.rideStatus.value;
+    if (currentStatus == 'arrived') {
       _driverHasArrived = true;
       _startWaitingTimer();
+    } else if (currentStatus == 'started' || currentStatus == 'on_trip') {
+      _driverHasArrived = true;
+      _isRideStarted = true;
     }
   }
 
@@ -758,7 +756,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         "Status: ${_currentRideStatus.toUpperCase()}\n"
         "Pickup: $_pickupAddress\n"
         "Dropoff: $_destinationAddress\n\n"
-        "Track Live: https://projecttaxi-df0d2.web.app/track?id=${widget.rideRequestId}";
+        "Track Live: https://projecttaxi-df0d2.web.app/track?id=${widget.rideRequestId}${widget.isRental ? '&type=rental' : ''}";
 
     // ignore: deprecated_member_use
     await Share.share(message, subject: 'My Ride Details - IndiCabs');
@@ -892,90 +890,73 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                   if (!_isMapReady)
                     const Center(child: CircularProgressIndicator())
                   else
-                    // **MODIFIED:** Wrap GoogleMap in ValueListenableBuilder for smooth resizing
-                    ValueListenableBuilder<double>(
-                      valueListenable: _sheetExtentNotifier,
-                      builder: (context, sheetExtent, child) {
-                        // Calculate bottom padding based on sheet extent
-                        // **FIX:** We now use Google Maps padding instead of resizing the container.
-                        // This ensures the map fills the WHOLE screen (behind the sheet)
-                        // preventing any white gaps, while the "camera" respects the sheet height.
-                        final double bottomPadding =
-                            availableHeight * sheetExtent;
-
-                        return Positioned(
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          bottom: 0, // **FIX:** Fill entire screen
-                          child: GoogleMap(
-                            key: const ValueKey('google_map'),
-                            // **FIX:** Dynamic padding pushes the Google Logo & Camera center up
-                            padding: EdgeInsets.only(
-                              bottom: _isEditingPickup ? 0 : bottomPadding,
-                            ),
-                            initialCameraPosition: CameraPosition(
-                              target:
-                                  driver?.currentLocation ??
-                                  widget.pickupLocation,
-                              zoom: 16,
-                            ),
-                            markers: _markers,
-                            polylines: _polylines,
-                            myLocationButtonEnabled: false,
-                            zoomControlsEnabled: false,
-                            scrollGesturesEnabled: true,
-                            zoomGesturesEnabled: true,
-                            tiltGesturesEnabled: true,
-                            rotateGesturesEnabled: true,
-                            onCameraMoveStarted: () {
-                              if (!_isAnimating) {
-                                setState(() => _isCameraLocked = false);
+                    // **MODIFIED:** Fixed map padding (CONST) preventing any zoom/shift effect
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: GoogleMap(
+                        key: const ValueKey('google_map'),
+                        padding: EdgeInsets.only(
+                          // Fixed padding for collapsed sheet (approx 280) when not editing
+                          bottom: _isEditingPickup ? 0 : 280,
+                        ),
+                        initialCameraPosition: CameraPosition(
+                          target:
+                              driver?.currentLocation ?? widget.pickupLocation,
+                          zoom: 16,
+                        ),
+                        markers: _markers,
+                        polylines: _polylines,
+                        myLocationButtonEnabled: false,
+                        zoomControlsEnabled: false,
+                        scrollGesturesEnabled: true,
+                        zoomGesturesEnabled: true,
+                        tiltGesturesEnabled: true,
+                        rotateGesturesEnabled: true,
+                        onCameraMoveStarted: () {
+                          if (!_isAnimating) {
+                            setState(() => _isCameraLocked = false);
+                          }
+                        },
+                        onMapCreated: (GoogleMapController controller) {
+                          _liveMapController = controller;
+                          if (!_mapController.isCompleted) {
+                            _mapController.complete(controller);
+                          }
+                          _animateCameraToBounds();
+                        },
+                        onCameraMove: _isEditingPickup
+                            ? (position) {
+                                _newlyAdjustedPickup = position.target;
+                                setState(() {
+                                  _markers.removeWhere(
+                                    (m) => m.markerId.value == 'pickup',
+                                  );
+                                  _markers.add(
+                                    Marker(
+                                      markerId: const MarkerId('pickup'),
+                                      position: _newlyAdjustedPickup,
+                                      icon:
+                                          BitmapDescriptor.defaultMarkerWithHue(
+                                            BitmapDescriptor.hueGreen,
+                                          ),
+                                    ),
+                                  );
+                                });
                               }
-                            },
-                            onMapCreated: (GoogleMapController controller) {
-                              _liveMapController = controller;
-                              if (!_mapController.isCompleted) {
-                                _mapController.complete(controller);
+                            : null,
+                        onCameraIdle: _isEditingPickup
+                            ? () async {
+                                final newAddress = await _locationService
+                                    .getAddressFromLatLng(_newlyAdjustedPickup);
+                                if (mounted) {
+                                  setState(() => _pickupAddress = newAddress);
+                                }
                               }
-                              _animateCameraToBounds();
-                            },
-                            onCameraMove: _isEditingPickup
-                                ? (position) {
-                                    _newlyAdjustedPickup = position.target;
-                                    setState(() {
-                                      _markers.removeWhere(
-                                        (m) => m.markerId.value == 'pickup',
-                                      );
-                                      _markers.add(
-                                        Marker(
-                                          markerId: const MarkerId('pickup'),
-                                          position: _newlyAdjustedPickup,
-                                          icon:
-                                              BitmapDescriptor.defaultMarkerWithHue(
-                                                BitmapDescriptor.hueGreen,
-                                              ),
-                                        ),
-                                      );
-                                    });
-                                  }
-                                : null,
-                            onCameraIdle: _isEditingPickup
-                                ? () async {
-                                    final newAddress = await _locationService
-                                        .getAddressFromLatLng(
-                                          _newlyAdjustedPickup,
-                                        );
-                                    if (mounted) {
-                                      setState(
-                                        () => _pickupAddress = newAddress,
-                                      );
-                                    }
-                                  }
-                                : null,
-                          ),
-                        );
-                      },
+                            : null,
+                      ),
                     ),
                   if (_isEditingPickup)
                     const Center(
@@ -1370,8 +1351,77 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                                 ],
                               ),
                             ),
+                            // Rental Badge
+                            if (widget.isRental)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 8.0),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.withAlpha(20),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: Colors.orange.withAlpha(50),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    "Rental",
+                                    style: TextStyle(
+                                      color: Colors.orange,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
+                        // **NEW:** Rental Timer Slider
+                        if (widget.isRental && _isRideStarted)
+                          Obx(() {
+                            final rideData = _rideController.rideData;
+                            final startedAt = rideData['startedAt'];
+                            final durationHours =
+                                rideData['durationHours'] as int? ?? 1;
+
+                            // Distance Data (prioritize widget.rentalPackage, then rideData)
+                            double maxDistanceKm = 80.0;
+                            if (widget.rentalPackage != null) {
+                              maxDistanceKm = widget.rentalPackage!.kmLimit
+                                  .toDouble();
+                            } else {
+                              final maxDistVal =
+                                  rideData['kmLimit'] ??
+                                  rideData['maxDistanceKm'] ??
+                                  rideData['packageDistance'];
+                              if (maxDistVal != null) {
+                                maxDistanceKm =
+                                    double.tryParse(maxDistVal.toString()) ??
+                                    80.0;
+                              }
+                            }
+
+                            final currentDist =
+                                (rideData['distanceTravelled'] ?? 0).toString();
+                            final double currentDistanceKm =
+                                double.tryParse(currentDist) ?? 0.0;
+
+                            if (startedAt != null) {
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 12.0),
+                                child: RentalProgressWidget(
+                                  startedAt: startedAt,
+                                  durationHours: durationHours,
+                                  maxDistanceKm: maxDistanceKm,
+                                  currentDistanceKm: currentDistanceKm,
+                                ),
+                              );
+                            }
+                            return const SizedBox.shrink();
+                          }),
                         const SizedBox(height: 10),
                         // Fare Display
                         Obx(() {
@@ -1405,15 +1455,163 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                           }
                           return const SizedBox.shrink();
                         }),
+                        // Payment Method Display
+                        Obx(() {
+                          final paymentMethod =
+                              _rideController.rideData['paymentMethod'] ??
+                              'Cash';
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  "Payment Method",
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight
+                                        .w500, // Slightly less bold than Total Fare
+                                    color: textColor,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.withAlpha(20),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: Colors.blue.withAlpha(50),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    paymentMethod.toString().toUpperCase(),
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blue,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
                         const SizedBox(height: 20),
 
+                        // **NEW:** Add Stop Button for Active Rentals
+                        if (widget.isRental && _isRideStarted)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 16),
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: _handleAddStop,
+                                icon: const Icon(Icons.add_location_alt),
+                                label: const Text("Add Stop"),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+
+                        // **NEW:** Active Stop Display
+                        if (widget.isRental && _isRideStarted)
+                          Obx(() {
+                            final rideData = _rideController.rideData;
+                            final stops = rideData['stops'] as List<dynamic>?;
+
+                            if (stops != null && stops.isNotEmpty) {
+                              // Find the last pending stop
+                              final pendingStops = stops
+                                  .where((s) => s['status'] == 'pending')
+                                  .toList();
+
+                              if (pendingStops.isNotEmpty) {
+                                final activeStop = pendingStops.last;
+                                final address =
+                                    activeStop['address'] as String? ??
+                                    "Unknown Location";
+
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 16),
+                                  child: Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(context).cardColor,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: AppColors.primary.withValues(
+                                          alpha: 0.3,
+                                        ),
+                                        width: 1.5,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withValues(
+                                            alpha: 0.05,
+                                          ),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.stop_circle_outlined,
+                                              color: AppColors.primary,
+                                              size: 20,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            const Text(
+                                              "Current Stop",
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14,
+                                                color: Colors.grey,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          address,
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }
+                            }
+                            return const SizedBox.shrink();
+                          }),
+
                         // Location Info
-                        _buildLocationRow(
-                          Icons.my_location,
-                          "Pickup",
-                          _pickupAddress,
-                          onEdit: () => _handleEditLocation(true),
-                        ),
+                        if (!(widget.isRental && _isRideStarted))
+                          _buildLocationRow(
+                            Icons.my_location,
+                            "Pickup",
+                            _pickupAddress,
+                            onEdit: () => _handleEditLocation(true),
+                          ),
                         const SizedBox(height: 16),
                         if (!widget.isRental)
                           _buildLocationRow(
@@ -1799,6 +1997,38 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         return Icons.airport_shuttle;
       default:
         return Icons.directions_car;
+    }
+  }
+
+  Future<void> _handleAddStop() async {
+    final currentLocation = _rideController.currentPosition.value;
+    if (currentLocation == null) {
+      displaySnackBar(context, "Waiting for current location...");
+      return;
+    }
+
+    final result = await Get.to(
+      () => EditLocationScreen(initialLocation: currentLocation),
+    );
+
+    if (result != null && result is Map) {
+      final location = result['location'] as LatLng;
+      final address = result['address'] as String;
+
+      try {
+        await _rideController.addRentalStop(
+          widget.rideRequestId,
+          location,
+          address,
+        );
+        if (mounted) {
+          displaySnackBar(context, "Stop added successfully!");
+        }
+      } catch (e) {
+        if (mounted) {
+          displaySnackBar(context, "Failed to add stop: $e");
+        }
+      }
     }
   }
 }

@@ -57,7 +57,7 @@ dependencies:
   razorpay_flutter:
   firebase_messaging:
   flutter_svg:
-  google_mobile_ads: ^5.2.0
+  google_mobile_ads: ^7.0.0
   get: ^4.7.3
   flutter_refresh_rate_control: ^0.0.4+1
   flutter_tts: ^4.2.3

@@ -19,6 +19,7 @@ import 'package:project_taxi_with_ai/widgets/storage.service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class RideController extends GetxController {
   static RideController get instance => Get.find();
@@ -133,6 +134,37 @@ class RideController extends GetxController {
     isLoadingLocation.value = false;
     _isInitialized = true;
     debugPrint("RideController: initialize completed");
+  }
+
+  void reset() {
+    debugPrint("RideController: Resetting state...");
+    markers.clear();
+    polylines.clear();
+    pickupAddress.value = '';
+    destinationAddress.value = '';
+    destinationLocation.value = null;
+    currentRideId.value = '';
+    rideStatus.value = '';
+    selectedServiceType.value = RideType.daily;
+    driverMarkers.clear();
+    nearbyDrivers.clear();
+    assignedDriver.value = null;
+    driverLocation.value = null;
+    driverBearing.value = 0.0;
+    predictions.clear();
+    searchHistory.clear();
+    isCalculatingFares.value = false;
+    pricingRules.value = null;
+    walletBalance.value = 0;
+    // Don't clear rentalPackages as they are static data, but ok to reload if needed.
+    // Don't dispose services/controllers.
+
+    // Stop listeners
+    _driversSubscription?.cancel();
+    _rideStatusSubscription?.cancel();
+    _driverLocationSubscription?.cancel();
+
+    _isInitialized = false; // Allow re-initialization
   }
 
   @override
@@ -465,11 +497,11 @@ class RideController extends GetxController {
     region: 'asia-south1',
   ).httpsCallable('calculateFares');
 
-  void listenToRideStatus(String rideId) {
+  void listenToRideStatus(String rideId, {bool isRental = false}) {
     _rideStatusSubscription?.cancel();
     currentRideId.value = rideId;
     _rideStatusSubscription = FirebaseFirestore.instance
-        .collection('ride_requests')
+        .collection(isRental ? 'rental_requests' : 'ride_requests')
         .doc(rideId)
         .snapshots()
         .listen((snapshot) {
@@ -577,6 +609,89 @@ class RideController extends GetxController {
         });
   }
 
+  // **NEW:** Check for active rides (Daily & Rental)
+  Future<List<Map<String, dynamic>>> checkActiveRides() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return [];
+
+    final activeStatuses = [
+      'searching',
+      'accepted',
+      'arrived',
+      'in_progress',
+      'started',
+      'scheduled',
+    ];
+
+    try {
+      debugPrint("DEBUG: checkActiveRides started for user: ${user.uid}");
+
+      // 1. Check Daily Rides
+      final dailyQuery = await FirebaseFirestore.instance
+          .collection('ride_requests')
+          .where('userId', isEqualTo: user.uid)
+          .where('status', whereIn: activeStatuses)
+          .get();
+      debugPrint("DEBUG: Found ${dailyQuery.docs.length} active daily rides");
+
+      // 2. Check Rental Rides
+      final rentalQuery = await FirebaseFirestore.instance
+          .collection('rental_requests')
+          .where('userId', isEqualTo: user.uid)
+          .where('status', whereIn: activeStatuses)
+          .get();
+      debugPrint("DEBUG: Found ${rentalQuery.docs.length} active rental rides");
+
+      List<Map<String, dynamic>> activeRides = [];
+
+      for (var doc in dailyQuery.docs) {
+        final data = doc.data();
+        final status = data['status'] ?? 'unknown';
+        debugPrint("DEBUG: Daily ride ${doc.id}: status='$status'");
+
+        // Defensive check: skip completed/cancelled
+        if (status == 'completed' || status == 'cancelled') {
+          debugPrint("DEBUG: Skipping completed/cancelled ride ${doc.id}");
+          continue;
+        }
+
+        activeRides.add({
+          'id': doc.id,
+          'type': 'daily',
+          'data': data,
+          'createdAt': data['createdAt'], // For sorting if needed
+        });
+      }
+
+      for (var doc in rentalQuery.docs) {
+        final data = doc.data();
+        final status = data['status'] ?? 'unknown';
+        debugPrint("DEBUG: Rental ride ${doc.id}: status='$status'");
+
+        // Defensive check: skip completed/cancelled
+        if (status == 'completed' || status == 'cancelled') {
+          debugPrint("DEBUG: Skipping completed/cancelled ride ${doc.id}");
+          continue;
+        }
+
+        activeRides.add({
+          'id': doc.id,
+          'type': 'rental',
+          'data': data,
+          'createdAt': data['createdAt'],
+        });
+      }
+
+      debugPrint(
+        "DEBUG: Total active rides after filtering: ${activeRides.length}",
+      );
+      return activeRides;
+    } catch (e) {
+      debugPrint("Error checking active rides: $e");
+      return [];
+    }
+  }
+
   Future<void> callDriver() async {
     if (currentRideId.value.isEmpty) {
       Get.snackbar("Error", "No active ride found.");
@@ -669,6 +784,33 @@ class RideController extends GetxController {
       );
     } catch (e) {
       debugPrint("Error playing TTS: $e");
+    }
+  }
+
+  Future<void> addRentalStop(
+    String rideId,
+    LatLng location,
+    String address,
+  ) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('rental_requests')
+          .doc(rideId)
+          .update({
+            'stops': FieldValue.arrayUnion([
+              {
+                'latitude': location.latitude,
+                'longitude': location.longitude,
+                'address': address,
+                'status': 'pending',
+                'addedAt': Timestamp.now(),
+              },
+            ]),
+          });
+      debugPrint("Rental stop added successfully to ride $rideId");
+    } catch (e) {
+      debugPrint("Error adding rental stop: $e");
+      rethrow;
     }
   }
 }

@@ -213,30 +213,6 @@ class _EditLocationScreenState extends State<EditLocationScreen> {
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: Container(
-          margin: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: isDark ? Colors.black54 : Colors.white,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
-                blurRadius: 8,
-              ),
-            ],
-          ),
-          child: IconButton(
-            icon: Icon(
-              Icons.arrow_back,
-              color: isDark ? Colors.white : Colors.black87,
-            ),
-            onPressed: () => Get.back(),
-          ),
-        ),
-      ),
       body: Stack(
         children: [
           // 1. Google Map
@@ -281,10 +257,40 @@ class _EditLocationScreenState extends State<EditLocationScreen> {
             ),
           ),
 
-          // 3. Search Bar
+          // 3. Back Button (Moved from AppBar)
           Positioned(
             top: MediaQuery.of(context).padding.top + 8,
-            left: 60, // Space for back button
+            left: 16,
+            child: Container(
+              // margin: const EdgeInsets.all(8), // Handled by Positioned
+              decoration: BoxDecoration(
+                color: isDark ? Colors.black54 : Colors.white,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.1),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+              child: IconButton(
+                icon: Icon(
+                  Icons.arrow_back,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
+                onPressed: () => Get.back(),
+              ),
+            ),
+          ),
+
+          // 4. Search Bar
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 8,
+            left:
+                70, // Increased space for back button (16 + 48 + pad) or just keep 60?
+            // Previous was 60. Back button is 16(left) + 48(width) = 64. So 60 is too close/overlap?
+            // IconButton default size 48x48.
+            // Let's set left to 72.
             right: 16,
             child: Column(
               children: [
@@ -387,7 +393,7 @@ class _EditLocationScreenState extends State<EditLocationScreen> {
             ),
           ),
 
-          // 4. "Locate Me" Button
+          // 5. "Locate Me" Button
           Positioned(
             bottom: 300, // Above the bottom sheet
             right: 20,

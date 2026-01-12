@@ -93,7 +93,10 @@
     <div id="map"></div>
 
     <div id="status-card" class="hidden">
-        <div id="status-badge" class="status-badge">Finding Driver...</div>
+        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+            <div id="status-badge" class="status-badge">Finding Driver...</div>
+            <div id="payment-badge" class="status-badge" style="background: #fff3e0; color: #ef6c00;">Payment</div>
+        </div>
         <div style="display: flex; align-items: center;">
             <img id="driver-photo" class="driver-photo" src="" alt="Driver" />
             <div>
@@ -130,7 +133,9 @@
         let directionsService;
         let directionsRenderer;
 
-        const rideId = new URLSearchParams(window.location.search).get('id');
+        const urlParams = new URLSearchParams(window.location.search);
+        const rideId = urlParams.get('id');
+        const rideType = urlParams.get('type'); // 'rental' or null
 
         function initMap() {
             map = new google.maps.Map(document.getElementById("map"), {
@@ -157,8 +162,11 @@
         }
 
         function startTracking() {
+            const collectionName = (rideType === 'rental') ? 'rental_requests' : 'ride_requests';
+            console.log("Tracking in collection: " + collectionName);
+
             // Listen to Ride Request
-            db.collection('ride_requests').doc(rideId).onSnapshot((doc) => {
+            db.collection(collectionName).doc(rideId).onSnapshot((doc) => {
                 if (doc && doc.exists) {
                     const data = doc.data();
                     updateUI(data);
@@ -206,16 +214,25 @@
             } else {
                 statusEl.classList.remove('success');
             }
+
+            // Payment Method
+            const paymentMethod = (data.paymentMethod || 'Cash').toUpperCase();
+            const payEl = document.getElementById('payment-badge');
+            if (payEl) {
+                payEl.innerText = paymentMethod;
+            }
         }
 
-        let lastPickupLat = 0;
-        let lastDestLat = 0;
+        let lastHash = "";
 
         function updateRouteAndMarkers(data) {
-            // Handle different field names (pickup vs pickupLocation)
+            // Handle different field names
             const pickup = data.pickup || data.pickupLocation;
             const destination = data.destination || data.destinationLocation;
+            // Handle rental stops
+            const stops = data.stops || [];
 
+            // 1. Pickup Marker
             if (pickup) {
                 const pLatLng = { lat: pickup.latitude, lng: pickup.longitude };
                 if (!pickupMarker) {
@@ -223,40 +240,65 @@
                         position: pLatLng,
                         map: map,
                         title: "Pickup",
-                        icon: {
-                            url: "http://maps.google.com/mapfiles/ms/icons/green-dot.png"
-                        }
+                        icon: { url: "http://maps.google.com/mapfiles/ms/icons/green-dot.png" }
                     });
                 } else {
                     pickupMarker.setPosition(pLatLng);
                 }
             }
 
-            if (destination) {
-                const dLatLng = { lat: destination.latitude, lng: destination.longitude };
+            // 2. Determine Effective Destination
+            // Use explicit destination if available, otherwise use the last added stop
+            let effectiveDest = destination;
+            if (!effectiveDest && stops.length > 0) {
+                const lastStop = stops[stops.length - 1]; // Simply take the last one added
+                effectiveDest = { latitude: lastStop.latitude, longitude: lastStop.longitude };
+            }
+
+            // 3. Destination Marker
+            if (effectiveDest) {
+                const dLatLng = { lat: effectiveDest.latitude, lng: effectiveDest.longitude };
                 if (!destinationMarker) {
                     destinationMarker = new google.maps.Marker({
                         position: dLatLng,
                         map: map,
-                        title: "Drop",
-                        icon: {
-                            url: "http://maps.google.com/mapfiles/ms/icons/red-dot.png"
-                        }
+                        title: "Destination",
+                        icon: { url: "http://maps.google.com/mapfiles/ms/icons/red-dot.png" }
                     });
                 } else {
                     destinationMarker.setPosition(dLatLng);
                 }
+            } else if (destinationMarker) {
+                destinationMarker.setMap(null);
+                destinationMarker = null;
             }
 
-            // Draw Route if both exist and changed
-            if (pickup && destination) {
-                if (Math.abs(pickup.latitude - lastPickupLat) > 0.0001 || Math.abs(destination.latitude - lastDestLat) > 0.0001) {
-                    lastPickupLat = pickup.latitude;
-                    lastDestLat = destination.latitude;
+            // 4. Draw Route
+            if (pickup && effectiveDest) {
+                // Generate a simple hash of coordinates to prevent re-routing if nothing moved
+                const currentHash = `${pickup.latitude},${pickup.longitude}-${effectiveDest.latitude},${effectiveDest.longitude}-${stops.length}`;
+
+                if (currentHash !== lastHash) {
+                    lastHash = currentHash;
+
+                    // Convert stops to waypoints (excluding the one acting as destination if using stops)
+                    const waypoints = [];
+                    if (stops.length > 0) {
+                        // If destination is a real field, all stops are waypoints.
+                        // If destination is the last stop, the first N-1 stops are waypoints.
+                        const limit = (destination) ? stops.length : stops.length - 1;
+                        for (let i = 0; i < limit; i++) {
+                            waypoints.push({
+                                location: { lat: stops[i].latitude, lng: stops[i].longitude },
+                                stopover: true
+                            });
+                        }
+                    }
 
                     directionsService.route({
                         origin: { lat: pickup.latitude, lng: pickup.longitude },
-                        destination: { lat: destination.latitude, lng: destination.longitude },
+                        destination: { lat: effectiveDest.latitude, lng: effectiveDest.longitude },
+                        waypoints: waypoints,
                         travelMode: 'DRIVING'
                     }, (response, status) => {
                         if (status === 'OK') {
@@ -295,10 +337,8 @@
                 driverMarker.setIcon(icon);
             }
 
-            // Only pan if we don't have a route bound, otherwise let the user control or just center roughly
-            // Actually, if we are tracking, we might want to stay centered on the driver?
-            // For now, let's keep the existing logic but maybe check bounds if route exists
-            // map.panTo(latLng); 
+            // Pan to driver location to keep them in view
+            map.panTo(latLng);
         }
     </script>
 </body>

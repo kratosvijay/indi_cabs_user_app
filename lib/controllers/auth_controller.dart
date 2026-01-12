@@ -68,13 +68,11 @@ class AuthController extends GetxController {
             if (phoneNumber != null && phoneNumber.isNotEmpty) {
               debugPrint("DEBUG: Phone number found. Navigating to HomePage.");
 
-              // **FIX:** Fully recreate RideController to ensure fresh state
-              if (Get.isRegistered<RideController>()) {
-                debugPrint("DEBUG: Deleting existing RideController");
-                await Get.delete<RideController>(force: true);
+              // **FIX:** Ensure RideController exists and is initialized
+              if (!Get.isRegistered<RideController>()) {
+                debugPrint("DEBUG: Creating new RideController");
+                Get.put(RideController(), permanent: true);
               }
-              debugPrint("DEBUG: Creating new RideController");
-              Get.put(RideController(), permanent: true);
               await RideController.instance.initialize();
 
               Get.offAll(() => HomePage(user: user));
@@ -176,10 +174,10 @@ class AuthController extends GetxController {
   }
 
   Future<void> logout() async {
-    // **FIX:** Delete RideController on logout
+    // **FIX:** Reset RideController state on logout instead of deleting it
     if (Get.isRegistered<RideController>()) {
-      debugPrint("DEBUG: Deleting RideController on logout");
-      await Get.delete<RideController>(force: true);
+      debugPrint("DEBUG: Resetting RideController on logout");
+      RideController.instance.reset();
     }
     await FirebaseAuth.instance.signOut();
   }

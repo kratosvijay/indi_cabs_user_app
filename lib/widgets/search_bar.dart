@@ -100,14 +100,11 @@ class SearchBarWidget extends StatelessWidget {
                       onTap: () {
                         if (!isSearchEnabled) {
                           FocusScope.of(context).unfocus();
-                          // Optionally show snackbar - handled in home_page.dart
                         }
-                        onFocusChange(true); // Notify focus
+                        onFocusChange(true);
                       },
-                      onEditingComplete: () =>
-                          onFocusChange(false), // Notify focus loss
-                      onSubmitted: (_) =>
-                          onFocusChange(false), // Notify focus loss
+                      onEditingComplete: () => onFocusChange(false),
+                      onSubmitted: (_) => onFocusChange(false),
                     ),
                   ),
                 ],
