@@ -166,14 +166,14 @@ class WalletScreen extends StatelessWidget {
                   isLoading: controller.isLoading.value,
                   onPressed: () {
                     final amount = double.tryParse(amountController.text);
-                    if (amount != null && amount > 0) {
+                    if (amount != null && amount >= 100) {
                       controller.addMoney(amount);
                       amountController.clear();
                       FocusScope.of(context).unfocus();
                     } else {
                       Get.snackbar(
                         "Invalid Amount",
-                        "Please enter a valid amount to add.",
+                        "Minimum recharge amount is ₹100",
                         snackPosition: SnackPosition.TOP,
                         backgroundColor: Colors.red,
                         colorText: Colors.white,

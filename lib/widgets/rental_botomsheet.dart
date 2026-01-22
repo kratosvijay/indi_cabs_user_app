@@ -8,6 +8,7 @@ import 'package:project_taxi_with_ai/widgets/data_models.dart';
 import 'package:project_taxi_with_ai/widgets/firestore_services.dart';
 import 'package:project_taxi_with_ai/widgets/scheduler.dart';
 import 'package:project_taxi_with_ai/widgets/pro_library.dart';
+import 'package:project_taxi_with_ai/screens/wallet.dart'; // **NEW**
 
 class RentalBottomSheet extends StatefulWidget {
   final List<RentalPackage> rentalPackages;
@@ -17,6 +18,7 @@ class RentalBottomSheet extends StatefulWidget {
   final LatLng currentPosition;
   final bool isActingDriver;
   final PricingRules? pricingRules;
+  final num walletBalance; // **NEW**
 
   const RentalBottomSheet({
     super.key,
@@ -27,6 +29,7 @@ class RentalBottomSheet extends StatefulWidget {
     required this.currentPosition,
     this.isActingDriver = false,
     this.pricingRules,
+    required this.walletBalance, // **NEW**
   });
 
   @override
@@ -571,6 +574,36 @@ class _RentalBottomSheetState extends State<RentalBottomSheet> {
                   : 'Select a Vehicle',
               onPressed: _selectedRentalVehicleType != null
                   ? () {
+                      // **NEW:** Check Wallet Balance
+                      if (widget.walletBalance < -50) {
+                        showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text("Low Wallet Balance"),
+                            content: const Text(
+                              "Your wallet balance is in negative. You cannot book a ride until you make it positive. Please recharge your wallet to book a ride.",
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Get.back(),
+                                child: const Text("Cancel"),
+                              ),
+                              TextButton(
+                                onPressed: () {
+                                  Get.back(); // Close dialog
+                                  Get.back(); // Close bottom sheet
+                                  Get.to(
+                                    () =>
+                                        WalletScreen(user: widget.currentUser),
+                                  );
+                                },
+                                child: const Text("Recharge"),
+                              ),
+                            ],
+                          ),
+                        );
+                        return;
+                      }
                       Get.back(); // Close sheet
                       _firestoreService.navigateToRentalConfirmPickup(
                         context,

@@ -56,6 +56,7 @@ class RideController extends GetxController {
   StreamSubscription<QuerySnapshot>? _driversSubscription;
   StreamSubscription<DocumentSnapshot>? _rideStatusSubscription;
   StreamSubscription<DocumentSnapshot>? _driverLocationSubscription;
+  StreamSubscription<DocumentSnapshot>? _walletSubscription; // **NEW**
 
   // Assigned Driver (Ride In Progress)
   final Rx<Driver?> assignedDriver = Rx<Driver?>(null);
@@ -126,6 +127,7 @@ class RideController extends GetxController {
         _loadSearchHistory(),
         _loadRentalPackages(),
         _loadPricingRules(),
+        _listenToWallet(), // **NEW**
       ]);
     } catch (e) {
       debugPrint("Error during RideController initialization: $e");
@@ -163,6 +165,7 @@ class RideController extends GetxController {
     _driversSubscription?.cancel();
     _rideStatusSubscription?.cancel();
     _driverLocationSubscription?.cancel();
+    _walletSubscription?.cancel(); // **NEW**
 
     _isInitialized = false; // Allow re-initialization
   }
@@ -172,6 +175,7 @@ class RideController extends GetxController {
     _driversSubscription?.cancel();
     _rideStatusSubscription?.cancel();
     _driverLocationSubscription?.cancel();
+    _walletSubscription?.cancel(); // **NEW**
     mapController.value?.dispose();
     super.onClose();
   }
@@ -751,6 +755,27 @@ class RideController extends GetxController {
       searchHistory,
     );
     searchHistory.assignAll(updatedHistory);
+  }
+
+  Future<void> _listenToWallet() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    _walletSubscription?.cancel();
+    _walletSubscription = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .snapshots()
+        .listen((snapshot) {
+          if (snapshot.exists) {
+            final data = snapshot.data();
+            final balance = (data?['wallet_balance'] as num?) ?? 0;
+            walletBalance.value = balance;
+            debugPrint(
+              "RideController: Wallet balance updated to ${walletBalance.value}",
+            );
+          }
+        });
   }
 
   // --- TTS Helpers ---

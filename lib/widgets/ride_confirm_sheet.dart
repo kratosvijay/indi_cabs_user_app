@@ -7,7 +7,8 @@ import 'package:get/get.dart';
 import 'package:project_taxi_with_ai/widgets/data_models.dart';
 import 'package:project_taxi_with_ai/widgets/firestore_services.dart';
 import 'package:project_taxi_with_ai/widgets/home_page_tour.dart';
-import 'package:project_taxi_with_ai/widgets/scheduler.dart'; // For EditLocationScreen
+import 'package:project_taxi_with_ai/widgets/scheduler.dart';
+import 'package:project_taxi_with_ai/screens/wallet.dart'; // **NEW** // For EditLocationScreen
 import 'package:project_taxi_with_ai/widgets/pro_library.dart'; // Import ProButton
 import 'package:project_taxi_with_ai/app_colors.dart';
 
@@ -107,6 +108,10 @@ class _RideConfirmationBottomSheetState
         return option.type == 'ActingDriver' && isAvailable;
       }
       // For Daily and MultiStop, show all *except* ActingDriver
+      // **MODIFIED:** MultiStop should also hide Auto
+      if (widget.rideType == RideType.multiStop && option.type == 'Auto') {
+        return false;
+      }
       return option.type != 'ActingDriver' && isAvailable;
     }).toList();
 
@@ -954,6 +959,36 @@ class _RideConfirmationBottomSheetState
                     widget.isLoadingFares
                 ? null
                 : () {
+                    // **NEW:** Check Wallet Balance
+                    if (widget.walletBalance < -50) {
+                      showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text("Low Wallet Balance"),
+                          content: const Text(
+                            "Your wallet balance is in negative. You cannot book a ride until you make it positive. Please recharge your wallet to book a ride.",
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Get.back(),
+                              child: const Text("Cancel"),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                Get.back(); // Close dialog
+                                Get.back(); // Close bottom sheet
+                                Get.to(
+                                  () => WalletScreen(user: widget.currentUser),
+                                );
+                              },
+                              child: const Text("Recharge"),
+                            ),
+                          ],
+                        ),
+                      );
+                      return;
+                    }
+
                     Get.back(); // Close this sheet
                     // **MODIFIED:** Add fee to selected fare
                     final num baseFare =

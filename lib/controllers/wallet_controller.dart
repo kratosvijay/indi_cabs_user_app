@@ -76,10 +76,10 @@ class WalletController extends GetxController {
   }
 
   Future<void> addMoney(double amount) async {
-    if (amount <= 0) {
+    if (amount < 100) {
       Get.snackbar(
         "Error",
-        "Please enter a valid amount",
+        "Minimum recharge amount is ₹100",
         snackPosition: SnackPosition.TOP,
         backgroundColor: Colors.redAccent,
         colorText: Colors.white,

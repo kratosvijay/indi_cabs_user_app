@@ -151,6 +151,7 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
   String _selectedPaymentMethod = 'Cash';
   bool _isBooking = false;
   bool _isRefreshingFare = false;
+  bool _useWalletBalance = false; // **NEW**
   bool _hasMovedPin = false;
   late final String _apiKey;
 
@@ -504,8 +505,29 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
       // Force token refresh to ensure valid session for Cloud Function
       await user.getIdToken(true);
 
+      // **NEW:** Calculate split payment
+      num walletUsed = 0;
+      num cashToPay = finalFare + _tipValue; // Initialize with full amount
+
+      if (_useWalletBalance &&
+          widget.walletBalance != null &&
+          widget.walletBalance! > 0) {
+        walletUsed = min(widget.walletBalance!, cashToPay);
+        cashToPay -= walletUsed;
+      }
+
       if (widget.isRental) {
         // --- Create Rental Request ---
+        // **NEW:** Determine final payment method string
+        String finalPaymentMethod = _selectedPaymentMethod;
+        if (walletUsed > 0) {
+          if (cashToPay > 0) {
+            finalPaymentMethod = 'Cash + Wallet';
+          } else {
+            finalPaymentMethod = 'Wallet';
+          }
+        }
+
         rideRequestIdFuture = _firestoreService.createRentalRideRequest(
           userId: user.uid, // Use current user uid
           userName: user.displayName,
@@ -516,9 +538,11 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
           rentalVehicleType: widget.rentalVehicleType!,
           rentalPrice: finalFare,
           tip: _tipValue,
-          paymentMethod: _selectedPaymentMethod,
+          paymentMethod: finalPaymentMethod, // **MODIFIED**
           scheduledTime: _currentScheduledTime, // **NEW**
           convenienceFee: _currentConvenienceFee, // **NEW**
+          walletAmountUsed: walletUsed, // **NEW**
+          cashAmount: cashToPay, // **NEW**
         );
       } else {
         // --- Create Daily/Multi-Stop Ride Request ---
@@ -526,6 +550,16 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
         destinationAddressString = await _locationService.getAddressFromLatLng(
           widget.destinationPosition,
         );
+
+        // **NEW:** Determine final payment method string
+        String finalPaymentMethod = _selectedPaymentMethod;
+        if (walletUsed > 0) {
+          if (cashToPay > 0) {
+            finalPaymentMethod = 'Cash + Wallet';
+          } else {
+            finalPaymentMethod = 'Wallet';
+          }
+        }
 
         rideRequestIdFuture = _firestoreService.createDailyRideRequest(
           userId: user.uid, // Use current user uid
@@ -539,11 +573,13 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
           vehicleType: widget.selectedVehicle?.type ?? "Multi-Stop",
           fare: finalFare,
           tip: _tipValue,
-          paymentMethod: _selectedPaymentMethod,
+          paymentMethod: finalPaymentMethod, // **MODIFIED**
           routeDetails: _currentRouteDetails,
           intermediateStops: widget.intermediateStops,
           scheduledTime: _currentScheduledTime, // **NEW**
           convenienceFee: _currentConvenienceFee, // **NEW**
+          walletAmountUsed: walletUsed, // **NEW**
+          cashAmount: cashToPay, // **NEW**
         );
       }
 
@@ -736,6 +772,34 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                       ),
                       const SizedBox(height: 16),
 
+                      const SizedBox(height: 16),
+                      // **NEW:** Wallet Usage Toggle
+                      if (widget.walletBalance != null &&
+                          widget.walletBalance! > 0)
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            "Use Wallet Balance",
+                            style: TextStyle(fontSize: 16, color: textColor),
+                          ),
+                          subtitle: Text(
+                            "Available: ₹${widget.walletBalance!.toStringAsFixed(0)}",
+                            style: TextStyle(fontSize: 12, color: subTextColor),
+                          ),
+                          value: _useWalletBalance,
+                          activeThumbColor: AppColors.primary,
+                          onChanged: isRefreshing
+                              ? null
+                              : (bool value) {
+                                  setSheetState(
+                                    () => _useWalletBalance = value,
+                                  );
+                                },
+                        ),
+                      if (widget.walletBalance != null &&
+                          widget.walletBalance! > 0)
+                        const Divider(),
+
                       // --- Payment Method Button ---
                       OutlinedButton.icon(
                         icon: const Icon(Icons.payment),
@@ -778,8 +842,9 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
 
                       // --- Confirm Booking Button ---
                       ProButton(
-                        text:
-                            'Book Now (Total: ₹${totalFare.toStringAsFixed(0)})',
+                        text: _useWalletBalance
+                            ? 'Book Now (Cash: ₹${max(0, (totalFare - (widget.walletBalance ?? 0))).toStringAsFixed(0)})'
+                            : 'Book Now (Total: ₹${totalFare.toStringAsFixed(0)})',
                         isLoading: _isBooking || isRefreshing,
                         // backgroundColor: Colors.blueAccent, // Use default gradient
                         onPressed: (_isBooking || isRefreshing)

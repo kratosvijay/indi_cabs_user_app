@@ -139,6 +139,8 @@ class FirestoreService {
     List<Map<String, dynamic>>? intermediateStops,
     DateTime? scheduledTime,
     num? convenienceFee,
+    num? walletAmountUsed, // **NEW**
+    num? cashAmount, // **NEW**
   }) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -186,6 +188,9 @@ class FirestoreService {
         'intermediateStops': intermediateStops ?? [],
         'scheduledTime': scheduledTime?.toIso8601String(),
         'convenienceFee': convenienceFee ?? 0,
+        'walletAmountUsed': walletAmountUsed ?? 0, // **NEW**
+        'cashAmount':
+            cashAmount ?? (fare + tip + (convenienceFee ?? 0)), // **NEW**
       };
 
       final result = await callable.call(rideData);
@@ -220,6 +225,8 @@ class FirestoreService {
     required String paymentMethod,
     DateTime? scheduledTime,
     num? convenienceFee,
+    num? walletAmountUsed, // **NEW**
+    num? cashAmount, // **NEW**
   }) async {
     try {
       final callable = _functions.httpsCallable('createRideRequest');
@@ -249,6 +256,10 @@ class FirestoreService {
         'rideType': 'rental',
         'scheduledTime': scheduledTime?.toIso8601String(),
         'convenienceFee': convenienceFee ?? 0,
+        'walletAmountUsed': walletAmountUsed ?? 0, // **NEW**
+        'cashAmount':
+            cashAmount ??
+            (rentalPrice + tip + (convenienceFee ?? 0)), // **NEW**
       };
 
       final result = await callable.call(rideData);

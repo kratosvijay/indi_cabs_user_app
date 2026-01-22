@@ -230,6 +230,16 @@ class PredefinedDestination {
       icon: Icons.train,
     ),
     PredefinedDestination(
+      name: "Tambaram Railway Station West",
+      location: const LatLng(12.925944864777007, 80.11847372944796),
+      icon: Icons.airplanemode_active,
+    ),
+    PredefinedDestination(
+      name: "Tambaram Railway Station East",
+      location: const LatLng(12.924428599933577, 80.11937495167811),
+      icon: Icons.airplanemode_active,
+    ),
+    PredefinedDestination(
       name: "Egmore Railway Station",
       location: const LatLng(13.078076195102502, 80.26197966863556),
       icon: Icons.train_outlined,
@@ -256,7 +266,7 @@ class PredefinedDestination {
     ),
     PredefinedDestination(
       name: "Thiruvanmiyur Bus Depot",
-      location: const LatLng(12.986506436882193, 80.26015867417088),
+      location: const LatLng(12.98715442977044, 80.25948314374493),
       icon: Icons.departure_board,
     ),
   ];
@@ -500,7 +510,7 @@ class Ride {
         const GeoPoint(0, 0); // Use pickup if dest is null (e.g., rental)
 
     // Determine ride type string
-    String type = data['vehicleType'] ?? 'Ride';
+    String type = data['vehicleType'] ?? data['vehicleClass'] ?? 'Ride';
     bool isRental = false; // **NEW**
     if (data['rideType'] == 'rental') {
       type = data['packageName'] ?? 'Rental';

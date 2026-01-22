@@ -827,7 +827,7 @@ class _MultiStopScreenState extends State<MultiStopScreen>
             "Cannot save pickup as favorite here.",
             isError: true,
           ),
-          rideType: RideType.daily,
+          rideType: RideType.multiStop,
           availability: availability,
         ),
       );

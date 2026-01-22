@@ -4,6 +4,7 @@ import 'package:flutter/material.dart'; // For Color
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class MapService {
+  GoogleMapController? _controller;
   final Completer<GoogleMapController> _mapControllerCompleter = Completer();
 
   // Initial map position (e.g., center of service area)
@@ -14,19 +15,16 @@ class MapService {
 
   // Callback when the map is created
   void onMapCreated(GoogleMapController controller) {
+    _controller = controller;
     if (!_mapControllerCompleter.isCompleted) {
       _mapControllerCompleter.complete(controller);
-      // You could apply custom map styles here if desired
-      // controller.setMapStyle(_mapStyleJson);
     }
   }
 
   // Animates the camera to a specific LatLng
   Future<void> animateCamera(LatLng target, {double zoom = 16.0}) async {
-    if (!_mapControllerCompleter.isCompleted) return; // Map not ready
+    final controller = _controller ?? (await _mapControllerCompleter.future);
     try {
-      final GoogleMapController controller =
-          await _mapControllerCompleter.future;
       await controller.animateCamera(
         CameraUpdate.newCameraPosition(
           CameraPosition(target: target, zoom: zoom, tilt: 30.0), // Add tilt
@@ -42,7 +40,8 @@ class MapService {
     LatLngBounds bounds, {
     double padding = 100.0,
   }) async {
-    if (!_mapControllerCompleter.isCompleted) return; // Map not ready
+    final controller = _controller ?? (await _mapControllerCompleter.future);
+
     // Handle case where bounds are identical (single point)
     if (bounds.southwest.latitude == bounds.northeast.latitude &&
         bounds.southwest.longitude == bounds.northeast.longitude) {
@@ -54,8 +53,6 @@ class MapService {
     }
 
     try {
-      final GoogleMapController controller =
-          await _mapControllerCompleter.future;
       await controller.animateCamera(
         CameraUpdate.newLatLngBounds(bounds, padding),
       );

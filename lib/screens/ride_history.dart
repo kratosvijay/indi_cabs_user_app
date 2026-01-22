@@ -46,7 +46,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
               'cancelled_by_user',
             ],
           )
-          // **FIXED:** Removed .orderBy('createdAt', ...)
+          .orderBy('createdAt', descending: true)
           .limit(25)
           .snapshots();
 
@@ -65,7 +65,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
               'cancelled_by_user',
             ],
           )
-          // **FIXED:** Removed .orderBy('createdAt', ...)
+          .orderBy('createdAt', descending: true)
           .limit(25)
           .snapshots();
 

@@ -431,6 +431,34 @@ class _HomePageState extends State<HomePage> {
     String? displayOverrideName,
   }) async {
     if (!mounted) return;
+
+    // **NEW:** Check Wallet Balance Before Proceeding
+    if (_rideController.walletBalance.value < -50) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text("Low Wallet Balance"),
+          content: const Text(
+            "Your wallet balance is in negative. You cannot book a ride until you make it positive. Please recharge your wallet to book a ride.",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Get.back(),
+              child: const Text("Cancel"),
+            ),
+            TextButton(
+              onPressed: () {
+                Get.back(); // Close dialog
+                Get.to(() => WalletScreen(user: widget.user));
+              },
+              child: const Text("Recharge"),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     FocusScope.of(context).unfocus();
     // Explicitly hide keyboard to be sure
     await SystemChannels.textInput.invokeMethod('TextInput.hide');
@@ -800,6 +828,7 @@ class _HomePageState extends State<HomePage> {
         currentPosition: currentPos,
         isActingDriver: isActingDriver,
         pricingRules: _rideController.pricingRules.value,
+        walletBalance: _rideController.walletBalance.value, // **NEW**
       ),
     );
   }
@@ -1055,8 +1084,7 @@ class _HomePageState extends State<HomePage> {
                           Positioned.fill(
                             child: GoogleMap(
                               initialCameraPosition: MapService.initialPosition,
-                              mapType:
-                                  MapType.hybrid, // DEBUG: Changed to Hybrid
+                              mapType: MapType.normal,
                               myLocationEnabled:
                                   false, // DEBUG: Disabled to rule out location layer crash
                               myLocationButtonEnabled: false,
