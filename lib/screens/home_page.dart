@@ -63,6 +63,8 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   // --- Controllers & Keys ---
+
+  // --- Controllers & Keys ---
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final TextEditingController _destinationController = TextEditingController();
   final TextEditingController _pickupController = TextEditingController();
@@ -1045,155 +1047,173 @@ class _HomePageState extends State<HomePage> {
                       FocusScope.of(context).unfocus();
                     }
                   },
-                  child: Stack(
-                    children: [
-                      // Google Map
-                      if (_isMapReadyToRender)
-                        GoogleMap(
-                          initialCameraPosition: MapService.initialPosition,
-                          mapType: MapType.terrain,
-                          myLocationEnabled: true,
-                          myLocationButtonEnabled: false,
-                          zoomControlsEnabled: false,
-                          // **MODIFIED:** Show user markers + driver markers
-                          markers: _rideController.markers.union(
-                            _rideController.driverMarkers,
-                          ),
-                          polylines: _rideController.polylines,
-                          onTap: (_) => FocusScope.of(context).unfocus(),
+                  child: SizedBox.expand(
+                    child: Stack(
+                      children: [
+                        // Google Map
+                        if (_isMapReadyToRender)
+                          Positioned.fill(
+                            child: GoogleMap(
+                              initialCameraPosition: MapService.initialPosition,
+                              mapType:
+                                  MapType.hybrid, // DEBUG: Changed to Hybrid
+                              myLocationEnabled:
+                                  false, // DEBUG: Disabled to rule out location layer crash
+                              myLocationButtonEnabled: false,
+                              zoomControlsEnabled: false,
+                              // **MODIFIED:** Show user markers + driver markers
+                              markers: _rideController.markers.union(
+                                _rideController.driverMarkers,
+                              ),
+                              polylines: _rideController.polylines,
+                              onTap: (_) => FocusScope.of(context).unfocus(),
 
-                          onMapCreated: (controller) {
-                            _rideController.onMapCreated(controller);
-                          },
-                          padding: EdgeInsets.only(
-                            bottom: mapBottomPadding,
-                            top: 160,
-                          ),
-                          gestureRecognizers:
-                              <Factory<OneSequenceGestureRecognizer>>{
-                                Factory<OneSequenceGestureRecognizer>(
-                                  () => EagerGestureRecognizer(),
-                                ),
-                                Factory<PanGestureRecognizer>(
-                                  () => PanGestureRecognizer(),
-                                ),
-                                Factory<ScaleGestureRecognizer>(
-                                  () => ScaleGestureRecognizer(),
-                                ),
-                                Factory<TapGestureRecognizer>(
-                                  () => TapGestureRecognizer(),
-                                ),
-                                Factory<VerticalDragGestureRecognizer>(
-                                  () => VerticalDragGestureRecognizer(),
-                                ),
+                              onMapCreated: (controller) {
+                                debugPrint(
+                                  "!!! MAP CREATED CALLBACK FIRED !!!",
+                                );
+                                _rideController.onMapCreated(controller);
                               },
-                        )
-                      else
-                        const Center(child: CircularProgressIndicator()),
-                      // Custom GPS Button
-                      Positioned(
-                        bottom: mapBottomPadding + 60,
-                        right: 16,
-                        child: Visibility(
-                          visible: _destinationPosition == null,
-                          child: FloatingActionButton(
-                            heroTag: 'gpsButton',
-                            onPressed: _rideController.goToCurrentUserLocation,
-                            backgroundColor:
-                                Theme.of(context).brightness == Brightness.dark
-                                ? Colors.grey[800]
-                                : Colors.white,
-                            elevation: 4,
-                            child: Icon(
-                              Icons.gps_fixed,
-                              color:
+                              onCameraMove: (position) {
+                                debugPrint(
+                                  "!!! MAP CAMERA MOVED: ${position.target} !!!",
+                                );
+                              },
+                              padding: EdgeInsets.only(
+                                bottom: mapBottomPadding,
+                                top: 160,
+                              ),
+                              gestureRecognizers:
+                                  <Factory<OneSequenceGestureRecognizer>>{
+                                    Factory<OneSequenceGestureRecognizer>(
+                                      () => EagerGestureRecognizer(),
+                                    ),
+                                    Factory<PanGestureRecognizer>(
+                                      () => PanGestureRecognizer(),
+                                    ),
+                                    Factory<ScaleGestureRecognizer>(
+                                      () => ScaleGestureRecognizer(),
+                                    ),
+                                    Factory<TapGestureRecognizer>(
+                                      () => TapGestureRecognizer(),
+                                    ),
+                                    Factory<VerticalDragGestureRecognizer>(
+                                      () => VerticalDragGestureRecognizer(),
+                                    ),
+                                  },
+                            ),
+                          )
+                        else
+                          const Center(child: CircularProgressIndicator()),
+                        // Custom GPS Button
+                        Positioned(
+                          bottom: mapBottomPadding + 60,
+                          right: 16,
+                          child: Visibility(
+                            visible: _destinationPosition == null,
+                            child: FloatingActionButton(
+                              heroTag: 'gpsButton',
+                              onPressed:
+                                  _rideController.goToCurrentUserLocation,
+                              backgroundColor:
                                   Theme.of(context).brightness ==
                                       Brightness.dark
-                                  ? Colors.white
-                                  : Colors.blueAccent,
-                            ),
-                          ),
-                        ),
-                      ),
-                      // Bottom Bar
-                      Positioned(
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Visibility(
-                              visible: _destinationPosition == null,
-                              replacement: Container(),
-                              child: BottomBarWidget(
-                                key: _bottomBarKey,
-                                selectedServiceType: _selectedServiceType,
-                                onServiceTypeSelected:
-                                    _handleServiceTypeSelected,
-                                onPredefinedDestinationTap:
-                                    _handlePredefinedTap,
+                                  ? Colors.grey[800]
+                                  : Colors.white,
+                              elevation: 4,
+                              child: Icon(
+                                Icons.gps_fixed,
+                                color:
+                                    Theme.of(context).brightness ==
+                                        Brightness.dark
+                                    ? Colors.white
+                                    : Colors.blueAccent,
                               ),
                             ),
-                            const LiftableBannerAd(),
-                          ],
+                          ),
                         ),
-                      ),
-                      // Search UI
-                      SearchBarWidget(
-                        key: _searchBarKey, // **NEW:** Assign key
-                        destinationController: _destinationController,
-                        destinationFocusNode: _destinationFocusNode,
-                        isSearchEnabled:
-                            _selectedServiceType == RideType.daily ||
-                            _selectedServiceType == RideType.acting,
-                        isDestinationSelected: _destinationPosition != null,
-                        predictions: _rideController.predictions,
-                        searchHistory: _rideController.searchHistory,
-                        onSearchChanged: _handleSearchChanged,
-                        onPredictionTap: _handlePredictionTap,
-                        onHistoryTap: _handleHistoryTap,
-                        onFocusChange: (hasFocus) => _onSearchFocusChange(),
-                        onClearSearch: _handleClearSearch,
-                      ),
-                      // Favorites List
-                      Positioned(
-                        top: 100,
-                        left: 16,
-                        right: 16,
-                        child: AnimatedOpacity(
-                          duration: const Duration(milliseconds: 300),
-                          opacity:
-                              !_destinationFocusNode.hasFocus &&
-                                  _destinationPosition == null &&
-                                  (_selectedServiceType == RideType.daily ||
-                                      _selectedServiceType == RideType.acting ||
-                                      _selectedServiceType ==
-                                          RideType.bookForOther ||
-                                      _selectedServiceType ==
-                                          RideType.multiStop)
-                              ? 1.0
-                              : 0.0,
-                          child: IgnorePointer(
-                            ignoring:
-                                _destinationFocusNode.hasFocus ||
-                                _destinationPosition != null ||
-                                (_selectedServiceType != RideType.daily &&
-                                    _selectedServiceType != RideType.acting &&
-                                    _selectedServiceType !=
-                                        RideType.bookForOther &&
-                                    _selectedServiceType != RideType.multiStop),
-                            child: FavoritesWidget(
-                              userId: _currentUser.uid,
-                              firestoreService:
-                                  _rideController.firestoreService,
-                              onFavoriteTap: _handleFavoriteTap,
-                              onFavoriteLongPress: _showFavoriteOptions,
+                        // Bottom Bar
+                        Positioned(
+                          bottom: 0,
+                          left: 0,
+                          right: 0,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Visibility(
+                                visible: _destinationPosition == null,
+                                replacement: Container(),
+                                child: BottomBarWidget(
+                                  key: _bottomBarKey,
+                                  selectedServiceType: _selectedServiceType,
+                                  onServiceTypeSelected:
+                                      _handleServiceTypeSelected,
+                                  onPredefinedDestinationTap:
+                                      _handlePredefinedTap,
+                                ),
+                              ),
+                              const LiftableBannerAd(),
+                            ],
+                          ),
+                        ),
+                        // Search UI
+                        SearchBarWidget(
+                          key: _searchBarKey, // **NEW:** Assign key
+                          destinationController: _destinationController,
+                          destinationFocusNode: _destinationFocusNode,
+                          isSearchEnabled:
+                              _selectedServiceType == RideType.daily ||
+                              _selectedServiceType == RideType.acting,
+                          isDestinationSelected: _destinationPosition != null,
+                          predictions: _rideController.predictions,
+                          searchHistory: _rideController.searchHistory,
+                          onSearchChanged: _handleSearchChanged,
+                          onPredictionTap: _handlePredictionTap,
+                          onHistoryTap: _handleHistoryTap,
+                          onFocusChange: (hasFocus) => _onSearchFocusChange(),
+                          onClearSearch: _handleClearSearch,
+                        ),
+                        // Favorites List
+                        Positioned(
+                          top: 100,
+                          left: 16,
+                          right: 16,
+                          child: AnimatedOpacity(
+                            duration: const Duration(milliseconds: 300),
+                            opacity:
+                                !_destinationFocusNode.hasFocus &&
+                                    _destinationPosition == null &&
+                                    (_selectedServiceType == RideType.daily ||
+                                        _selectedServiceType ==
+                                            RideType.acting ||
+                                        _selectedServiceType ==
+                                            RideType.bookForOther ||
+                                        _selectedServiceType ==
+                                            RideType.multiStop)
+                                ? 1.0
+                                : 0.0,
+                            child: IgnorePointer(
+                              ignoring:
+                                  _destinationFocusNode.hasFocus ||
+                                  _destinationPosition != null ||
+                                  (_selectedServiceType != RideType.daily &&
+                                      _selectedServiceType != RideType.acting &&
+                                      _selectedServiceType !=
+                                          RideType.bookForOther &&
+                                      _selectedServiceType !=
+                                          RideType.multiStop),
+                              child: FavoritesWidget(
+                                userId: _currentUser.uid,
+                                firestoreService:
+                                    _rideController.firestoreService,
+                                onFavoriteTap: _handleFavoriteTap,
+                                onFavoriteLongPress: _showFavoriteOptions,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 );
         }),

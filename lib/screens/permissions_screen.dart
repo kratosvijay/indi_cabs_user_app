@@ -40,9 +40,13 @@ class _PermissionsScreenState extends State<PermissionsScreen>
   }
 
   Future<void> _checkPermissions() async {
-    final locStatus = await Permission.location.status;
+    final locStatus = await Permission.locationWhenInUse.status;
     final notifStatus = await Permission.notification.status;
     final contactStatus = await Permission.contacts.status;
+
+    debugPrint(
+      "Permissions Check - Location: $locStatus, Notif: $notifStatus, Contacts: $contactStatus",
+    );
 
     if (mounted) {
       setState(() {
@@ -59,13 +63,50 @@ class _PermissionsScreenState extends State<PermissionsScreen>
   }
 
   Future<void> _requestPermission(Permission permission) async {
-    await permission.request();
+    // Force WhenInUse for location on iOS to avoid ambiguity
+    final targetPermission = (permission == Permission.location)
+        ? Permission.locationWhenInUse
+        : permission;
+
+    debugPrint("Requesting permission: $targetPermission");
+    final status = await targetPermission.request();
+    debugPrint("Permission $targetPermission status after request: $status");
+
+    if (status.isPermanentlyDenied) {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text("Permission Required"),
+            content: const Text(
+              "This permission is required for the app to function. Please enable it in the app settings.",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Cancel"),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  openAppSettings();
+                },
+                child: const Text("Open Settings"),
+              ),
+            ],
+          ),
+        );
+      }
+    } else if (status.isDenied) {
+      debugPrint("Permission $targetPermission was denied (not permanently).");
+    }
+
     _checkPermissions();
   }
 
   Future<void> _requestAll() async {
     await [
-      Permission.location,
+      Permission.locationWhenInUse,
       Permission.notification,
       Permission.contacts,
     ].request();
