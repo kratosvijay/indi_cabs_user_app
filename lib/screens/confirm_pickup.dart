@@ -99,35 +99,34 @@ class ConfirmPickupScreen extends StatefulWidget {
   final num? convenienceFee; // **NEW**
   final String? guestName;
   final String? guestPhone;
+  final bool useWallet; // **NEW**
 
   const ConfirmPickupScreen({
     super.key,
     required this.user,
-    required this.currentPosition, // This is where the pin starts
-    // Daily Ride Params (destination & polylines required if selectedVehicle is not null)
+    required this.currentPosition,
     required this.destinationPosition,
     this.selectedVehicle,
     required this.polylines,
-    this.calculatedFare, // Added
-    this.routeDetails, // Added
-    // Rental Params (required if selectedVehicle is null)
+    this.calculatedFare,
+    this.routeDetails,
     this.rentalPackage,
     this.rentalVehicleType,
     this.rentalPrice,
-    this.intermediateStops, // **NEW:** Add to constructor
-    this.walletBalance, // **NEW:** Add to constructor
-    this.scheduledTime, // **NEW**
-    this.convenienceFee, // **NEW**
+    this.intermediateStops,
+    this.walletBalance,
+    this.scheduledTime,
+    this.convenienceFee,
     this.guestName,
     this.guestPhone,
+    this.useWallet = false, // **NEW**
   }) : assert(
-         (selectedVehicle != null &&
-                 calculatedFare != null) || // Daily ride needs vehicle and fare
+         (selectedVehicle != null && calculatedFare != null) ||
              (rentalPackage != null &&
                  rentalVehicleType != null &&
-                 rentalPrice != null), // Rental needs these
-         "Either daily ride data (selectedVehicle, calculatedFare) or rental data (rentalPackage, rentalVehicleType, rentalPrice) must be provided.",
-       ); // Assert ensures either daily or rental data is present
+                 rentalPrice != null),
+         "Either daily ride data or rental data must be provided.",
+       );
 
   // Helper to determine ride type
   bool get isRental => rentalPackage != null;
@@ -151,7 +150,7 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
   String _selectedPaymentMethod = 'Cash';
   bool _isBooking = false;
   bool _isRefreshingFare = false;
-  bool _useWalletBalance = false; // **NEW**
+  late bool _useWalletBalance; // **MODIFIED**
   bool _hasMovedPin = false;
   late final String _apiKey;
 
@@ -177,6 +176,7 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
     super.initState();
     _adjustablePickupLocation = widget.currentPosition;
     _pickupAddress = "Getting address...";
+    _useWalletBalance = widget.useWallet; // **NEW**
     // **MODIFIED:** Add convenience fee to current fare
     _currentConvenienceFee = widget.convenienceFee ?? 0;
     _currentCalculatedFare =
@@ -608,9 +608,10 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
           rentalPackage: widget.rentalPackage,
           rentalVehicleType: widget.rentalVehicleType,
           intermediateStops: widget.intermediateStops,
-          scheduledTime: _currentScheduledTime, // **NEW**
-          destinationAddress: destinationAddressString, // **NEW**
-          initialEta: initialEta, // **NEW**
+          scheduledTime: _currentScheduledTime,
+          destinationAddress: destinationAddressString,
+          initialEta: initialEta,
+          isBookForOther: widget.guestName != null, // **NEW**
         );
       }
     } catch (e) {

@@ -67,6 +67,16 @@ class LocationService {
     }
   }
 
+  /// **NEW:** Stream position updates
+  Stream<Position> getPositionStream() {
+    return Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10, // Update every 10 meters
+      ),
+    );
+  }
+
   Future<String> getAddressFromLatLng(LatLng position) async {
     if (apiKey.isEmpty) return "API Key Missing";
     try {

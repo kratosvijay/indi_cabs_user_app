@@ -15,6 +15,9 @@ import 'home_page.dart';
 import 'package:project_taxi_with_ai/widgets/pro_library.dart'; // Import Pro Library
 import 'package:project_taxi_with_ai/app_colors.dart'; // Import AppColors
 import 'package:project_taxi_with_ai/widgets/liftable_banner_ad.dart';
+import 'package:project_taxi_with_ai/widgets/location_service.dart'; // **NEW**
+import 'package:project_taxi_with_ai/widgets/firestore_services.dart'; // **NEW**
+import 'package:geolocator/geolocator.dart'; // **NEW**
 
 class SearchingForRideScreen extends StatefulWidget {
   final User user;
@@ -37,9 +40,9 @@ class SearchingForRideScreen extends StatefulWidget {
   final RentalPackage? rentalPackage;
   final String? rentalVehicleType;
 
-  // **NEW:** For Multi-stop
   final List<Map<String, dynamic>>? intermediateStops;
-  final DateTime? scheduledTime; // **NEW:** For scheduled rides
+  final DateTime? scheduledTime; // For scheduled rides
+  final bool isBookForOther; // **NEW:** Flag to skip live tracking
 
   const SearchingForRideScreen({
     super.key,
@@ -51,14 +54,15 @@ class SearchingForRideScreen extends StatefulWidget {
     required this.polylines,
     required this.isRental,
     this.rideRequestId, // Nullable
-    this.rideRequestIdFuture, // **NEW**
-    this.destinationAddress, // **NEW**
-    this.initialEta, // **NEW**
+    this.rideRequestIdFuture,
+    this.destinationAddress,
+    this.initialEta,
     this.selectedVehicle,
     this.rentalPackage,
     this.rentalVehicleType,
     this.intermediateStops,
-    this.scheduledTime, // **NEW**
+    this.scheduledTime,
+    this.isBookForOther = false, // **NEW** Default false
   }) : assert(
          isRental
              ? (rentalPackage != null && rentalVehicleType != null)
@@ -83,17 +87,31 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
   String? _resolvedRideRequestId; // To store the ID once resolved
   bool _isCancelling = false; // **NEW**
   bool _isDriverFound =
-      false; // **NEW:** Track if driver is found for immediate UI feedback
+      false; // Track if driver is found for immediate UI feedback
+
+  // **NEW:** Location Service for live tracking
+  StreamSubscription<Position>? _locationSubscription;
+  late final LocationService _locationService;
+  final FirestoreService _firestoreService = FirestoreService(); // Instance
 
   @override
   void initState() {
     super.initState();
+    // Initialize services (Assuming API Key is handled inside LocationService or passed globally)
+    // For now we just instantiate it, the key is mainly for geocoding
+    _locationService = LocationService(apiKey: "");
+
     debugPrint("SearchingForRideScreen: initState started");
     _currentTip = widget.tip;
     _resolvedRideRequestId = widget.rideRequestId; // Initialize if available
     debugPrint(
       "SearchingForRideScreen: _resolvedRideRequestId at start: $_resolvedRideRequestId",
     );
+
+    // **NEW:** Start live location updates if allowed
+    if (!widget.isBookForOther && !widget.isRental) {
+      _startLocationUpdates();
+    }
 
     try {
       _buildMarkersAndBounds();
@@ -483,11 +501,43 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
     }
   }
 
+  // **NEW:** Start streaming location updates
+  void _startLocationUpdates() {
+    debugPrint("SearchingForRideScreen: Starting location updates");
+    // Cancel any existing subscription first
+    _locationSubscription?.cancel();
+
+    try {
+      _locationSubscription = _locationService.getPositionStream().listen(
+        (Position position) {
+          if (!mounted) return;
+          if (_resolvedRideRequestId == null) {
+            return; // Don't write if no ID yet
+          }
+
+          // Update Firestore
+          // NOTE: We don't need to await this as it's a stream
+          _firestoreService.updateUserLocation(
+            widget.isRental ? 'rental_requests' : 'ride_requests',
+            _resolvedRideRequestId!,
+            LatLng(position.latitude, position.longitude),
+          );
+        },
+        onError: (e) {
+          debugPrint("SearchingForRideScreen: Location stream error: $e");
+        },
+      );
+    } catch (e) {
+      debugPrint("SearchingForRideScreen: Error starting location stream: $e");
+    }
+  }
+
   @override
   void dispose() {
     debugPrint("SearchingForRideScreen: dispose called");
     _rideStatusSubscription?.cancel();
-    _tipTimer?.cancel(); // **NEW:** Cancel tip timer
+    _locationSubscription?.cancel(); // **NEW:** Cancel location stream
+    _tipTimer?.cancel();
     try {
       // map controller disposal logic if any
     } catch (e) {

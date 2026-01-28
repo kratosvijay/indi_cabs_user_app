@@ -16,6 +16,25 @@ class FirestoreService {
     region: 'asia-south1',
   );
 
+  // **NEW:** Update user location in ride document
+  Future<void> updateUserLocation(
+    String collection,
+    String rideId,
+    LatLng location,
+  ) async {
+    try {
+      await _db.collection(collection).doc(rideId).update({
+        'userLocation': {
+          'latitude': location.latitude,
+          'longitude': location.longitude,
+          'timestamp': FieldValue.serverTimestamp(),
+        },
+      });
+    } catch (e) {
+      debugPrint("Error updating user location: $e");
+    }
+  }
+
   // --- Favorites ---
   Stream<List<FavoritePlace>> getFavoritesStream(String userId) {
     return _db
@@ -323,6 +342,8 @@ class FirestoreService {
     required num rentalPrice,
     DateTime? scheduledTime,
     num? convenienceFee,
+    num? walletBalance, // **NEW**
+    bool useWallet = false, // **NEW**
   }) {
     Get.to(
       () => ConfirmPickupScreen(
@@ -336,9 +357,11 @@ class FirestoreService {
         rentalPrice: rentalPrice,
         calculatedFare: rentalPrice,
         routeDetails: null,
-        walletBalance: 0,
+        walletBalance: walletBalance, // **MODIFIED**
         scheduledTime: scheduledTime,
         convenienceFee: convenienceFee,
+        useWallet:
+            useWallet, // **NEW** (Make sure ConfirmPickupScreen expects this)
       ),
     );
   }
@@ -361,6 +384,7 @@ class FirestoreService {
     DateTime? scheduledTime,
     String? destinationAddress, // **NEW**
     String? initialEta, // **NEW**
+    bool isBookForOther = false, // **NEW**
   }) {
     Get.offAll(
       () => SearchingForRideScreen(
@@ -372,14 +396,15 @@ class FirestoreService {
         polylines: polylines,
         isRental: isRental,
         rideRequestId: rideRequestId,
-        rideRequestIdFuture: rideRequestIdFuture, // **NEW**
+        rideRequestIdFuture: rideRequestIdFuture,
         selectedVehicle: selectedVehicle,
         rentalPackage: rentalPackage,
         rentalVehicleType: rentalVehicleType,
         intermediateStops: intermediateStops,
         scheduledTime: scheduledTime,
-        destinationAddress: destinationAddress, // **NEW**
-        initialEta: initialEta, // **NEW**
+        destinationAddress: destinationAddress,
+        initialEta: initialEta,
+        isBookForOther: isBookForOther, // **NEW**
       ),
     );
   }

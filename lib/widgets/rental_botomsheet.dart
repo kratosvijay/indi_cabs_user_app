@@ -574,7 +574,7 @@ class _RentalBottomSheetState extends State<RentalBottomSheet> {
                   : 'Select a Vehicle',
               onPressed: _selectedRentalVehicleType != null
                   ? () {
-                      // **NEW:** Check Wallet Balance
+                      // Check Wallet Balance logic if needed
                       if (widget.walletBalance < -50) {
                         showDialog(
                           context: context,
@@ -614,6 +614,7 @@ class _RentalBottomSheetState extends State<RentalBottomSheet> {
                         rentalPrice: _selectedRentalPrice,
                         scheduledTime: _scheduledTime,
                         convenienceFee: _convenienceFee,
+                        walletBalance: widget.walletBalance,
                       );
                     }
                   : null,
