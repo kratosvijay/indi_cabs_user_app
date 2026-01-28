@@ -232,12 +232,12 @@ class PredefinedDestination {
     PredefinedDestination(
       name: "Tambaram Railway Station West",
       location: const LatLng(12.925944864777007, 80.11847372944796),
-      icon: Icons.airplanemode_active,
+      icon: Icons.train,
     ),
     PredefinedDestination(
       name: "Tambaram Railway Station East",
       location: const LatLng(12.924428599933577, 80.11937495167811),
-      icon: Icons.airplanemode_active,
+      icon: Icons.train,
     ),
     PredefinedDestination(
       name: "Egmore Railway Station",
@@ -661,6 +661,35 @@ class WalletTransaction {
       status:
           data['status'] ??
           'success', // Default to success for backward compatibility
+    );
+  }
+}
+
+// **NEW:** Shared state for booking flow (Home & BookForOther)
+class BookingState {
+  final bool isLoading;
+  final Map<String, num>? fares;
+  final RouteDetails? route;
+  final DateTime? scheduledTime;
+
+  BookingState({
+    this.isLoading = false,
+    this.fares,
+    this.route,
+    this.scheduledTime,
+  });
+
+  BookingState copyWith({
+    bool? isLoading,
+    Map<String, num>? fares,
+    RouteDetails? route,
+    DateTime? scheduledTime,
+  }) {
+    return BookingState(
+      isLoading: isLoading ?? this.isLoading,
+      fares: fares ?? this.fares,
+      route: route ?? this.route,
+      scheduledTime: scheduledTime ?? this.scheduledTime,
     );
   }
 }

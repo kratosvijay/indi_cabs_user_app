@@ -48,7 +48,6 @@ import 'package:project_taxi_with_ai/widgets/rental_botomsheet.dart';
 import 'package:project_taxi_with_ai/widgets/ride_confirm_sheet.dart';
 import 'package:project_taxi_with_ai/widgets/search_bar.dart';
 
-import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/snackbar.dart';
 import 'package:project_taxi_with_ai/widgets/pro_library.dart';
 
@@ -97,6 +96,11 @@ class _HomePageState extends State<HomePage> {
   bool _isDropoffInServiceArea = true;
   RideType _selectedServiceType = RideType.daily;
   bool _isMapReadyToRender = false; // **NEW:** Delay map rendering
+
+  // **NEW:** Reactive booking state
+  final ValueNotifier<BookingState> _bookingState = ValueNotifier(
+    BookingState(),
+  );
 
   @override
   void initState() {
@@ -462,8 +466,13 @@ class _HomePageState extends State<HomePage> {
     FocusScope.of(context).unfocus();
     // Explicitly hide keyboard to be sure
     await SystemChannels.textInput.invokeMethod('TextInput.hide');
-    // Wait for keyboard to dismiss to prevent glitch/overflow when opening bottom sheet
-    await Future.delayed(const Duration(milliseconds: 300));
+
+    if (!mounted) return; // **FIX:** Check mounted after async gap
+
+    // **OPTIMIZATION:** Only wait if keyboard was likely open
+    if (MediaQuery.of(context).viewInsets.bottom > 0) {
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
 
     _isDropoffInServiceArea = _rideController.locationService
         .isPointInServiceArea(placeDetails.location);
@@ -496,15 +505,114 @@ class _HomePageState extends State<HomePage> {
       'ActingDriver': true,
     };
 
-    // Show loading sheet
+    // Show loading sheet immediately with ValueListenableBuilder
     _showRideConfirmationSheet(
       _isDropoffInServiceArea,
-      isLoadingFares: true,
+      // isLoadingFares: true, // Removed
       walletBalance: _rideController.walletBalance.value,
       rideType: _selectedServiceType,
       availability: availability,
     );
 
+    // --- Start background calculation ---
+    _calculateFaresAndRoute();
+  }
+
+  // **NEW:** Separated logic for calculation
+  Future<void> _calculateFaresAndRoute() async {
+    _bookingState.value = _bookingState.value.copyWith(
+      isLoading: true,
+      fares: null,
+    );
+
+    RouteDetails? routeDetails;
+    Map<String, num>? calculatedFares;
+
+    if (_rideController.currentPosition.value != null &&
+        _destinationPosition != null) {
+      if (_isDropoffInServiceArea) {
+        routeDetails = await _rideController.directionsService.getDirections(
+          _rideController.currentPosition.value!,
+          _destinationPosition!,
+        );
+
+        if (routeDetails != null) {
+          // Update route immediately
+          _bookingState.value = _bookingState.value.copyWith(
+            route: routeDetails,
+          );
+
+          calculatedFares = await _calculateFares(
+            distanceMeters: routeDetails.distanceMeters,
+            durationSeconds: routeDetails.durationSeconds,
+            tollCost: routeDetails.tollCost,
+            pickupLocation: _rideController.currentPosition.value!,
+          );
+        } else {
+          if (mounted) displaySnackBar(context, "Could not get route details.");
+          _bookingState.value = _bookingState.value.copyWith(isLoading: false);
+          // Allow sheet to remain nicely or close? For now, just stop loading.
+          return;
+        }
+      } else {
+        if (mounted) {
+          displaySnackBar(
+            context,
+            "Drop-off location is outside the service area.",
+          );
+        }
+        _bookingState.value = _bookingState.value.copyWith(isLoading: false);
+        return;
+      }
+
+      // **FIX:** Check if still mounted and positions are valid before updating map
+      if (!mounted ||
+          _destinationPosition == null ||
+          _rideController.currentPosition.value == null) {
+        return;
+      }
+
+      // Update Map
+      _rideController.updateMapElements(
+        pickupAddress: _pickupController.text,
+        destinationAddress: _destinationController.text,
+        routePoints: routeDetails.polylinePoints,
+      );
+      _rideController.mapService.animateCameraToBounds(
+        LatLngBounds(
+          southwest: LatLng(
+            min(
+              _rideController.currentPosition.value!.latitude,
+              _destinationPosition!.latitude,
+            ),
+            min(
+              _rideController.currentPosition.value!.longitude,
+              _destinationPosition!.longitude,
+            ),
+          ),
+          northeast: LatLng(
+            max(
+              _rideController.currentPosition.value!.latitude,
+              _destinationPosition!.latitude,
+            ),
+            max(
+              _rideController.currentPosition.value!.longitude,
+              _destinationPosition!.longitude,
+            ),
+          ),
+        ),
+      );
+
+      // Update State with Fares
+      _bookingState.value = _bookingState.value.copyWith(
+        isLoading: false,
+        fares: calculatedFares,
+        route: routeDetails,
+      );
+    }
+  }
+
+  /*
     // --- Start background tasks: Get Route and Calculate Fares ---
     RouteDetails? routeDetails;
     Map<String, num>? calculatedFares;
@@ -607,6 +715,7 @@ class _HomePageState extends State<HomePage> {
       setState(() => _rideController.isCalculatingFares.value = false);
     }
   }
+  */
 
   Future<void> _handlePredefinedTap(PredefinedDestination destination) async {
     if (!mounted) return;
@@ -744,8 +853,9 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _showRideConfirmationSheet(
     bool isDropoffInServiceArea, {
-    bool isLoadingFares = false,
-    Map<String, num>? calculatedFares,
+    // Remove calculatedFares and isLoadingFares inputs since we use ValueNotifier
+    // bool isLoadingFares = false,
+    // Map<String, num>? calculatedFares,
     RouteDetails? routeDetails,
     PricingRules? pricingRules,
     required num walletBalance,
@@ -766,45 +876,86 @@ class _HomePageState extends State<HomePage> {
       etaString = "$durationMinutes min";
     }
 
-    // **MODIFIED:** Calculate real ETA for each vehicle type
-    final updatedVehicleOptions = VehicleOption.defaultOptions.map((option) {
-      final realEta = _rideController.getNearestDriverEta(option.type);
-      return VehicleOption(
-        type: option.type,
-        imagePath: option.imagePath,
-        price: option.price,
-        eta: realEta,
-      );
-    }).toList();
-
+    // **MODIFIED:** Use ValueListenableBuilder for seamless updates
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => RideConfirmationBottomSheet(
-        currentUser: _currentUser,
-        currentPosition: currentPos,
-        destinationPosition: destPos,
-        pickupAddress: _pickupController.text,
-        destinationAddress: _destinationController.text,
-        isDropoffInServiceArea: isDropoffInServiceArea,
-        vehicleOptions: updatedVehicleOptions,
-        polylines: _rideController.polylines,
-        isLoadingFares: isLoadingFares,
-        calculatedFares: calculatedFares,
-        eta: etaString,
-        routeDetails: routeDetails,
-        pricingRules: pricingRules,
-        walletBalance: walletBalance,
-        rideType: rideType,
-        availability: availability,
-        showScheduleTour: showScheduleTour,
-        onEditPickup: () => _handleEditLocation(currentPos, isPickup: true),
-        onEditDropoff: () => _handleEditLocation(destPos, isPickup: false),
-        onSaveDropoffFavorite: _handleSaveDropoffFavorite,
-        onSavePickupFavorite: _handleSavePickupFavorite,
-      ),
-    );
+      builder: (_) {
+        return ValueListenableBuilder<BookingState>(
+          valueListenable: _bookingState,
+          builder: (context, state, _) {
+            String displayedEta = etaString;
+            // If we have live state route info, use that.
+            if (state.route != null) {
+              final durationMinutes = (state.route!.durationSeconds / 60)
+                  .round();
+              displayedEta = "$durationMinutes min";
+            } else if (state.isLoading) {
+              displayedEta = "Calculating...";
+            }
+
+            final updatedVehicleOptions = VehicleOption.defaultOptions.map((
+              option,
+            ) {
+              final realEta = _rideController.getNearestDriverEta(option.type);
+              return VehicleOption(
+                type: option.type,
+                imagePath: option.imagePath,
+                price: option.price,
+                eta: realEta,
+              );
+            }).toList();
+
+            return RideConfirmationBottomSheet(
+              currentUser: _currentUser,
+              currentPosition: currentPos,
+              destinationPosition: destPos,
+              pickupAddress: _pickupController.text,
+              destinationAddress: _destinationController.text,
+              isDropoffInServiceArea: isDropoffInServiceArea,
+              vehicleOptions: updatedVehicleOptions,
+              polylines: state.route != null
+                  ? {
+                      Polyline(
+                        polylineId: const PolylineId("route"),
+                        points: state.route!.polylinePoints,
+                        color: Colors.black,
+                        width: 5,
+                      ),
+                    }
+                  : _rideController.polylines,
+              isLoadingFares: state.isLoading,
+              calculatedFares: state.fares,
+              eta: displayedEta,
+              routeDetails: state.route ?? routeDetails,
+              pricingRules: pricingRules ?? _rideController.pricingRules.value,
+              walletBalance: walletBalance,
+              rideType: rideType,
+              availability: availability,
+              showScheduleTour: showScheduleTour,
+              // **NEW:** Edit callbacks
+              // Note: For full seamlessness, these should update state rather than closing sheet,
+              // but given the current architecture, we might need to close and reopen OR handle
+              // the result and update the internal state if possible.
+              // The user asked for "seamless" primarily for fare calculation.
+              onEditPickup: () =>
+                  _handleEditLocation(currentPos, isPickup: true),
+              onEditDropoff: () =>
+                  _handleEditLocation(destPos, isPickup: false),
+              onSaveDropoffFavorite: _handleSaveDropoffFavorite,
+              onSavePickupFavorite: _handleSavePickupFavorite,
+            );
+          },
+        );
+      },
+    ).whenComplete(() {
+      // Cleanup when sheet closes
+      if (mounted) {
+        _resetMapAndSearch();
+        setState(() => _rideController.isCalculatingFares.value = false);
+      }
+    });
   }
 
   Future<void> _showRentalBottomSheet({bool isActingDriver = false}) {

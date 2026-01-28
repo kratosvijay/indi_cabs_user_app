@@ -9,7 +9,6 @@ import 'package:project_taxi_with_ai/widgets/data_models.dart';
 import 'package:project_taxi_with_ai/widgets/directions_service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:project_taxi_with_ai/widgets/map_service.dart';
-import 'package:project_taxi_with_ai/widgets/places_service.dart';
 import 'package:project_taxi_with_ai/widgets/ride_confirm_sheet.dart';
 import '../widgets/snackbar.dart';
 import 'package:project_taxi_with_ai/widgets/pro_library.dart';
@@ -36,7 +35,6 @@ class MultiStopScreen extends StatefulWidget {
 class _MultiStopScreenState extends State<MultiStopScreen>
     with SingleTickerProviderStateMixin {
   // Services
-  late final PlacesService _placesService;
   late final DirectionsService _directionsService;
   late final MapService _mapService;
   final HttpsCallable _calculateFaresCallable = FirebaseFunctions.instanceFor(
@@ -58,9 +56,8 @@ class _MultiStopScreenState extends State<MultiStopScreen>
   // 0..N-1: Stops/Dropoff (matching _controllers index)
   final Map<int, LatLng> _locations = {};
   final Map<int, String> _addresses = {};
-  List<PlaceAutocompletePrediction> _predictions = [];
-  int? _currentlyFocusedIndex;
-  Timer? _debounce;
+
+  // NOTE: Removed inline predictions logic per request.
 
   bool _isCalculating = false;
 
@@ -68,13 +65,13 @@ class _MultiStopScreenState extends State<MultiStopScreen>
   void initState() {
     super.initState();
     final apiKey = dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
-    _placesService = PlacesService(apiKey: apiKey);
+    // _placesService removed
     _directionsService = DirectionsService(apiKey: apiKey);
     _mapService = MapService();
 
     // Initialize Pickup
     _locations[-1] = widget.currentPosition;
-    _pickupController.text = "Current Location"; // Or fetch address
+    _pickupController.text = "Current Location";
     _getAddressForPickup();
 
     // Initialize with 1 stop (Final Drop-off)
@@ -94,30 +91,6 @@ class _MultiStopScreenState extends State<MultiStopScreen>
     Future.delayed(const Duration(milliseconds: 300), () {
       if (mounted) _animationController.forward();
     });
-
-    _pickupFocusNode.addListener(() {
-      if (_pickupFocusNode.hasFocus) {
-        setState(() {
-          _currentlyFocusedIndex = -1;
-        });
-        if (_pickupController.text.isNotEmpty) {
-          _onSearchChanged(_pickupController.text, -1);
-        } else {
-          setState(() => _predictions = []);
-        }
-      } else {
-        setState(() {
-          _predictions = [];
-          if (_currentlyFocusedIndex == -1) {
-            _currentlyFocusedIndex = null;
-          }
-        });
-      }
-    });
-
-    _pickupController.addListener(() {
-      _onSearchChanged(_pickupController.text, -1);
-    });
   }
 
   @override
@@ -130,20 +103,14 @@ class _MultiStopScreenState extends State<MultiStopScreen>
     }
     _pickupController.dispose();
     _pickupFocusNode.dispose();
-    _placesService.cancelDebounce();
+    // _placesService.cancelDebounce(); // No longer needed
     _animationController.dispose();
-    _debounce?.cancel();
     super.dispose();
   }
 
   Future<void> _getAddressForPickup() async {
-    // Simple implementation to get address for current location
-    // In a real app, use GeocodingPlatform or similar
-    // For now, we'll just set it to "Current Location" if not already set
     if (_pickupController.text.isEmpty ||
         _pickupController.text == "Current Location") {
-      // You could call a reverse geocoding API here
-      // For now, let's leave it as "Current Location" or the user can edit it
       if (mounted) {
         setState(() {
           _pickupController.text = "Current Location";
@@ -154,82 +121,7 @@ class _MultiStopScreenState extends State<MultiStopScreen>
 
   /// **NEW:** Helper to add listeners to a text field and focus node
   void _addListeners(int index) {
-    final focusNode = _focusNodes[index];
-    final controller = _controllers[index];
-
-    focusNode.addListener(() {
-      if (focusNode.hasFocus) {
-        setState(() {
-          _currentlyFocusedIndex = index;
-        });
-        if (controller.text.isNotEmpty) {
-          _onSearchChanged(controller.text, index);
-        } else {
-          setState(
-            () => _predictions = [],
-          ); // Clear predictions if field is empty
-        }
-      } else {
-        // Clear predictions when focus is lost
-        setState(() {
-          _predictions = [];
-          if (_currentlyFocusedIndex == index) {
-            _currentlyFocusedIndex = null;
-          }
-        });
-      }
-    });
-  }
-
-  void _onSearchChanged(String query, int index) {
-    // index -1 is Pickup
-    if (_debounce?.isActive ?? false) _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 500), () async {
-      if (query.isNotEmpty) {
-        final results = await _placesService.getAutocompleteResults(
-          query,
-          widget.currentPosition,
-        );
-        if (mounted && _currentlyFocusedIndex == index) {
-          setState(() {
-            _predictions = results;
-          });
-        }
-      } else {
-        if (mounted && _currentlyFocusedIndex == index) {
-          setState(() {
-            _predictions = [];
-          });
-        }
-      }
-    });
-  }
-
-  Future<void> _onPredictionTapped(
-    PlaceAutocompletePrediction prediction,
-    int index,
-  ) async {
-    FocusScope.of(context).unfocus(); // Dismiss keyboard
-    final placeDetails = await _placesService.getPlaceDetails(
-      prediction.placeId,
-    );
-    if (mounted && placeDetails != null) {
-      setState(() {
-        if (index == -1) {
-          _pickupController.text = prediction.description;
-          _locations[-1] = placeDetails.location;
-          _addresses[-1] = prediction.description;
-        } else {
-          _controllers[index].text = prediction.description;
-          _locations[index] = placeDetails.location;
-          _addresses[index] = prediction.description;
-        }
-        _predictions = [];
-        _currentlyFocusedIndex = null;
-      });
-    } else if (mounted) {
-      displaySnackBar(context, "Could not get location details.");
-    }
+    // No extra listeners needed for now since we rely on onTap
   }
 
   Future<void> _openMapPicker(int index) async {
@@ -255,8 +147,6 @@ class _MultiStopScreenState extends State<MultiStopScreen>
         } else {
           _controllers[index].text = address;
         }
-        _predictions = [];
-        _currentlyFocusedIndex = null;
       });
     }
   }
@@ -307,9 +197,9 @@ class _MultiStopScreenState extends State<MultiStopScreen>
   }
 
   void _addStop() {
-    if (_controllers.length >= 4) {
-      // Max 1 pickup + 3 stops + 1 final drop = 5 locations total, 4 dynamic fields
-      displaySnackBar(context, "Maximum 4 stops allowed.");
+    if (_controllers.length >= 3) {
+      // Max 1 pickup + 2 stops + 1 final drop = 4 locations total, 3 dynamic fields
+      displaySnackBar(context, "Maximum 3 stops allowed.");
       return;
     }
     _addNewStopField(isRemovable: true);
@@ -350,64 +240,7 @@ class _MultiStopScreenState extends State<MultiStopScreen>
       _locations.addAll(newLocations);
       _addresses.clear();
       _addresses.addAll(newAddresses);
-
-      if (_currentlyFocusedIndex == index) {
-        _currentlyFocusedIndex = null;
-        _predictions = [];
-      }
-      // Adjust focus index if it was after the removed one
-      if (_currentlyFocusedIndex != null && _currentlyFocusedIndex! > index) {
-        _currentlyFocusedIndex = _currentlyFocusedIndex! - 1;
-      }
     });
-  }
-
-  Widget _buildPredictionsList() {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      margin: const EdgeInsets.only(top: 8, left: 48, right: 4),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.1),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      constraints: const BoxConstraints(maxHeight: 200),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: ListView.separated(
-          shrinkWrap: true,
-          padding: EdgeInsets.zero,
-          itemCount: _predictions.length,
-          separatorBuilder: (context, index) => const Divider(height: 1),
-          itemBuilder: (context, index) {
-            final prediction = _predictions[index];
-            return ListTile(
-              leading: const Icon(
-                Icons.location_on_outlined,
-                color: Colors.grey,
-                size: 20,
-              ),
-              title: Text(
-                prediction.description,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Theme.of(context).textTheme.bodyLarge?.color,
-                ),
-              ),
-              dense: true,
-              onTap: () =>
-                  _onPredictionTapped(prediction, _currentlyFocusedIndex!),
-            );
-          },
-        ),
-      ),
-    );
   }
 
   Widget _buildPickupNode() {
@@ -502,27 +335,10 @@ class _MultiStopScreenState extends State<MultiStopScreen>
                           horizontal: 16,
                           vertical: 16,
                         ),
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            Icons.map_outlined,
-                            color: Theme.of(context).primaryColor,
-                            size: 20,
-                          ),
-                          tooltip: "Select on Map",
-                          onPressed: () => _openMapPicker(-1),
-                        ),
+                        suffixIcon: null, // Removed map button
                       ),
-                      onChanged: (query) => _onSearchChanged(query, -1),
-                      onTap: () {
-                        if (_currentlyFocusedIndex != -1) {
-                          setState(() {
-                            _currentlyFocusedIndex = -1;
-                            if (_pickupController.text.isEmpty) {
-                              _predictions = [];
-                            }
-                          });
-                        }
-                      },
+                      readOnly: true, // **MODIFIED**
+                      onTap: () => _openMapPicker(-1), // **MODIFIED**
                     ),
                   ),
                 ),
@@ -530,8 +346,6 @@ class _MultiStopScreenState extends State<MultiStopScreen>
             ],
           ),
         ),
-        if (_currentlyFocusedIndex == -1 && _predictions.isNotEmpty)
-          _buildPredictionsList(),
       ],
     );
   }
@@ -664,29 +478,12 @@ class _MultiStopScreenState extends State<MultiStopScreen>
                                 tooltip: "Remove Stop",
                                 onPressed: () => _removeStop(index),
                               ),
-                            IconButton(
-                              icon: Icon(
-                                Icons.map_outlined,
-                                color: Theme.of(context).primaryColor,
-                                size: 20,
-                              ),
-                              tooltip: "Select on Map",
-                              onPressed: () => _openMapPicker(index),
-                            ),
+                            // Removed Map Button
                           ],
                         ),
                       ),
-                      onChanged: (query) => _onSearchChanged(query, index),
-                      onTap: () {
-                        if (_currentlyFocusedIndex != index) {
-                          setState(() {
-                            _currentlyFocusedIndex = index;
-                            if (_controllers[index].text.isEmpty) {
-                              _predictions = [];
-                            }
-                          });
-                        }
-                      },
+                      readOnly: true, // **MODIFIED**
+                      onTap: () => _openMapPicker(index), // **MODIFIED**
                     ),
                   ),
                 ),
@@ -694,8 +491,6 @@ class _MultiStopScreenState extends State<MultiStopScreen>
             ],
           ),
         ),
-        if (_currentlyFocusedIndex == index && _predictions.isNotEmpty)
-          _buildPredictionsList(),
       ],
     );
   }

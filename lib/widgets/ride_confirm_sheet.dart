@@ -10,6 +10,7 @@ import 'package:project_taxi_with_ai/widgets/home_page_tour.dart';
 import 'package:project_taxi_with_ai/widgets/scheduler.dart';
 import 'package:project_taxi_with_ai/screens/wallet.dart'; // **NEW** // For EditLocationScreen
 import 'package:project_taxi_with_ai/widgets/pro_library.dart'; // Import ProButton
+import 'package:project_taxi_with_ai/widgets/equalizer_loading.dart'; // **NEW**
 import 'package:project_taxi_with_ai/app_colors.dart';
 
 // Define the callback type as a simple function
@@ -138,6 +139,32 @@ class _RideConfirmationBottomSheetState
     // **NEW:** Check if we need to show the schedule tour
     if (widget.showScheduleTour) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _showScheduleTour());
+    }
+  }
+
+  // **NEW:** Handle updates from parent (e.g. when fares load)
+  @override
+  void didUpdateWidget(RideConfirmationBottomSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // If we just finished loading fares, try to select a default vehicle
+    if (oldWidget.isLoadingFares &&
+        !widget.isLoadingFares &&
+        widget.calculatedFares != null) {
+      final availableVehicles = _filteredVehicleOptions.where((v) {
+        return (widget.calculatedFares?[v.type] ?? 0) > 0;
+      }).toList();
+
+      if (availableVehicles.isNotEmpty) {
+        // Keep current selection if valid, otherwise pick first available
+        if (_selectedVehicle == null ||
+            (widget.calculatedFares?[_selectedVehicleType] ?? 0) <= 0) {
+          setState(() {
+            _selectedVehicle = availableVehicles.first;
+            _selectedVehicleType = availableVehicles.first.type;
+          });
+        }
+      }
     }
   }
 
@@ -733,10 +760,8 @@ class _RideConfirmationBottomSheetState
           // Vehicle Options List
           SizedBox(
             height: 250,
-            child: widget.isLoadingFares
-                ? const Center(child: CircularProgressIndicator())
-                : (widget.calculatedFares == null ||
-                      widget.calculatedFares!.isEmpty)
+            // **MODIFIED:** Support loading state in list
+            child: (widget.calculatedFares == null && !widget.isLoadingFares)
                 ? const Center(
                     child: Text(
                       "Could not calculate fares.",
@@ -750,7 +775,7 @@ class _RideConfirmationBottomSheetState
                     child: Text(
                       "No vehicles are available for this service right now. Please try again soon.",
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 16, color: Colors.redAccent),
+                      style: TextStyle(fontSize: 16, color: Colors.black),
                     ),
                   )
                 : ListView.builder(
@@ -767,12 +792,15 @@ class _RideConfirmationBottomSheetState
                           ? basePrice + _convenienceFee
                           : null;
 
-                      if (calculatedPrice == null || calculatedPrice <= 0) {
+                      // Only hide if NOT loading AND price is invalid
+                      if (!widget.isLoadingFares &&
+                          (calculatedPrice == null || calculatedPrice <= 0)) {
                         return const SizedBox.shrink();
                       }
 
-                      final String displayPrice =
-                          "₹${calculatedPrice.toStringAsFixed(0)}";
+                      final String displayPrice = calculatedPrice != null
+                          ? "₹${calculatedPrice.toStringAsFixed(0)}"
+                          : "";
 
                       return GestureDetector(
                         onTap: () => setState(() {
@@ -867,14 +895,19 @@ class _RideConfirmationBottomSheetState
                                   ],
                                 ),
                               ),
-                              Text(
-                                displayPrice,
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: isDark ? Colors.white : Colors.black87,
-                                ),
-                              ),
+                              // **MODIFIED:** Show Equalizer or Price
+                              widget.isLoadingFares
+                                  ? EqualizerLoading(isDark: isDark)
+                                  : Text(
+                                      displayPrice,
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark
+                                            ? Colors.white
+                                            : Colors.black87,
+                                      ),
+                                    ),
                               IconButton(
                                 icon: Icon(
                                   Icons.info_outline,

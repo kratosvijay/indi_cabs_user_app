@@ -630,20 +630,26 @@ class RideController extends GetxController {
     try {
       debugPrint("DEBUG: checkActiveRides started for user: ${user.uid}");
 
-      // 1. Check Daily Rides
-      final dailyQuery = await FirebaseFirestore.instance
-          .collection('ride_requests')
-          .where('userId', isEqualTo: user.uid)
-          .where('status', whereIn: activeStatuses)
-          .get();
-      debugPrint("DEBUG: Found ${dailyQuery.docs.length} active daily rides");
+      // **OPTIMIZATION:** Run queries in parallel
+      final results = await Future.wait([
+        // 1. Check Daily Rides
+        FirebaseFirestore.instance
+            .collection('ride_requests')
+            .where('userId', isEqualTo: user.uid)
+            .where('status', whereIn: activeStatuses)
+            .get(),
+        // 2. Check Rental Rides
+        FirebaseFirestore.instance
+            .collection('rental_requests')
+            .where('userId', isEqualTo: user.uid)
+            .where('status', whereIn: activeStatuses)
+            .get(),
+      ]);
 
-      // 2. Check Rental Rides
-      final rentalQuery = await FirebaseFirestore.instance
-          .collection('rental_requests')
-          .where('userId', isEqualTo: user.uid)
-          .where('status', whereIn: activeStatuses)
-          .get();
+      final dailyQuery = results[0];
+      final rentalQuery = results[1];
+
+      debugPrint("DEBUG: Found ${dailyQuery.docs.length} active daily rides");
       debugPrint("DEBUG: Found ${rentalQuery.docs.length} active rental rides");
 
       List<Map<String, dynamic>> activeRides = [];
@@ -651,13 +657,8 @@ class RideController extends GetxController {
       for (var doc in dailyQuery.docs) {
         final data = doc.data();
         final status = data['status'] ?? 'unknown';
-        debugPrint("DEBUG: Daily ride ${doc.id}: status='$status'");
-
         // Defensive check: skip completed/cancelled
-        if (status == 'completed' || status == 'cancelled') {
-          debugPrint("DEBUG: Skipping completed/cancelled ride ${doc.id}");
-          continue;
-        }
+        if (status == 'completed' || status == 'cancelled') continue;
 
         activeRides.add({
           'id': doc.id,
@@ -670,13 +671,8 @@ class RideController extends GetxController {
       for (var doc in rentalQuery.docs) {
         final data = doc.data();
         final status = data['status'] ?? 'unknown';
-        debugPrint("DEBUG: Rental ride ${doc.id}: status='$status'");
-
         // Defensive check: skip completed/cancelled
-        if (status == 'completed' || status == 'cancelled') {
-          debugPrint("DEBUG: Skipping completed/cancelled ride ${doc.id}");
-          continue;
-        }
+        if (status == 'completed' || status == 'cancelled') continue;
 
         activeRides.add({
           'id': doc.id,
@@ -686,9 +682,6 @@ class RideController extends GetxController {
         });
       }
 
-      debugPrint(
-        "DEBUG: Total active rides after filtering: ${activeRides.length}",
-      );
       return activeRides;
     } catch (e) {
       debugPrint("Error checking active rides: $e");

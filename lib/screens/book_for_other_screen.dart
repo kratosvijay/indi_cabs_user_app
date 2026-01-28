@@ -9,7 +9,6 @@ import 'package:project_taxi_with_ai/widgets/data_models.dart';
 import 'package:project_taxi_with_ai/widgets/directions_service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-import 'package:project_taxi_with_ai/widgets/places_service.dart';
 import 'package:project_taxi_with_ai/widgets/ride_confirm_sheet.dart';
 import '../widgets/snackbar.dart';
 import 'package:project_taxi_with_ai/widgets/pro_library.dart';
@@ -35,7 +34,6 @@ class BookForOtherScreen extends StatefulWidget {
 
 class _BookForOtherScreenState extends State<BookForOtherScreen> {
   // Services
-  late final PlacesService _placesService;
   late final DirectionsService _directionsService;
   final HttpsCallable _calculateFaresCallable = FirebaseFunctions.instanceFor(
     region: 'asia-south1',
@@ -46,29 +44,22 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
   final TextEditingController _pickupController = TextEditingController();
   final TextEditingController _dropoffController = TextEditingController();
 
-  final FocusNode _pickupFocusNode = FocusNode();
-  final FocusNode _dropoffFocusNode = FocusNode();
-
   // State
   String? _guestName;
   String? _guestPhone;
   LatLng? _pickupLocation;
   LatLng? _dropoffLocation;
 
-  List<PlaceAutocompletePrediction> _predictions = [];
-  int? _currentlyFocusedIndex; // 0: Pickup, 1: Dropoff
-  Timer? _debounce;
-  bool _isCalculating = false;
+  // **NEW:** Reactive state
+  final ValueNotifier<BookingState> _bookingState = ValueNotifier(
+    BookingState(),
+  );
 
   @override
   void initState() {
     super.initState();
     final apiKey = dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
-    _placesService = PlacesService(apiKey: apiKey);
     _directionsService = DirectionsService(apiKey: apiKey);
-
-    // Initial Empty State
-    _addListeners();
   }
 
   @override
@@ -76,69 +67,8 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
     _contactController.dispose();
     _pickupController.dispose();
     _dropoffController.dispose();
-    _pickupFocusNode.dispose();
-    _dropoffFocusNode.dispose();
-    _placesService.cancelDebounce();
-    _debounce?.cancel();
+    _bookingState.dispose();
     super.dispose();
-  }
-
-  void _addListeners() {
-    _pickupFocusNode.addListener(() {
-      if (_pickupFocusNode.hasFocus) {
-        setState(() => _currentlyFocusedIndex = 0);
-        if (_pickupController.text.isNotEmpty) {
-          _onSearchChanged(_pickupController.text, 0);
-        }
-      } else {
-        // Delay clearing to allow tap
-        Future.delayed(const Duration(milliseconds: 200), () {
-          if (mounted && _currentlyFocusedIndex == 0) {
-            setState(() {
-              _currentlyFocusedIndex = null;
-              _predictions = [];
-            });
-          }
-        });
-      }
-    });
-
-    _dropoffFocusNode.addListener(() {
-      if (_dropoffFocusNode.hasFocus) {
-        setState(() => _currentlyFocusedIndex = 1);
-        if (_dropoffController.text.isNotEmpty) {
-          _onSearchChanged(_dropoffController.text, 1);
-        }
-      } else {
-        Future.delayed(const Duration(milliseconds: 200), () {
-          if (mounted && _currentlyFocusedIndex == 1) {
-            setState(() {
-              _currentlyFocusedIndex = null;
-              _predictions = [];
-            });
-          }
-        });
-      }
-    });
-  }
-
-  void _onSearchChanged(String query, int index) {
-    if (_debounce?.isActive ?? false) _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 500), () async {
-      if (query.isNotEmpty) {
-        final results = await _placesService.getAutocompleteResults(
-          query,
-          widget.currentPosition,
-        );
-        if (mounted && _currentlyFocusedIndex == index) {
-          setState(() => _predictions = results);
-        }
-      } else {
-        if (mounted && _currentlyFocusedIndex == index) {
-          setState(() => _predictions = []);
-        }
-      }
-    });
   }
 
   Future<void> _pickContact() async {
@@ -169,31 +99,7 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
     }
   }
 
-  Future<void> _onPredictionTapped(
-    PlaceAutocompletePrediction prediction,
-    int index,
-  ) async {
-    FocusScope.of(context).unfocus();
-    final placeDetails = await _placesService.getPlaceDetails(
-      prediction.placeId,
-    );
-
-    if (mounted && placeDetails != null) {
-      setState(() {
-        if (index == 0) {
-          _pickupLocation = placeDetails.location;
-          _pickupController.text = prediction.description;
-        } else {
-          _dropoffLocation = placeDetails.location;
-          _dropoffController.text = prediction.description;
-        }
-        _predictions = [];
-        _currentlyFocusedIndex = null;
-      });
-    }
-  }
-
-  Future<void> _openMapPicker(int index) async {
+  Future<void> _openMapPicker(int index, {bool recalculate = false}) async {
     LatLng initial = widget.currentPosition;
     if (index == 0 && _pickupLocation != null) initial = _pickupLocation!;
     if (index == 1 && _dropoffLocation != null) initial = _dropoffLocation!;
@@ -212,6 +118,58 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
           _dropoffController.text = result['address'];
         }
       });
+
+      // **NEW:** Trigger recalculation if needed
+      if (recalculate && _pickupLocation != null && _dropoffLocation != null) {
+        _calculateFaresAndRoute();
+      }
+    }
+  }
+
+  // **NEW:** Separated logic
+  Future<void> _calculateFaresAndRoute() async {
+    _bookingState.value = _bookingState.value.copyWith(
+      isLoading: true,
+      fares: null,
+    );
+
+    // Get Route
+    final routeDetails = await _directionsService.getDirections(
+      _pickupLocation!,
+      _dropoffLocation!,
+    );
+
+    if (routeDetails == null) {
+      _bookingState.value = _bookingState.value.copyWith(isLoading: false);
+      if (mounted) displaySnackBar(context, "Could not find a route.");
+      return;
+    }
+
+    // Update route immediately so UI shows distance/time
+    _bookingState.value = _bookingState.value.copyWith(route: routeDetails);
+
+    try {
+      final result = await _calculateFaresCallable.call<Map<dynamic, dynamic>>({
+        'distanceMeters': routeDetails.distanceMeters,
+        'tollCost': routeDetails.tollCost,
+        'pickupLocation': {
+          'latitude': _pickupLocation!.latitude,
+          'longitude': _pickupLocation!.longitude,
+        },
+      });
+      final fares = result.data['fares'] as Map<dynamic, dynamic>?;
+      final typedFares = fares?.map(
+        (key, value) => MapEntry(key.toString(), value as num),
+      );
+
+      _bookingState.value = _bookingState.value.copyWith(
+        isLoading: false,
+        fares: typedFares,
+      );
+    } catch (e) {
+      debugPrint("Error calculating fares: $e");
+      _bookingState.value = _bookingState.value.copyWith(isLoading: false);
+      if (mounted) displaySnackBar(context, "Could not calculate fares.");
     }
   }
 
@@ -229,51 +187,8 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
       return;
     }
 
-    setState(() => _isCalculating = true);
-
-    // Get Route
-    final routeDetails = await _directionsService.getDirections(
-      _pickupLocation!,
-      _dropoffLocation!,
-    );
-
-    if (routeDetails == null) {
-      if (mounted) displaySnackBar(context, "Could not find a route.");
-      setState(() => _isCalculating = false);
-      return;
-    }
-
-    // Calculate Fare
-    // For now, we proceed with standard fare calculation
-    Future<Map<String, num>?> calculateFares() async {
-      try {
-        final result = await _calculateFaresCallable
-            .call<Map<dynamic, dynamic>>({
-              'distanceMeters': routeDetails.distanceMeters,
-              'tollCost': routeDetails.tollCost,
-              'pickupLocation': {
-                'latitude': _pickupLocation!.latitude,
-                'longitude': _pickupLocation!.longitude,
-              },
-            });
-        final fares = result.data['fares'] as Map<dynamic, dynamic>?;
-        return fares?.map(
-          (key, value) => MapEntry(key.toString(), value as num),
-        );
-      } catch (e) {
-        debugPrint("Error calculating fares: $e");
-        return null;
-      }
-    }
-
-    final calculatedFares = await calculateFares();
-
-    setState(() => _isCalculating = false);
-
-    if (calculatedFares == null) {
-      if (mounted) displaySnackBar(context, "Could not calculate fares.");
-      return;
-    }
+    // Start calculation immediately
+    _calculateFaresAndRoute();
 
     final availability = {
       'Auto': true,
@@ -283,46 +198,57 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
       'ActingDriver': true,
     };
 
-    final duration = (routeDetails.durationSeconds / 60).round();
-    final etaString = "$duration min";
-
     if (mounted) {
       showModalBottomSheet(
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (_) => RideConfirmationBottomSheet(
-          currentUser: widget.user,
-          currentPosition: _pickupLocation!,
-          destinationPosition: _dropoffLocation!,
-          pickupAddress: _pickupController.text,
-          destinationAddress: _dropoffController.text,
-          isDropoffInServiceArea: true, // Assuming true for now or add check
-          vehicleOptions: VehicleOption.defaultOptions, // Or filtered
-          polylines: {
-            Polyline(
-              polylineId: const PolylineId("route"),
-              points: routeDetails.polylinePoints,
-              color: Colors.black,
-              width: 5,
-            ),
-          },
-          isLoadingFares: false,
-          calculatedFares: calculatedFares,
-          eta: etaString,
-          routeDetails: routeDetails,
-          pricingRules: widget.pricingRules,
-          walletBalance: widget.walletBalance,
-          rideType: RideType.bookForOther,
-          availability: availability,
-          onEditPickup: () => _openMapPicker(0),
-          onEditDropoff: () => _openMapPicker(1),
-          onSaveDropoffFavorite: () {},
-          onSavePickupFavorite: () {},
+        builder: (_) {
+          return ValueListenableBuilder<BookingState>(
+            valueListenable: _bookingState,
+            builder: (context, state, _) {
+              final duration = state.route != null
+                  ? (state.route!.durationSeconds / 60).round()
+                  : 0;
+              final etaString = "$duration min";
 
-          guestName: _guestName,
-          guestPhone: _guestPhone,
-        ),
+              return RideConfirmationBottomSheet(
+                currentUser: widget.user,
+                currentPosition: _pickupLocation!,
+                destinationPosition: _dropoffLocation!,
+                pickupAddress: _pickupController.text,
+                destinationAddress: _dropoffController.text,
+                isDropoffInServiceArea: true,
+                vehicleOptions: VehicleOption.defaultOptions,
+                polylines: state.route != null
+                    ? {
+                        Polyline(
+                          polylineId: const PolylineId("route"),
+                          points: state.route!.polylinePoints,
+                          color: Colors.black,
+                          width: 5,
+                        ),
+                      }
+                    : {},
+                isLoadingFares: state.isLoading,
+                calculatedFares: state.fares,
+                eta: etaString,
+                routeDetails: state.route,
+                pricingRules: widget.pricingRules,
+                walletBalance: widget.walletBalance,
+                rideType: RideType.bookForOther,
+                availability: availability,
+                // **NEW:** Pass recalculate: true
+                onEditPickup: () => _openMapPicker(0, recalculate: true),
+                onEditDropoff: () => _openMapPicker(1, recalculate: true),
+                onSaveDropoffFavorite: () {},
+                onSavePickupFavorite: () {},
+                guestName: _guestName,
+                guestPhone: _guestPhone,
+              );
+            },
+          );
+        },
       );
     }
   }
@@ -364,7 +290,6 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
                     0,
                     "Enter pickup location",
                     _pickupController,
-                    _pickupFocusNode,
                     isDark,
                     Icons.my_location,
                   ),
@@ -373,15 +298,9 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
                     1,
                     "Enter drop-off location",
                     _dropoffController,
-                    _dropoffFocusNode,
                     isDark,
                     Icons.location_on,
                   ),
-
-                  if (_predictions.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    _buildPredictionsList(isDark),
-                  ],
                 ],
               ),
             ),
@@ -392,8 +311,8 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
             padding: const EdgeInsets.all(16.0),
             child: ProButton(
               text: "Confirm Booking",
-              isLoading: _isCalculating,
-              onPressed: _isCalculating ? null : _confirmBooking,
+              isLoading: false, // UI no longer blocks
+              onPressed: _confirmBooking,
             ),
           ),
         ],
@@ -442,7 +361,6 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
     int index,
     String hint,
     TextEditingController controller,
-    FocusNode focusNode,
     bool isDark,
     IconData icon,
   ) {
@@ -456,8 +374,8 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
       ),
       child: TextField(
         controller: controller,
-        focusNode: focusNode,
-        onChanged: (val) => _onSearchChanged(val, index),
+        readOnly: true,
+        onTap: () => _openMapPicker(index),
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: TextStyle(
@@ -469,50 +387,7 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
             vertical: 16,
           ),
           prefixIcon: Icon(icon, size: 20, color: Colors.grey),
-          suffixIcon: IconButton(
-            icon: Icon(Icons.map, color: Theme.of(context).primaryColor),
-            onPressed: () => _openMapPicker(index),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPredictionsList(bool isDark) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.1),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      constraints: const BoxConstraints(maxHeight: 200),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: ListView.separated(
-          shrinkWrap: true,
-          padding: EdgeInsets.zero,
-          itemCount: _predictions.length,
-          separatorBuilder: (context, index) => const Divider(height: 1),
-          itemBuilder: (context, index) {
-            final prediction = _predictions[index];
-            return ListTile(
-              leading: const Icon(
-                Icons.location_on_outlined,
-                color: Colors.grey,
-                size: 20,
-              ),
-              title: Text(prediction.description),
-              dense: true,
-              onTap: () =>
-                  _onPredictionTapped(prediction, _currentlyFocusedIndex!),
-            );
-          },
+          suffixIcon: Icon(Icons.chevron_right, color: Colors.grey),
         ),
       ),
     );
