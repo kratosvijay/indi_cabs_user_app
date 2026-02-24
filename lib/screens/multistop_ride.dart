@@ -527,7 +527,7 @@ class _MultiStopScreenState extends State<MultiStopScreen>
         waypoints; // Remaining are intermediates
 
     // 2. Get route details (total distance, duration, tolls)
-    final routeDetails = await _directionsService.getDirections(
+    var routeDetails = await _directionsService.getDirections(
       pickup,
       finalDrop,
       intermediates: intermediateLatLngs,
@@ -542,20 +542,31 @@ class _MultiStopScreenState extends State<MultiStopScreen>
     }
 
     // 3. Calculate fare using Cloud Function
-    final faresResult = await _calculateFares(
+    final calculationResult = await _calculateFares(
       distanceMeters: routeDetails.distanceMeters,
       durationSeconds: routeDetails.durationSeconds,
       tollCost: routeDetails.tollCost,
       pickupLocation: pickup,
+      destinationLocation: finalDrop,
+      intermediateStops: intermediateLatLngs,
+      routePolyline: routeDetails.polylinePoints,
     );
 
-    if (faresResult == null) {
+    if (calculationResult == null) {
       if (mounted) {
-        displaySnackBar(context, "Could not calculate fares for this route.");
+        displaySnackBar(context, "Could not calculate fares.");
+        setState(() {
+          _isCalculating = false;
+        });
       }
-      setState(() => _isCalculating = false);
       return;
     }
+
+    final faresResult = calculationResult.fares;
+    final appliedSurcharge = calculationResult.appliedSurcharge;
+
+    // Update route details with the newly calculated surcharge/toll
+    routeDetails = routeDetails.copyWith(tollCost: appliedSurcharge);
 
     // 4. Add multi-stop surcharge (₹30 per stop, *not* including final drop)
     final multiStopFee = intermediateLatLngs.length * 30;
@@ -601,7 +612,7 @@ class _MultiStopScreenState extends State<MultiStopScreen>
               _controllers.last.text, // Use text from final drop
           isDropoffInServiceArea: true,
           vehicleOptions: VehicleOption.defaultOptions,
-          polylines: _mapService.createPolylines(routeDetails.polylinePoints),
+          polylines: _mapService.createPolylines(routeDetails!.polylinePoints),
           isLoadingFares: false,
           calculatedFares: finalFares,
           eta: etaString,
@@ -630,11 +641,14 @@ class _MultiStopScreenState extends State<MultiStopScreen>
   }
 
   // --- Cloud Function Call Helper ---
-  Future<Map<String, num>?> _calculateFares({
+  Future<({Map<String, num> fares, num appliedSurcharge})?> _calculateFares({
     required int distanceMeters,
     required int durationSeconds,
     required num tollCost,
     required LatLng pickupLocation,
+    LatLng? destinationLocation,
+    List<LatLng>? intermediateStops,
+    List<LatLng>? routePolyline,
   }) async {
     try {
       final result = await _calculateFaresCallable.call<Map<dynamic, dynamic>>({
@@ -645,13 +659,50 @@ class _MultiStopScreenState extends State<MultiStopScreen>
           'latitude': pickupLocation.latitude,
           'longitude': pickupLocation.longitude,
         },
+        if (destinationLocation != null)
+          'destinationLocation': {
+            'latitude': destinationLocation.latitude,
+            'longitude': destinationLocation.longitude,
+          },
+        if (intermediateStops != null && intermediateStops.isNotEmpty)
+          'intermediateStops': intermediateStops
+              .map(
+                (stop) => {
+                  'location': {
+                    'latitude': stop.latitude,
+                    'longitude': stop.longitude,
+                  },
+                },
+              )
+              .toList(),
+        if (routePolyline != null)
+          'routePolyline': routePolyline
+              .map((p) => {'latitude': p.latitude, 'longitude': p.longitude})
+              .toList(),
       });
       final fares = result.data['fares'] as Map<dynamic, dynamic>?;
+      final appliedSurcharge = result.data['appliedSurcharge'] as num? ?? 0;
+      final appliedToll = result.data['appliedToll'] as num? ?? 0;
+      final totalExtras = appliedSurcharge + appliedToll;
+
+      debugPrint(
+        '--- _calculateFares DEBUG (multistop_ride) ---\n'
+        'fares: $fares\n'
+        'appliedSurcharge: $appliedSurcharge\n'
+        'appliedToll: $appliedToll\n'
+        'totalExtras: $totalExtras\n'
+        '----------------------------------------------',
+      );
+
       if (fares != null) {
-        return fares.map(
-          (key, value) => MapEntry(key.toString(), value as num),
+        return (
+          fares: fares.map(
+            (key, value) => MapEntry(key.toString(), value as num),
+          ),
+          appliedSurcharge: totalExtras,
         );
       }
+
       return null;
     } on FirebaseFunctionsException catch (e) {
       debugPrint(
@@ -726,7 +777,7 @@ class _MultiStopScreenState extends State<MultiStopScreen>
                   ),
 
                   // --- Add Stop Button ---
-                  if (_locations.length < 4)
+                  if (_controllers.length < 3)
                     Padding(
                       padding: const EdgeInsets.only(left: 36.0, top: 8.0),
                       child: TextButton.icon(

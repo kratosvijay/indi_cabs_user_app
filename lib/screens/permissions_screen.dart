@@ -56,10 +56,6 @@ class _PermissionsScreenState extends State<PermissionsScreen>
         _isChecking = false;
       });
     }
-
-    if (_locationGranted && _notificationGranted && _contactsGranted) {
-      _proceed();
-    }
   }
 
   Future<void> _requestPermission(Permission permission) async {
@@ -110,7 +106,10 @@ class _PermissionsScreenState extends State<PermissionsScreen>
       Permission.notification,
       Permission.contacts,
     ].request();
-    _checkPermissions();
+    await _checkPermissions();
+    if (_locationGranted) {
+      _proceed();
+    }
   }
 
   void _proceed() {
@@ -195,7 +194,7 @@ class _PermissionsScreenState extends State<PermissionsScreen>
               const Spacer(),
 
               ElevatedButton(
-                onPressed: _requestAll,
+                onPressed: _locationGranted ? _proceed : _requestAll,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
@@ -204,9 +203,12 @@ class _PermissionsScreenState extends State<PermissionsScreen>
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: const Text(
-                  "Allow All",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                child: Text(
+                  _locationGranted ? "Next" : "Allow All",
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
               const SizedBox(height: 20),

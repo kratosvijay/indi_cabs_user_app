@@ -304,6 +304,20 @@ class RouteDetails {
     required this.polylinePoints,
     required this.tollCost,
   });
+
+  RouteDetails copyWith({
+    int? distanceMeters,
+    int? durationSeconds,
+    List<LatLng>? polylinePoints,
+    num? tollCost,
+  }) {
+    return RouteDetails(
+      distanceMeters: distanceMeters ?? this.distanceMeters,
+      durationSeconds: durationSeconds ?? this.durationSeconds,
+      polylinePoints: polylinePoints ?? this.polylinePoints,
+      tollCost: tollCost ?? this.tollCost,
+    );
+  }
 }
 
 // Model for pricing rules (from Firestore)

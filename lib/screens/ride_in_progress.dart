@@ -24,6 +24,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:project_taxi_with_ai/widgets/slide_to_cancel.dart';
 import 'edit_location.dart';
 import 'package:project_taxi_with_ai/widgets/liftable_banner_ad.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 class RideInProgressScreen extends StatefulWidget {
   final User user;
@@ -332,13 +333,20 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         );
       }
 
-      if (widget.intermediateStops != null) {
+      final dynamicStops =
+          _rideController.rideData['intermediateStops'] ??
+          widget.intermediateStops;
+      if (dynamicStops != null) {
         int stopNumber = 1;
-        for (var stopData in widget.intermediateStops!) {
+        for (var stopData in dynamicStops) {
           try {
-            final locationMap = stopData['location'] as Map<String, dynamic>;
-            final lat = locationMap['latitude'] as double;
-            final lng = locationMap['longitude'] as double;
+            final locationMap = stopData['location'];
+            double lat = locationMap is GeoPoint
+                ? locationMap.latitude
+                : locationMap['latitude'] as double;
+            double lng = locationMap is GeoPoint
+                ? locationMap.longitude
+                : locationMap['longitude'] as double;
             _markers.add(
               Marker(
                 markerId: MarkerId('stop_$stopNumber'),
@@ -407,13 +415,21 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     }
 
     List<LatLng>? intermediateLatLngs;
-    if (widget.intermediateStops != null) {
-      intermediateLatLngs = widget.intermediateStops!.map((stopData) {
-        final locationMap = stopData['location'] as Map<String, dynamic>;
-        return LatLng(
-          locationMap['latitude'] as double,
-          locationMap['longitude'] as double,
-        );
+    final dynamicStops =
+        _rideController.rideData['intermediateStops'] ??
+        widget.intermediateStops;
+    if (dynamicStops != null) {
+      intermediateLatLngs = (dynamicStops as List<dynamic>).map<LatLng>((
+        stopData,
+      ) {
+        final locationMap = stopData['location'];
+        double lat = locationMap is GeoPoint
+            ? locationMap.latitude
+            : locationMap['latitude'] as double;
+        double lng = locationMap is GeoPoint
+            ? locationMap.longitude
+            : locationMap['longitude'] as double;
+        return LatLng(lat, lng);
       }).toList();
     }
 
@@ -713,13 +729,21 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     if (_driver == null || widget.isRental || _apiKey.isEmpty) return;
 
     List<LatLng>? intermediateLatLngs;
-    if (widget.intermediateStops != null) {
-      intermediateLatLngs = widget.intermediateStops!.map((stopData) {
-        final locationMap = stopData['location'] as Map<String, dynamic>;
-        return LatLng(
-          locationMap['latitude'] as double,
-          locationMap['longitude'] as double,
-        );
+    final dynamicStops =
+        _rideController.rideData['intermediateStops'] ??
+        widget.intermediateStops;
+    if (dynamicStops != null) {
+      intermediateLatLngs = (dynamicStops as List<dynamic>).map<LatLng>((
+        stopData,
+      ) {
+        final locationMap = stopData['location'];
+        double lat = locationMap is GeoPoint
+            ? locationMap.latitude
+            : locationMap['latitude'] as double;
+        double lng = locationMap is GeoPoint
+            ? locationMap.longitude
+            : locationMap['longitude'] as double;
+        return LatLng(lat, lng);
       }).toList();
     }
 
@@ -1613,6 +1637,54 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                             onEdit: () => _handleEditLocation(true),
                           ),
                         const SizedBox(height: 16),
+
+                        // **NEW:** Show Intermediate Stops
+                        if (!widget.isRental)
+                          Obx(() {
+                            final rideData = _rideController.rideData;
+                            final stops =
+                                rideData['intermediateStops']
+                                    as List<dynamic>? ??
+                                [];
+
+                            return Column(
+                              children: [
+                                for (int i = 0; i < stops.length; i++) ...[
+                                  _buildLocationRow(
+                                    Icons.stop_circle_outlined,
+                                    "Stop ${i + 1}",
+                                    stops[i]['address'] as String? ??
+                                        "Unknown Location",
+                                  ),
+                                  const SizedBox(height: 16),
+                                ],
+                                if (stops.length < 2 &&
+                                    (_isRideStarted ||
+                                        _currentRideStatus == 'started' ||
+                                        _currentRideStatus == 'on_trip')) ...[
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: OutlinedButton.icon(
+                                      onPressed: _handleAddDailyStop,
+                                      icon: const Icon(Icons.add_location_alt),
+                                      label: const Text("Add Stop (+₹30)"),
+                                      style: OutlinedButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 12,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                ],
+                              ],
+                            );
+                          }),
                         if (!widget.isRental)
                           _buildLocationRow(
                             Icons.location_on,
@@ -2028,6 +2100,163 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         if (mounted) {
           displaySnackBar(context, "Failed to add stop: $e");
         }
+      }
+    }
+  }
+
+  Future<void> _handleAddDailyStop() async {
+    final currentLocation = _rideController.currentPosition.value;
+    if (currentLocation == null) {
+      displaySnackBar(context, "Waiting for current location...");
+      return;
+    }
+
+    final result = await Get.to(
+      () => EditLocationScreen(initialLocation: currentLocation),
+    );
+
+    if (result != null && result is Map) {
+      final location = result['location'] as LatLng;
+      final address = result['address'] as String;
+
+      try {
+        if (mounted) {
+          displaySnackBar(context, "Calculating new fare...", isError: false);
+        }
+
+        final rideData = _rideController.rideData;
+        final currentStops = List<dynamic>.from(
+          rideData['intermediateStops'] ?? [],
+        );
+
+        currentStops.add({
+          'address': address,
+          'location': GeoPoint(location.latitude, location.longitude),
+        });
+
+        final currentDestinationMap =
+            rideData['destinationLocation'] ?? rideData['destination'];
+        LatLng finalDestination = destinationLocation;
+        if (currentDestinationMap is GeoPoint) {
+          finalDestination = LatLng(
+            currentDestinationMap.latitude,
+            currentDestinationMap.longitude,
+          );
+        } else if (currentDestinationMap != null) {
+          finalDestination = LatLng(
+            currentDestinationMap['latitude'] ?? destinationLocation.latitude,
+            currentDestinationMap['longitude'] ?? destinationLocation.longitude,
+          );
+        }
+
+        final pickupLatLng = _currentPickupLocation;
+
+        final List<LatLng> intermediateLatLngs = currentStops.map((stop) {
+          final loc = stop['location'];
+          if (loc is GeoPoint) return LatLng(loc.latitude, loc.longitude);
+          return LatLng(loc['latitude'], loc['longitude']);
+        }).toList();
+
+        final routeDetails = await _directionsService.getDirections(
+          pickupLatLng,
+          finalDestination,
+          intermediates: intermediateLatLngs,
+        );
+
+        if (routeDetails == null) {
+          if (mounted) {
+            displaySnackBar(
+              context,
+              "Could not calculate route for this stop.",
+            );
+          }
+          return;
+        }
+
+        final List<Map<String, dynamic>> stopsForCalc = intermediateLatLngs
+            .asMap()
+            .entries
+            .map((entry) {
+              return {
+                'address': currentStops[entry.key]['address'],
+                'location': {
+                  'latitude': entry.value.latitude,
+                  'longitude': entry.value.longitude,
+                },
+              };
+            })
+            .toList();
+
+        final HttpsCallable calculateFaresCallable =
+            FirebaseFunctions.instanceFor(
+              region: 'asia-south1',
+            ).httpsCallable('calculateFares');
+        final calcResult = await calculateFaresCallable.call({
+          'distanceMeters': routeDetails.distanceMeters,
+          'durationSeconds': routeDetails.durationSeconds,
+          'tollCost': routeDetails.tollCost,
+          'pickupLocation': {
+            'latitude': pickupLatLng.latitude,
+            'longitude': pickupLatLng.longitude,
+          },
+          'destinationLocation': {
+            'latitude': finalDestination.latitude,
+            'longitude': finalDestination.longitude,
+          },
+          'intermediateStops': stopsForCalc,
+          'routePolyline': routeDetails.polylinePoints
+              .map((p) => {'latitude': p.latitude, 'longitude': p.longitude})
+              .toList(),
+        });
+
+        final data = calcResult.data;
+        if (data['fares'] != null) {
+          final faresMap = Map<String, num>.from(data['fares']);
+          String vehicleType = widget.selectedVehicleType;
+          final classFromData = rideData['vehicleClass'] as String?;
+          if (classFromData != null && faresMap.containsKey(classFromData)) {
+            vehicleType = classFromData;
+          }
+
+          num newFare = faresMap[vehicleType] ?? faresMap.values.first;
+
+          final multiStopFee = currentStops.length * 30;
+          newFare += multiStopFee;
+
+          await FirebaseFirestore.instance
+              .collection('ride_requests')
+              .doc(widget.rideRequestId)
+              .update({'intermediateStops': currentStops, 'fare': newFare});
+
+          if (mounted) {
+            displaySnackBar(
+              context,
+              "Stop added! New Fare: ₹$newFare",
+              isError: false,
+            );
+          }
+
+          setState(() {
+            _routePointsToDestination = routeDetails.polylinePoints;
+            _polylines.removeWhere((p) => p.polylineId.value == 'ride_route');
+            _polylines.add(
+              Polyline(
+                polylineId: const PolylineId('ride_route'),
+                points: routeDetails.polylinePoints,
+                color: Colors.blueAccent,
+                width: 5,
+              ),
+            );
+          });
+          _setupMarkers();
+          _animateCameraToBounds();
+        } else {
+          if (mounted) {
+            displaySnackBar(context, "Could not calculate new fare.");
+          }
+        }
+      } catch (e) {
+        if (mounted) displaySnackBar(context, "Failed to add stop: $e");
       }
     }
   }

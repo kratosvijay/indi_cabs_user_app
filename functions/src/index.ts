@@ -59,6 +59,9 @@ interface CalculateFaresData {
   durationSeconds?: number;
   tollCost: number;
   pickupLocation: { latitude: number; longitude: number; };
+  destinationLocation?: { latitude: number; longitude: number; };
+  intermediateStops?: { location: { latitude: number; longitude: number; }; }[];
+  routePolyline?: { latitude: number; longitude: number; }[];
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -121,16 +124,71 @@ export const calculateFares = onCall(async (
     logger.warn("Unauthenticated user tried to call calculateFares.");
     throw new HttpsError("unauthenticated", "Must be authenticated.");
   }
-  const {distanceMeters, tollCost, pickupLocation} = request.data;
+  const {
+    distanceMeters,
+    tollCost,
+    pickupLocation,
+    destinationLocation,
+    intermediateStops,
+    routePolyline,
+  } = request.data;
   if (!distanceMeters || !pickupLocation) {
     throw new HttpsError("invalid-argument", "Missing data.");
   }
   const distanceKm = distanceMeters / 1000.0;
   const safeTollCost = tollCost || 0;
-  const pickupGeoPoint = new admin.firestore.GeoPoint(
-    pickupLocation.latitude,
-    pickupLocation.longitude
+
+  // 1. Gather all points to check for geofence surcharges
+  const routePoints: admin.firestore.GeoPoint[] = [];
+  routePoints.push(
+    new admin.firestore.GeoPoint(
+      pickupLocation.latitude,
+      pickupLocation.longitude
+    )
   );
+
+  if (destinationLocation) {
+    routePoints.push(
+      new admin.firestore.GeoPoint(
+        destinationLocation.latitude,
+        destinationLocation.longitude
+      )
+    );
+  }
+
+  if (intermediateStops && Array.isArray(intermediateStops)) {
+    for (const stop of intermediateStops) {
+      if (
+        stop.location &&
+        typeof stop.location.latitude === "number" &&
+        typeof stop.location.longitude === "number"
+      ) {
+        routePoints.push(
+          new admin.firestore.GeoPoint(
+            stop.location.latitude,
+            stop.location.longitude
+          )
+        );
+      }
+    }
+  }
+
+  if (routePolyline && Array.isArray(routePolyline)) {
+    for (const point of routePolyline) {
+      if (
+        typeof point.latitude === "number" &&
+        typeof point.longitude === "number"
+      ) {
+        routePoints.push(
+          new admin.firestore.GeoPoint(
+            point.latitude,
+            point.longitude
+          )
+        );
+      }
+    }
+  }
+
   try {
     const rulesDoc = await db.collection("pricing_rules").doc("Chennai").get();
     if (!rulesDoc.exists) {
@@ -185,17 +243,28 @@ export const calculateFares = onCall(async (
 
     let geofenceSurcharge = 0.0;
     const zonesSnapshot = await db.collection("geofenced_zones").get();
+
+    // Check all route points against all zones. Apply the max surcharge.
     for (const doc of zonesSnapshot.docs) {
       const zone = doc.data() as GeofencedZone;
-      if (
-        zone.surcharge_amount && zone.surcharge_amount > 0 &&
-        zone.boundary && isPointInPolygon(pickupGeoPoint, zone.boundary)
-      ) {
-        geofenceSurcharge = zone.surcharge_amount;
-        logger.info(
-          `Applying surcharge of ${geofenceSurcharge} for zone ${doc.id}`
-        );
-        break;
+      if (zone.surcharge_amount && zone.surcharge_amount > 0 && zone.boundary) {
+        let intersectsZone = false;
+        for (const point of routePoints) {
+          if (isPointInPolygon(point, zone.boundary)) {
+            intersectsZone = true;
+            break;
+          }
+        }
+
+        if (intersectsZone) {
+          if (zone.surcharge_amount > geofenceSurcharge) {
+            geofenceSurcharge = zone.surcharge_amount;
+          }
+          logger.info(
+            `Found intersecting zone ${doc.id}, ` +
+            `current max surcharge is ${geofenceSurcharge}`
+          );
+        }
       }
     }
     const calculatedFares: { [key: string]: number } = {};
@@ -351,21 +420,23 @@ export const createRideRequest = onCall(async (
 
   // 1. Run the transaction to create the ride & update counter
   try {
-    await db.runTransaction(async (transaction) => {
-      const counterDoc = await transaction.get(counterRef);
-      let newCount = 1;
-      if (counterDoc.exists) {
-        newCount = (counterDoc.data()?.current_id || 0) + 1;
-      }
-      newRideIdString = "ID" + newCount.toString().padStart(15, "0");
-      // **FIXED:** Create doc ref inside transaction
-      const newRideDocRef = db.collection(collectionPath).doc(newRideIdString);
-      if (rideData.userId !== userId) {
-        throw new Error("User ID mismatch.");
-      }
-      transaction.set(newRideDocRef, firestoreData);
-      transaction.set(counterRef, {current_id: newCount}, {merge: true});
-    });
+    await db.runTransaction(
+      async (transaction: admin.firestore.Transaction) => {
+        const counterDoc = await transaction.get(counterRef);
+        let newCount = 1;
+        if (counterDoc.exists) {
+          newCount = (counterDoc.data()?.current_id || 0) + 1;
+        }
+        newRideIdString = "ID" + newCount.toString().padStart(15, "0");
+        // **FIXED:** Create doc ref inside transaction
+        const newRideDocRef = db.collection(collectionPath)
+          .doc(newRideIdString);
+        if (rideData.userId !== userId) {
+          throw new Error("User ID mismatch.");
+        }
+        transaction.set(newRideDocRef, firestoreData);
+        transaction.set(counterRef, {current_id: newCount}, {merge: true});
+      });
   } catch (error) {
     logger.error(`Error creating ride doc for user ${userId}:`, error);
     throw new HttpsError(
@@ -684,30 +755,31 @@ export const verifyWalletPayment = onCall(async (
 
   try {
     let newBalance = 0;
-    await db.runTransaction(async (transaction) => {
-      const paymentDoc = await transaction.get(paymentDocRef);
-      if (paymentDoc.data()?.status === "successful") {
-        throw new Error("Payment has already been processed.");
-      }
+    await db.runTransaction(
+      async (transaction: admin.firestore.Transaction) => {
+        const paymentDoc = await transaction.get(paymentDocRef);
+        if (paymentDoc.data()?.status === "successful") {
+          throw new Error("Payment has already been processed.");
+        }
 
-      const userDoc = await transaction.get(userWalletRef);
-      if (!userDoc.exists) {
-        throw new Error("User document not found.");
-      }
+        const userDoc = await transaction.get(userWalletRef);
+        if (!userDoc.exists) {
+          throw new Error("User document not found.");
+        }
 
-      const currentBalance = userDoc.data()?.wallet_balance || 0;
-      newBalance = currentBalance + amountToCredit;
+        const currentBalance = userDoc.data()?.wallet_balance || 0;
+        newBalance = currentBalance + amountToCredit;
 
-      transaction.update(userWalletRef, {
-        wallet_balance: newBalance,
+        transaction.update(userWalletRef, {
+          wallet_balance: newBalance,
+        });
+
+        transaction.update(paymentDocRef, {
+          status: "successful",
+          paymentId: razorpay_payment_id,
+          orderId: razorpay_order_id,
+        });
       });
-
-      transaction.update(paymentDocRef, {
-        status: "successful",
-        paymentId: razorpay_payment_id,
-        orderId: razorpay_order_id,
-      });
-    });
 
     // **FIXED:** max-len
     logger.info(

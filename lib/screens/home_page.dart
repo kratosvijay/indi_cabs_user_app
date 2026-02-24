@@ -8,6 +8,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart' hide Route;
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -141,6 +142,11 @@ class _HomePageState extends State<HomePage> {
           _isMapReadyToRender = true;
         });
       }
+    });
+
+    // **NEW:** Check for notification permission prompt
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkNotificationPermission();
     });
 
     // **NEW:** Sync pickup address from controller
@@ -527,6 +533,7 @@ class _HomePageState extends State<HomePage> {
 
     RouteDetails? routeDetails;
     Map<String, num>? calculatedFares;
+    num appliedSurcharge = 0;
 
     if (_rideController.currentPosition.value != null &&
         _destinationPosition != null) {
@@ -542,12 +549,22 @@ class _HomePageState extends State<HomePage> {
             route: routeDetails,
           );
 
-          calculatedFares = await _calculateFares(
+          final calculationResult = await _calculateFares(
             distanceMeters: routeDetails.distanceMeters,
             durationSeconds: routeDetails.durationSeconds,
             tollCost: routeDetails.tollCost,
             pickupLocation: _rideController.currentPosition.value!,
+            destinationLocation: _destinationPosition,
+            routePolyline: routeDetails.polylinePoints,
           );
+
+          if (calculationResult != null) {
+            calculatedFares = calculationResult.fares;
+            appliedSurcharge = calculationResult.appliedSurcharge;
+
+            // Update route details with the newly calculated surcharge/toll
+            routeDetails = routeDetails.copyWith(tollCost: appliedSurcharge);
+          }
         } else {
           if (mounted) displaySnackBar(context, "Could not get route details.");
           _bookingState.value = _bookingState.value.copyWith(isLoading: false);
@@ -625,12 +642,22 @@ class _HomePageState extends State<HomePage> {
         );
 
         if (routeDetails != null) {
-          calculatedFares = await _calculateFares(
+          final calculationResult = await _calculateFares(
             distanceMeters: routeDetails.distanceMeters,
             durationSeconds: routeDetails.durationSeconds,
             tollCost: routeDetails.tollCost,
             pickupLocation: _rideController.currentPosition.value!,
           );
+          
+          if (calculationResult != null) {
+            calculatedFares = calculationResult.fares;
+            appliedSurcharge = calculationResult.appliedSurcharge;
+            
+            // Update route details with the newly calculated surcharge/toll
+            routeDetails = routeDetails.copyWith(
+              tollCost: appliedSurcharge,
+            );
+          }
         } else {
           if (mounted) displaySnackBar(context, "Could not get route details.");
         }
@@ -802,11 +829,13 @@ class _HomePageState extends State<HomePage> {
   }
 
   // --- Cloud Function Call ---
-  Future<Map<String, num>?> _calculateFares({
+  Future<({Map<String, num> fares, num appliedSurcharge})?> _calculateFares({
     required int distanceMeters,
     required int durationSeconds,
     required num tollCost,
     required LatLng pickupLocation,
+    LatLng? destinationLocation,
+    List<LatLng>? routePolyline,
   }) async {
     try {
       final result = await _calculateFaresCallable.call<Map<dynamic, dynamic>>({
@@ -817,15 +846,40 @@ class _HomePageState extends State<HomePage> {
           'latitude': pickupLocation.latitude,
           'longitude': pickupLocation.longitude,
         },
+        if (destinationLocation != null)
+          'destinationLocation': {
+            'latitude': destinationLocation.latitude,
+            'longitude': destinationLocation.longitude,
+          },
+        if (routePolyline != null)
+          'routePolyline': routePolyline
+              .map((p) => {'latitude': p.latitude, 'longitude': p.longitude})
+              .toList(),
       });
       final fares = result.data['fares'] as Map<dynamic, dynamic>?;
+      final appliedSurcharge = result.data['appliedSurcharge'] as num? ?? 0;
+      final appliedToll = result.data['appliedToll'] as num? ?? 0;
+      final totalExtras = appliedSurcharge + appliedToll;
+
+      debugPrint(
+        '--- _calculateFares DEBUG (home_page) ---\n'
+        'fares: $fares\n'
+        'appliedSurcharge: $appliedSurcharge\n'
+        'appliedToll: $appliedToll\n'
+        'totalExtras: $totalExtras\n'
+        '-----------------------------------------',
+      );
+
       if (fares != null) {
-        return fares.map(
-          (key, value) => MapEntry(key.toString(), value as num),
+        return (
+          fares: fares.map(
+            (key, value) => MapEntry(key.toString(), value as num),
+          ),
+          appliedSurcharge: totalExtras,
         );
       }
 
-      return fares?.map((key, value) => MapEntry(key.toString(), value as num));
+      return null;
     } on FirebaseFunctionsException catch (e) {
       debugPrint(
         "Error calling calculateFares function: ${e.code} ${e.message}",
@@ -1156,6 +1210,39 @@ class _HomePageState extends State<HomePage> {
   }
 
   // --- Main Build Method ---
+  Future<void> _checkNotificationPermission() async {
+    final status = await Permission.notification.status;
+    if (status.isDenied || status.isPermanentlyDenied) {
+      if (mounted) {
+        Get.dialog(
+          AlertDialog(
+            title: const Text("Enable Notifications"),
+            content: const Text(
+              "We need notification permissions to keep you updated on your ride status and driver arrival.",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Get.back(),
+                child: const Text("Not Now"),
+              ),
+              TextButton(
+                onPressed: () async {
+                  Get.back();
+                  if (status.isPermanentlyDenied) {
+                    openAppSettings();
+                  } else {
+                    await Permission.notification.request();
+                  }
+                },
+                child: const Text("Enable"),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     double mapBottomPadding = (_destinationPosition == null)

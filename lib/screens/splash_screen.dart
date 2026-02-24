@@ -56,9 +56,7 @@ class _SplashScreenState extends State<SplashScreen> {
       debugPrint("Notification: $notifStatus");
       debugPrint("Contacts: $contactStatus");
 
-      if (!locStatus.isGranted ||
-          !notifStatus.isGranted ||
-          !contactStatus.isGranted) {
+      if (!locStatus.isGranted) {
         debugPrint("Redirecting to PermissionsScreen");
         if (mounted) {
           Get.offAll(() => const PermissionsScreen());

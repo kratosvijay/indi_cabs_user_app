@@ -368,7 +368,7 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
         }).toList();
       }
 
-      final newRouteDetails = await _directionsService.getDirections(
+      var newRouteDetails = await _directionsService.getDirections(
         _adjustablePickupLocation,
         widget.destinationPosition,
         intermediates: intermediateLatLngs,
@@ -378,16 +378,26 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
         throw Exception("Could not get new route details.");
       }
 
-      final faresResult = await _calculateFares(
+      final calculationResult = await _calculateFares(
         distanceMeters: newRouteDetails.distanceMeters,
         durationSeconds: newRouteDetails.durationSeconds,
         tollCost: newRouteDetails.tollCost,
         pickupLocation: _adjustablePickupLocation,
+        destinationLocation: widget.destinationPosition,
+        intermediateStops: intermediateLatLngs,
+        routePolyline: newRouteDetails.polylinePoints,
       );
 
-      if (faresResult == null || faresResult[_vehicleTypeForFare()] == null) {
+      if (calculationResult == null ||
+          calculationResult.fares[_vehicleTypeForFare()] == null) {
         throw Exception("Could not calculate new fares.");
       }
+
+      final faresResult = calculationResult.fares;
+      final appliedSurcharge = calculationResult.appliedSurcharge;
+
+      // Update route details with the newly calculated surcharge/toll
+      newRouteDetails = newRouteDetails.copyWith(tollCost: appliedSurcharge);
 
       // **NEW:** Add multi-stop fee if applicable
       num finalFare = faresResult[_vehicleTypeForFare()]!;
@@ -405,7 +415,7 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
           _currentCalculatedFare = finalFare;
           _currentRouteDetails = newRouteDetails;
           _polylines = _mapService.createPolylines(
-            newRouteDetails.polylinePoints,
+            newRouteDetails?.polylinePoints ?? [],
           );
           _hasMovedPin = false;
           _isRefreshingFare = false;
@@ -432,11 +442,14 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
         'Hatchback'; // Default to Hatchback for multi-stop
   }
 
-  Future<Map<String, num>?> _calculateFares({
+  Future<({Map<String, num> fares, num appliedSurcharge})?> _calculateFares({
     required int distanceMeters,
     required int durationSeconds,
     required num tollCost,
     required LatLng pickupLocation,
+    LatLng? destinationLocation,
+    List<LatLng>? intermediateStops,
+    List<LatLng>? routePolyline,
   }) async {
     try {
       final result = await _calculateFaresCallable.call<Map<dynamic, dynamic>>({
@@ -447,11 +460,47 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
           'latitude': pickupLocation.latitude,
           'longitude': pickupLocation.longitude,
         },
+        if (destinationLocation != null)
+          'destinationLocation': {
+            'latitude': destinationLocation.latitude,
+            'longitude': destinationLocation.longitude,
+          },
+        if (intermediateStops != null && intermediateStops.isNotEmpty)
+          'intermediateStops': intermediateStops
+              .map(
+                (stop) => {
+                  'location': {
+                    'latitude': stop.latitude,
+                    'longitude': stop.longitude,
+                  },
+                },
+              )
+              .toList(),
+        if (routePolyline != null)
+          'routePolyline': routePolyline
+              .map((p) => {'latitude': p.latitude, 'longitude': p.longitude})
+              .toList(),
       });
       final fares = result.data['fares'] as Map<dynamic, dynamic>?;
+      final appliedSurcharge = result.data['appliedSurcharge'] as num? ?? 0;
+      final appliedToll = result.data['appliedToll'] as num? ?? 0;
+      final totalExtras = appliedSurcharge + appliedToll;
+
+      debugPrint(
+        '--- _calculateFares DEBUG (confirm_pickup) ---\n'
+        'fares: $fares\n'
+        'appliedSurcharge: $appliedSurcharge\n'
+        'appliedToll: $appliedToll\n'
+        'totalExtras: $totalExtras\n'
+        '----------------------------------------------',
+      );
+
       if (fares != null) {
-        return fares.map(
-          (key, value) => MapEntry(key.toString(), value as num),
+        return (
+          fares: fares.map(
+            (key, value) => MapEntry(key.toString(), value as num),
+          ),
+          appliedSurcharge: totalExtras,
         );
       }
       return null;

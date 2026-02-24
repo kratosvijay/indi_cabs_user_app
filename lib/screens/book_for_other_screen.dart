@@ -8,6 +8,7 @@ import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:project_taxi_with_ai/widgets/data_models.dart';
 import 'package:project_taxi_with_ai/widgets/directions_service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import 'package:project_taxi_with_ai/widgets/ride_confirm_sheet.dart';
 import '../widgets/snackbar.dart';
@@ -73,12 +74,73 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
 
   Future<void> _pickContact() async {
     try {
-      if (await FlutterContacts.requestPermission(readonly: true)) {
+      final status = await Permission.contacts.status;
+
+      if (status.isDenied) {
+        if (mounted) {
+          final bool? shouldRequest = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text("Contacts Permission"),
+              content: const Text(
+                "To book a ride for a guest, we need access to your contacts to quickly select their phone number.",
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text("Cancel"),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text("Allow"),
+                ),
+              ],
+            ),
+          );
+
+          if (shouldRequest != true) {
+            return;
+          }
+        }
+      }
+
+      final requestedStatus = await Permission.contacts.request();
+
+      if (requestedStatus.isPermanentlyDenied) {
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text("Contacts Permission Required"),
+              content: const Text(
+                "You have permanently denied contact access. Please open your app settings and enable Contacts to use this feature.",
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Cancel"),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    openAppSettings();
+                  },
+                  child: const Text("Open Settings"),
+                ),
+              ],
+            ),
+          );
+        }
+        return;
+      }
+
+      if (requestedStatus.isGranted) {
         final contact = await FlutterContacts.openExternalPick();
         if (contact != null) {
           String name = contact.displayName;
           String phone = '';
           if (contact.phones.isNotEmpty) {
+            // Pick the first available phone number
             phone = contact.phones.first.number;
           }
 
@@ -127,7 +189,8 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
   }
 
   // **NEW:** Separated logic
-  Future<void> _calculateFaresAndRoute() async {
+  Future<({Map<String, num> fares, num appliedSurcharge})?>
+  _calculateFaresAndRoute() async {
     _bookingState.value = _bookingState.value.copyWith(
       isLoading: true,
       fares: null,
@@ -142,7 +205,7 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
     if (routeDetails == null) {
       _bookingState.value = _bookingState.value.copyWith(isLoading: false);
       if (mounted) displaySnackBar(context, "Could not find a route.");
-      return;
+      return null;
     }
 
     // Update route immediately so UI shows distance/time
@@ -156,20 +219,29 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
           'latitude': _pickupLocation!.latitude,
           'longitude': _pickupLocation!.longitude,
         },
+        'destinationLocation': {
+          'latitude': _dropoffLocation!.latitude,
+          'longitude': _dropoffLocation!.longitude,
+        },
+        'routePolyline': routeDetails.polylinePoints
+            .map((p) => {'latitude': p.latitude, 'longitude': p.longitude})
+            .toList(),
       });
       final fares = result.data['fares'] as Map<dynamic, dynamic>?;
+      final appliedSurcharge = result.data['appliedSurcharge'] as num? ?? 0;
+      final appliedToll = result.data['appliedToll'] as num? ?? 0;
+      final totalExtras = appliedSurcharge + appliedToll;
+
       final typedFares = fares?.map(
         (key, value) => MapEntry(key.toString(), value as num),
       );
 
-      _bookingState.value = _bookingState.value.copyWith(
-        isLoading: false,
-        fares: typedFares,
-      );
+      return (fares: typedFares ?? {}, appliedSurcharge: totalExtras);
     } catch (e) {
       debugPrint("Error calculating fares: $e");
       _bookingState.value = _bookingState.value.copyWith(isLoading: false);
       if (mounted) displaySnackBar(context, "Could not calculate fares.");
+      return null;
     }
   }
 
@@ -188,7 +260,30 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
     }
 
     // Start calculation immediately
-    _calculateFaresAndRoute();
+    final calculationResult = await _calculateFaresAndRoute();
+
+    if (calculationResult != null) {
+      final fares = calculationResult.fares;
+      final appliedSurcharge = calculationResult.appliedSurcharge;
+
+      // Update the routeDetails with the new toll cost (appliedSurcharge)
+      final updatedRouteDetails = _bookingState.value.route?.copyWith(
+        tollCost: appliedSurcharge,
+      );
+
+      _bookingState.value = _bookingState.value.copyWith(
+        isLoading: false,
+        fares: fares,
+        route: updatedRouteDetails, // Update route with new toll cost
+      );
+    } else {
+      // If calculation failed, ensure loading is off and fares are null
+      _bookingState.value = _bookingState.value.copyWith(
+        isLoading: false,
+        fares: null,
+      );
+      return; // Do not proceed if fares calculation failed
+    }
 
     final availability = {
       'Auto': true,
