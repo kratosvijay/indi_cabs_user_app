@@ -270,6 +270,59 @@ class PredefinedDestination {
       icon: Icons.departure_board,
     ),
   ];
+
+  static List<PredefinedDestination> get entertainmentDestinations => [
+    PredefinedDestination(
+      name: "Phoenix Marketcity",
+      location: const LatLng(12.993212954376752, 80.21789480781365),
+      icon: Icons.local_mall,
+    ),
+    PredefinedDestination(
+      name: "PVR Grand Mall",
+      location: const LatLng(12.9786, 80.2223),
+      icon: Icons.movie_filter,
+    ),
+    PredefinedDestination(
+      name: "VR Chennai",
+      location: const LatLng(13.080692793556372, 80.1971319956616),
+      icon: Icons.local_mall,
+    ),
+    PredefinedDestination(
+      name: "Express Avenue",
+      location: const LatLng(13.058519891611864, 80.26421317458625),
+      icon: Icons.local_mall,
+    ),
+    PredefinedDestination(
+      name: "Marina Beach",
+      location: const LatLng(13.0628771453905, 80.28569346166047),
+      icon: Icons.beach_access,
+    ),
+    PredefinedDestination(
+      name: "Elliot's Beach",
+      location: const LatLng(12.999356424404544, 80.27169469199076),
+      icon: Icons.beach_access,
+    ),
+    PredefinedDestination(
+      name: "The Marina Mall OMR",
+      location: const LatLng(12.835913619870515, 80.22900612634311),
+      icon: Icons.local_mall,
+    ),
+    PredefinedDestination(
+      name: "Mayajaal Multiplex",
+      location: const LatLng(12.84832202182495, 80.23984030356263),
+      icon: Icons.movie,
+    ),
+    PredefinedDestination(
+      name: "PVR Heritage ECR",
+      location: const LatLng(12.863582293193039, 80.24172661036152),
+      icon: Icons.movie_filter,
+    ),
+    PredefinedDestination(
+      name: "Sathyam Cinemas",
+      location: const LatLng(13.055522311515848, 80.25798815336606),
+      icon: Icons.movie,
+    ),
+  ];
 }
 
 // Model for search history items (stored locally)

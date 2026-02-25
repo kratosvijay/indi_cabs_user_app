@@ -57,6 +57,7 @@ class RideController extends GetxController {
   StreamSubscription<DocumentSnapshot>? _rideStatusSubscription;
   StreamSubscription<DocumentSnapshot>? _driverLocationSubscription;
   StreamSubscription<DocumentSnapshot>? _walletSubscription; // **NEW**
+  StreamSubscription<List<FavoritePlace>>? _favoritesSubscription; // **NEW**
 
   // Assigned Driver (Ride In Progress)
   final Rx<Driver?> assignedDriver = Rx<Driver?>(null);
@@ -78,6 +79,7 @@ class RideController extends GetxController {
   final RxBool isCalculatingFares = false.obs;
   final Rx<PricingRules?> pricingRules = Rx<PricingRules?>(null);
   final RxNum walletBalance = RxNum(0);
+  final RxList<FavoritePlace> favoritePlaces = <FavoritePlace>[].obs; // **NEW**
 
   // Rentals
   final RxList<RentalPackage> rentalPackages = <RentalPackage>[].obs;
@@ -128,6 +130,7 @@ class RideController extends GetxController {
         _loadRentalPackages(),
         _loadPricingRules(),
         _listenToWallet(), // **NEW**
+        _listenToFavorites(), // **NEW**
       ]);
     } catch (e) {
       debugPrint("Error during RideController initialization: $e");
@@ -166,6 +169,7 @@ class RideController extends GetxController {
     _rideStatusSubscription?.cancel();
     _driverLocationSubscription?.cancel();
     _walletSubscription?.cancel(); // **NEW**
+    _favoritesSubscription?.cancel(); // **NEW**
 
     _isInitialized = false; // Allow re-initialization
   }
@@ -176,6 +180,7 @@ class RideController extends GetxController {
     _rideStatusSubscription?.cancel();
     _driverLocationSubscription?.cancel();
     _walletSubscription?.cancel(); // **NEW**
+    _favoritesSubscription?.cancel(); // **NEW**
     mapController.value?.dispose();
     super.onClose();
   }
@@ -768,6 +773,18 @@ class RideController extends GetxController {
               "RideController: Wallet balance updated to ${walletBalance.value}",
             );
           }
+        });
+  }
+
+  Future<void> _listenToFavorites() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    _favoritesSubscription?.cancel();
+    _favoritesSubscription = firestoreService
+        .getFavoritesStream(user.uid)
+        .listen((favorites) {
+          favoritePlaces.assignAll(favorites);
         });
   }
 

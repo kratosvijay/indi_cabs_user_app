@@ -160,6 +160,10 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
   late num _currentConvenienceFee; // **NEW**
   late DateTime? _currentScheduledTime; // **NEW**
 
+  // **NEW:** Common Pickup Zone Support
+  GeofenceZone? _activePickupZone;
+  Map<String, dynamic>? _selectedPickupPoint;
+
   late LatLngBounds _routeBounds;
 
   // --- Services ---
@@ -256,6 +260,20 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
       // **FIXED:** Removed the 'adjustablePickup' marker.
       // The green pin in the Center() widget is now the only pickup indicator.
 
+      // **NEW:** Unless we are in a Common Pickup Zone, then explicitly draw it.
+      if (_activePickupZone != null && _selectedPickupPoint != null) {
+        _markers.add(
+          Marker(
+            markerId: const MarkerId('common_pickup'),
+            position: _adjustablePickupLocation,
+            icon: BitmapDescriptor.defaultMarkerWithHue(
+              BitmapDescriptor.hueGreen,
+            ),
+            infoWindow: InfoWindow(title: _selectedPickupPoint!['name']),
+          ),
+        );
+      }
+
       if (!widget.isRental) {
         _markers.add(
           Marker(
@@ -290,12 +308,23 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
           .get();
       if (!mounted) return;
 
+      debugPrint(
+        "=== GEOFENCE DEBUG: Loaded ${snapshot.docs.length} zones from Firestore ===",
+      );
+      debugPrint(
+        "=== GEOFENCE DEBUG: User position = ${widget.currentPosition.latitude}, ${widget.currentPosition.longitude} ===",
+      );
+
       Set<Polygon> fetchedPolygons = {};
       List<GeofenceZone> fetchedZones = [];
 
       for (var doc in snapshot.docs) {
         final zone = GeofenceZone.fromFirestore(doc);
         fetchedZones.add(zone);
+
+        debugPrint(
+          "--- Zone: ${zone.id} | type='${zone.type}' | boundary=${zone.boundary.length} points | pickupPoints=${zone.pickupPoints.length} ---",
+        );
 
         if (zone.boundary.length > 2) {
           fetchedPolygons.add(
@@ -307,6 +336,33 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
               fillColor: Colors.redAccent.withAlpha(15),
             ),
           );
+
+          // Check if the user's initial position is inside this zone
+          // AND it is a common pickup type.
+          if (zone.type == 'common_pickup' && _activePickupZone == null) {
+            bool isInside = _locationService.isPointInPolygon(
+              widget.currentPosition,
+              zone.boundary,
+            );
+            debugPrint(
+              "--- Zone ${zone.id}: type matches 'common_pickup'. isInside=$isInside ---",
+            );
+
+            if (isInside && zone.pickupPoints.isNotEmpty) {
+              _activePickupZone = zone;
+              // Auto-select the first pickup point
+              _selectedPickupPoint = zone.pickupPoints.first;
+              final geo = _selectedPickupPoint!['location'] as GeoPoint;
+              _adjustablePickupLocation = LatLng(geo.latitude, geo.longitude);
+              debugPrint(
+                "*** MATCH FOUND! Zone: ${zone.id}. Auto-selected: ${_selectedPickupPoint?['name']} ***",
+              );
+            }
+          } else if (zone.type != 'common_pickup') {
+            debugPrint(
+              "--- Zone ${zone.id}: type='${zone.type}' != 'common_pickup', skipping ---",
+            );
+          }
         }
       }
 
@@ -314,6 +370,23 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
         _polygons.addAll(fetchedPolygons);
         _geofenceZones = fetchedZones;
       });
+
+      // If we found a common pickup zone, move the camera and update markers
+      if (_activePickupZone != null && _selectedPickupPoint != null) {
+        debugPrint(
+          "*** Activating Common Pickup UI for zone: ${_activePickupZone!.id} ***",
+        );
+        _updateMarkers();
+        if (_mapController.isCompleted) {
+          final geo = _selectedPickupPoint!['location'] as GeoPoint;
+          final target = LatLng(geo.latitude, geo.longitude);
+          final controller = await _mapController.future;
+          controller.animateCamera(CameraUpdate.newLatLngZoom(target, 17.5));
+          _getAddressFromLatLng(target);
+        }
+      } else {
+        debugPrint("*** No Common Pickup Zone matched for user position. ***");
+      }
     } catch (e) {
       debugPrint("Error loading geofence polygons: $e");
     }
@@ -968,7 +1041,10 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                   );
                 },
                 onCameraMove: (CameraPosition position) {
-                  if (mounted && !_isRefreshingFare) {
+                  // **MODIFIED:** Disable dragging if in a common pickup zone
+                  if (mounted &&
+                      !_isRefreshingFare &&
+                      _activePickupZone == null) {
                     setState(() {
                       _adjustablePickupLocation = position.target;
                     });
@@ -976,6 +1052,9 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                 },
                 onCameraIdle: () async {
                   if (_isRefreshingFare || !mounted) return;
+
+                  // **MODIFIED:** Don't process idle fetches if in a common pickup zone
+                  if (_activePickupZone != null) return;
 
                   bool hasMoved = !_locationService.areLocationsClose(
                     widget.currentPosition,
@@ -997,69 +1076,184 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
               ),
 
               // Stationary Green Pin in the center
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.only(bottom: 40.0),
-                  child: Icon(
-                    Icons.location_pin,
-                    color: Colors.green,
-                    size: 40,
-                  ),
-                ),
-              ),
-
-              // **NEW:** GPS Button
-              Positioned(
-                bottom: 100, // Positioned above the "Proceed" button
-                right: 16,
-                child: FloatingActionButton(
-                  heroTag: 'gpsButtonConfirm',
-                  onPressed: _goToCurrentPosition,
-                  backgroundColor:
-                      Theme.of(context).brightness == Brightness.dark
-                      ? Colors.grey[800]
-                      : Colors.white,
-                  elevation: 4,
-                  child: Icon(
-                    Icons.gps_fixed,
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? Colors.white
-                        : Colors.blueAccent,
-                  ),
-                ),
-              ),
-
-              // **NEW/RESTORED:** Proceed/Update Button
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: SafeArea(
+              // **MODIFIED:** Only show stationary pin if NOT in a common pickup zone
+              if (_activePickupZone == null)
+                const Center(
                   child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: ProButton(
-                      text: _hasMovedPin
-                          ? "Update Pickup & Refresh Fare"
-                          : (widget.isRental
-                                ? "Proceed with Rental Details"
-                                : "Proceed to Payment"),
-                      isLoading: _isRefreshingFare,
-                      backgroundColor: _hasMovedPin
-                          ? Colors.orange.shade700
-                          : null,
-                      onPressed: (_isRefreshingFare || _isBooking)
-                          ? null // Disable button if loading
-                          : (_hasMovedPin
-                                ? _refreshFare
-                                : () => _showBookingSheet(
-                                    scaffoldContext,
-                                    isRefreshing: false,
-                                    walletBalance: widget.walletBalance ?? 0,
-                                  )),
+                    padding: EdgeInsets.only(bottom: 40.0),
+                    child: Icon(
+                      Icons.location_pin,
+                      color: Colors.green,
+                      size: 40,
                     ),
                   ),
                 ),
-              ),
+
+              // **NEW:** GPS Button
+              // **MODIFIED:** Hide if in common pickup zone
+              if (_activePickupZone == null)
+                Positioned(
+                  bottom: 100, // Positioned above the "Proceed" button
+                  right: 16,
+                  child: FloatingActionButton(
+                    heroTag: 'gpsButtonConfirm',
+                    onPressed: _goToCurrentPosition,
+                    backgroundColor:
+                        Theme.of(context).brightness == Brightness.dark
+                        ? Colors.grey[800]
+                        : Colors.white,
+                    elevation: 4,
+                    child: Icon(
+                      Icons.gps_fixed,
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.white
+                          : Colors.blueAccent,
+                    ),
+                  ),
+                ),
+
+              // **NEW/RESTORED:** Proceed/Update Button or Custom Selector
+              if (_activePickupZone != null)
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: SafeArea(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).cardColor,
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(24),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.1),
+                            blurRadius: 10,
+                            spreadRadius: 2,
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Text(
+                              "Select Pick-up Point",
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(
+                                  context,
+                                ).textTheme.bodyLarge?.color,
+                              ),
+                            ),
+                          ),
+                          const Divider(height: 1),
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxHeight:
+                                  (_activePickupZone!.pickupPoints.length *
+                                          56.0)
+                                      .clamp(56.0, 250.0),
+                            ),
+                            child: ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: _activePickupZone!.pickupPoints.length,
+                              itemBuilder: (context, index) {
+                                final point =
+                                    _activePickupZone!.pickupPoints[index];
+                                return RadioListTile<Map<String, dynamic>>(
+                                  value: point,
+                                  groupValue: _selectedPickupPoint,
+                                  title: Text(point['name']),
+                                  activeColor: AppColors.primary,
+                                  onChanged: (value) async {
+                                    setState(() {
+                                      _selectedPickupPoint = value;
+                                    });
+                                    if (value != null &&
+                                        _mapController.isCompleted) {
+                                      final geo = value['location'] as GeoPoint;
+                                      final target = LatLng(
+                                        geo.latitude,
+                                        geo.longitude,
+                                      );
+                                      final controller =
+                                          await _mapController.future;
+
+                                      // Only move pin and camera
+                                      setState(() {
+                                        _adjustablePickupLocation = target;
+                                        _hasMovedPin = true;
+                                      });
+                                      controller.animateCamera(
+                                        CameraUpdate.newLatLngZoom(
+                                          target,
+                                          17.5,
+                                        ),
+                                      );
+                                      _getAddressFromLatLng(target);
+                                      _updateMarkers();
+                                    }
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: ProButton(
+                              text: "Confirm Pickup Point",
+                              isLoading: _isRefreshingFare || _isBooking,
+                              onPressed:
+                                  _selectedPickupPoint == null ||
+                                      _isRefreshingFare ||
+                                      _isBooking
+                                  ? null
+                                  : () => _showBookingSheet(
+                                      scaffoldContext,
+                                      isRefreshing: false,
+                                      walletBalance: widget.walletBalance ?? 0,
+                                    ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+              else
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: ProButton(
+                        text: _hasMovedPin
+                            ? "Update Pickup & Refresh Fare"
+                            : (widget.isRental
+                                  ? "Proceed with Rental Details"
+                                  : "Proceed to Payment"),
+                        isLoading: _isRefreshingFare,
+                        backgroundColor: _hasMovedPin
+                            ? Colors.orange.shade700
+                            : null,
+                        onPressed: (_isRefreshingFare || _isBooking)
+                            ? null // Disable button if loading
+                            : (_hasMovedPin
+                                  ? _refreshFare
+                                  : () => _showBookingSheet(
+                                      scaffoldContext,
+                                      isRefreshing: false,
+                                      walletBalance: widget.walletBalance ?? 0,
+                                    )),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           );
         },

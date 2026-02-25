@@ -412,12 +412,22 @@ class _RideConfirmationBottomSheetState
                   isDark,
                 ),
                 _buildFareInfoRow("Night Charge (10pm-6am)", "+ ₹50", isDark),
+
+                const Divider(height: 20),
+                // **NEW:** Explicitly show the final calculated total so users know toll is included
+                _buildFareInfoRow(
+                  "Total Estimated Fare",
+                  "₹${calculatedPrice?.toStringAsFixed(0) ?? 'N/A'}",
+                  isDark,
+                  isBold: true,
+                ),
               ] else ...[
                 // Fallback if pricing rules didn't load
                 _buildFareInfoRow(
-                  "Estimated Fare",
+                  "Total Estimated Fare",
                   "₹${calculatedPrice?.toStringAsFixed(0) ?? 'N/A'}",
                   isDark,
+                  isBold: true,
                 ),
                 Padding(
                   padding: const EdgeInsets.only(top: 8.0),
@@ -475,7 +485,12 @@ class _RideConfirmationBottomSheetState
   }
 
   // Helper for the info sheet's rows
-  Widget _buildFareInfoRow(String title, String value, bool isDark) {
+  Widget _buildFareInfoRow(
+    String title,
+    String value,
+    bool isDark, {
+    bool isBold = false,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6.0),
       child: Row(
@@ -486,13 +501,15 @@ class _RideConfirmationBottomSheetState
             style: TextStyle(
               fontSize: 15,
               color: isDark ? Colors.grey[300] : Colors.grey[800],
+              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
             ),
           ),
           Text(
             value,
             style: TextStyle(
               fontSize: 15,
-              fontWeight: FontWeight.bold,
+              fontWeight:
+                  FontWeight.bold, // Keep value bold, or adjust if needed
               color: isDark ? Colors.white : Colors.black87,
             ),
           ),

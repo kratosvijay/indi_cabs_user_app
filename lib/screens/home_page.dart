@@ -626,6 +626,15 @@ class _HomePageState extends State<HomePage> {
         fares: calculatedFares,
         route: routeDetails,
       );
+
+      // **NEW:** Show toll warning if applicable
+      if (routeDetails.tollCost > 0 && mounted) {
+        displaySnackBar(
+          context,
+          "Note: Toll of ₹${routeDetails.tollCost.toStringAsFixed(0)} will only be added to your bill if the toll plaza is crossed.",
+          isError: false,
+        );
+      }
     }
   }
 
@@ -777,6 +786,47 @@ class _HomePageState extends State<HomePage> {
       ),
       displayOverrideName: favorite.name,
     );
+  }
+
+  Future<void> _handleHistoryFavoriteToggle(
+    SearchHistoryItem item,
+    bool isFavorite,
+  ) async {
+    if (isFavorite) {
+      // Find the favorite and delete it
+      try {
+        final favorite = _rideController.favoritePlaces.firstWhere(
+          (fav) =>
+              fav.address == item.description || fav.name == item.description,
+        );
+        await _deleteFavoritePlace(favorite);
+      } catch (e) {
+        debugPrint('Could not find favorite to delete: $e');
+      }
+    } else {
+      // Ask user for a name
+      final name = await _showSaveFavoriteNameDialog();
+      if (name != null && name.trim().isNotEmpty && mounted) {
+        // Fetch LatLng before saving
+        final placeDetails = await _rideController.placesService
+            .getPlaceDetails(item.placeId);
+        if (placeDetails == null) {
+          if (mounted) {
+            displaySnackBar(
+              context,
+              "Could not get location details to save favorite.",
+            );
+          }
+          return;
+        }
+        // Save favorite
+        await _saveFavoritePlace(
+          name.trim(),
+          placeDetails.location,
+          item.description,
+        );
+      }
+    }
   }
 
   // --- Service Type Selection ---
@@ -1248,8 +1298,8 @@ class _HomePageState extends State<HomePage> {
     double mapBottomPadding = (_destinationPosition == null)
         ? (_selectedServiceType == RideType.daily ||
                   _selectedServiceType == RideType.acting
-              ? 290
-              : 100)
+              ? MediaQuery.of(context).size.height * 0.40
+              : 140)
         : 30; // 30 for collapsed banner ad height
 
     return PopScope(
@@ -1375,25 +1425,34 @@ class _HomePageState extends State<HomePage> {
                         Positioned(
                           bottom: mapBottomPadding + 60,
                           right: 16,
-                          child: Visibility(
-                            visible: _destinationPosition == null,
-                            child: FloatingActionButton(
-                              heroTag: 'gpsButton',
-                              onPressed:
-                                  _rideController.goToCurrentUserLocation,
-                              backgroundColor:
-                                  Theme.of(context).brightness ==
-                                      Brightness.dark
-                                  ? Colors.grey[800]
-                                  : Colors.white,
-                              elevation: 4,
-                              child: Icon(
-                                Icons.gps_fixed,
-                                color:
-                                    Theme.of(context).brightness ==
-                                        Brightness.dark
-                                    ? Colors.white
-                                    : Colors.blueAccent,
+                          child: IgnorePointer(
+                            ignoring: _destinationFocusNode.hasFocus,
+                            child: AnimatedOpacity(
+                              duration: const Duration(milliseconds: 200),
+                              opacity: _destinationFocusNode.hasFocus
+                                  ? 0.0
+                                  : 1.0,
+                              child: Visibility(
+                                visible: _destinationPosition == null,
+                                child: FloatingActionButton(
+                                  heroTag: 'gpsButton',
+                                  onPressed:
+                                      _rideController.goToCurrentUserLocation,
+                                  backgroundColor:
+                                      Theme.of(context).brightness ==
+                                          Brightness.dark
+                                      ? Colors.grey[800]
+                                      : Colors.white,
+                                  elevation: 4,
+                                  child: Icon(
+                                    Icons.gps_fixed,
+                                    color:
+                                        Theme.of(context).brightness ==
+                                            Brightness.dark
+                                        ? Colors.white
+                                        : Colors.blueAccent,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -1406,16 +1465,25 @@ class _HomePageState extends State<HomePage> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Visibility(
-                                visible: _destinationPosition == null,
-                                replacement: Container(),
-                                child: BottomBarWidget(
-                                  key: _bottomBarKey,
-                                  selectedServiceType: _selectedServiceType,
-                                  onServiceTypeSelected:
-                                      _handleServiceTypeSelected,
-                                  onPredefinedDestinationTap:
-                                      _handlePredefinedTap,
+                              IgnorePointer(
+                                ignoring: _destinationFocusNode.hasFocus,
+                                child: AnimatedOpacity(
+                                  duration: const Duration(milliseconds: 200),
+                                  opacity: _destinationFocusNode.hasFocus
+                                      ? 0.0
+                                      : 1.0,
+                                  child: Visibility(
+                                    visible: _destinationPosition == null,
+                                    replacement: Container(),
+                                    child: BottomBarWidget(
+                                      key: _bottomBarKey,
+                                      selectedServiceType: _selectedServiceType,
+                                      onServiceTypeSelected:
+                                          _handleServiceTypeSelected,
+                                      onPredefinedDestinationTap:
+                                          _handlePredefinedTap,
+                                    ),
+                                  ),
                                 ),
                               ),
                               const LiftableBannerAd(),
@@ -1423,21 +1491,28 @@ class _HomePageState extends State<HomePage> {
                           ),
                         ),
                         // Search UI
-                        SearchBarWidget(
-                          key: _searchBarKey, // **NEW:** Assign key
-                          destinationController: _destinationController,
-                          destinationFocusNode: _destinationFocusNode,
-                          isSearchEnabled:
-                              _selectedServiceType == RideType.daily ||
-                              _selectedServiceType == RideType.acting,
-                          isDestinationSelected: _destinationPosition != null,
-                          predictions: _rideController.predictions,
-                          searchHistory: _rideController.searchHistory,
-                          onSearchChanged: _handleSearchChanged,
-                          onPredictionTap: _handlePredictionTap,
-                          onHistoryTap: _handleHistoryTap,
-                          onFocusChange: (hasFocus) => _onSearchFocusChange(),
-                          onClearSearch: _handleClearSearch,
+                        Obx(
+                          () => SearchBarWidget(
+                            key: _searchBarKey, // **NEW:** Assign key
+                            destinationController: _destinationController,
+                            destinationFocusNode: _destinationFocusNode,
+                            isSearchEnabled:
+                                _selectedServiceType == RideType.daily ||
+                                _selectedServiceType == RideType.acting,
+                            isDestinationSelected: _destinationPosition != null,
+                            predictions: _rideController.predictions.toList(),
+                            searchHistory: _rideController.searchHistory
+                                .toList(),
+                            favoritePlaces: _rideController.favoritePlaces
+                                .toList(), // **NEW**
+                            onSearchChanged: _handleSearchChanged,
+                            onPredictionTap: _handlePredictionTap,
+                            onHistoryTap: _handleHistoryTap,
+                            onFocusChange: (hasFocus) => _onSearchFocusChange(),
+                            onClearSearch: _handleClearSearch,
+                            onFavoriteToggle:
+                                _handleHistoryFavoriteToggle, // **NEW**
+                          ),
                         ),
                         // Favorites List
                         Positioned(

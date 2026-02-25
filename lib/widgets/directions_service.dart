@@ -10,7 +10,7 @@ class DirectionsService {
 
   DirectionsService({required this.apiKey});
 
-  // **MODIFIED:** Added optional 'intermediates' parameter
+  // **MODIFIED:** Added optional 'intermediates' parameter and upgraded to Routes API
   Future<RouteDetails?> getDirections(
     LatLng origin,
     LatLng destination, {
@@ -21,124 +21,149 @@ class DirectionsService {
       return null;
     }
 
-    // Use Legacy Directions API
-    final String baseUrl =
-        "https://maps.googleapis.com/maps/api/directions/json";
+    final String url =
+        "https://routes.googleapis.com/directions/v2:computeRoutes";
 
-    String originStr = "${origin.latitude},${origin.longitude}";
-    String destinationStr = "${destination.latitude},${destination.longitude}";
+    // Build the request body
+    Map<String, dynamic> requestBody = {
+      "origin": {
+        "location": {
+          "latLng": {
+            "latitude": origin.latitude,
+            "longitude": origin.longitude,
+          },
+        },
+      },
+      "destination": {
+        "location": {
+          "latLng": {
+            "latitude": destination.latitude,
+            "longitude": destination.longitude,
+          },
+        },
+      },
+      "travelMode": "DRIVE",
+      "routingPreference": "TRAFFIC_AWARE",
+      "computeAlternativeRoutes": true,
+      "extraComputations": ["TOLLS"],
+      "routeModifiers": {
+        "avoidTolls": false,
+        "avoidHighways": false,
+        "avoidFerries": false,
+      },
+    };
 
-    // Helper to build URL
-    String buildUrl({bool avoidHighways = false}) {
-      String params =
-          "origin=$originStr&destination=$destinationStr&mode=driving&alternatives=true&key=$apiKey";
-      if (avoidHighways) {
-        params += "&avoid=highways";
-      }
-      if (intermediates != null && intermediates.isNotEmpty) {
-        String waypoints = intermediates
-            .map((l) => "${l.latitude},${l.longitude}")
-            .join('|');
-        params += "&waypoints=$waypoints";
-      }
-      return "$baseUrl?$params";
+    if (intermediates != null && intermediates.isNotEmpty) {
+      requestBody["intermediates"] = intermediates
+          .map(
+            (l) => {
+              "location": {
+                "latLng": {"latitude": l.latitude, "longitude": l.longitude},
+              },
+            },
+          )
+          .toList();
     }
 
     try {
-      // Strategy 1: Standard Driving
-      final urlStandard = buildUrl(avoidHighways: false);
-      // Strategy 2: Avoid Highways (Forces query to look at city roads/shorter paths)
-      final urlAvoidHighways = buildUrl(avoidHighways: true);
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": apiKey,
+          "X-Goog-FieldMask":
+              "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.travelAdvisory.tollInfo.estimatedPrice,routes.routeLabels",
+        },
+        body: jsonEncode(requestBody),
+      );
 
-      // Run both requests in parallel
-      final responses = await Future.wait([
-        http.get(Uri.parse(urlStandard)),
-        http.get(Uri.parse(urlAvoidHighways)),
-      ]);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List<dynamic>? routes = data['routes'];
 
-      List<dynamic> allRoutes = [];
+        if (routes != null && routes.isNotEmpty) {
+          debugPrint("Routes API returned ${routes.length} total routes.");
 
-      for (var response in responses) {
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          if (data['status'] == 'OK' && data['routes'] != null) {
-            allRoutes.addAll(data['routes']);
-          }
-        }
-      }
+          // The Routes API naturally sorts by the best route (index 0) based on `routingPreference`.
+          // We will find the fastest route explicitly by parsing `duration`.
+          dynamic fastestRoute = routes[0];
+          int minDurationSeconds = 999999999;
 
-      if (allRoutes.isNotEmpty) {
-        debugPrint(
-          "Multi-Strategy Routing returned ${allRoutes.length} total routes.",
-        );
+          for (int i = 0; i < routes.length; i++) {
+            final route = routes[i];
 
-        // Find shortest route
-        dynamic shortestRoute = allRoutes[0];
-        int minDistance = 999999999;
+            // "123s" format
+            String durationString = route['duration'] ?? "0s";
+            int durationVal =
+                int.tryParse(durationString.replaceAll('s', '')) ?? 0;
 
-        for (int i = 0; i < allRoutes.length; i++) {
-          final route = allRoutes[i];
-          int routeDistance = 0;
-          if (route['legs'] != null) {
-            for (var leg in route['legs']) {
-              routeDistance += (leg['distance']?['value'] as int? ?? 0);
+            int distanceVal = route['distanceMeters'] as int? ?? 0;
+
+            debugPrint(
+              "Route $i: Distance = $distanceVal meters, Duration (Traffic) = ${durationVal}s",
+            );
+
+            if (durationVal < minDurationSeconds) {
+              minDurationSeconds = durationVal;
+              fastestRoute = route;
             }
           }
 
-          final int durationVal =
-              route['legs'] != null && route['legs'].isNotEmpty
-              ? (route['legs'][0]['duration']?['value'] as int? ?? 0)
-              : 0;
-
-          final String summary = route['summary'] ?? "";
-
+          final route = fastestRoute;
           debugPrint(
-            "Route $i ($summary): Distance = $routeDistance meters, Duration = ${durationVal}s",
+            "Selected fastest route duration: $minDurationSeconds seconds",
           );
 
-          if (routeDistance < minDistance) {
-            minDistance = routeDistance;
-            shortestRoute = route;
+          int totalDistance = route['distanceMeters'] as int? ?? 0;
+          int totalDuration = minDurationSeconds;
+
+          // Extract Tolls
+          num totalTollCost = 0;
+          final travelAdvisory = route['travelAdvisory'];
+          if (travelAdvisory != null) {
+            final tollInfo = travelAdvisory['tollInfo'];
+            if (tollInfo != null && tollInfo['estimatedPrice'] != null) {
+              final prices = tollInfo['estimatedPrice'] as List;
+              if (prices.isNotEmpty) {
+                // Google Maps Route API might return multiple prices (e.g. for different payment methods).
+                // We only take the first explicit unit price instead of summing them all up.
+                totalTollCost = num.tryParse(prices.first['units'] ?? "0") ?? 0;
+                debugPrint("Detected Single Toll Cost Option: ₹$totalTollCost");
+              }
+            }
           }
-        }
 
-        final route = shortestRoute;
-        debugPrint("Selected shortest route: $minDistance meters");
+          final String encodedPolyline =
+              route['polyline']?['encodedPolyline'] ?? "";
 
-        int totalDistance = 0;
-        int totalDuration = 0;
-        if (route['legs'] != null) {
-          for (var leg in route['legs']) {
-            totalDistance += (leg['distance']?['value'] as int? ?? 0);
-            totalDuration += (leg['duration']?['value'] as int? ?? 0);
+          List<LatLng> polylinePoints = [];
+          if (encodedPolyline.isNotEmpty) {
+            List<PointLatLng> decodedPoints = PolylinePoints.decodePolyline(
+              encodedPolyline,
+            );
+            polylinePoints = decodedPoints
+                .map((p) => LatLng(p.latitude, p.longitude))
+                .toList();
           }
-        }
 
-        final String encodedPolyline =
-            route['overview_polyline']?['points'] ?? "";
-
-        List<LatLng> polylinePoints = [];
-        if (encodedPolyline.isNotEmpty) {
-          List<PointLatLng> decodedPoints = PolylinePoints.decodePolyline(
-            encodedPolyline,
+          return RouteDetails(
+            distanceMeters: totalDistance,
+            durationSeconds: totalDuration,
+            polylinePoints: polylinePoints,
+            tollCost: totalTollCost,
           );
-          polylinePoints = decodedPoints
-              .map((p) => LatLng(p.latitude, p.longitude))
-              .toList();
+        } else {
+          debugPrint("Routes API: No routes found in response.");
+          return null;
         }
-
-        return RouteDetails(
-          distanceMeters: totalDistance,
-          durationSeconds: totalDuration,
-          polylinePoints: polylinePoints,
-          tollCost: 0, // Legacy API default
-        );
       } else {
-        debugPrint("Directions Service: No routes found in any strategy.");
+        debugPrint(
+          "Routes API Error: ${response.statusCode} - ${response.body}",
+        );
         return null;
       }
     } catch (e) {
-      debugPrint("Error fetching directions strategies: $e");
+      debugPrint("Error calling Routes API: $e");
       return null;
     }
   }

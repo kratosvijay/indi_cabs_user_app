@@ -291,11 +291,11 @@ export const calculateFares = onCall(async (
       // 3. Surge
       fare *= surgeMultiplier;
 
-      // 4. Extras (Night, Toll, Geofence)
-      fare += nightCharge + safeTollCost + geofenceSurcharge;
-
-      // 5. Minimum Fare
+      // 4. Minimum Fare (Apply minimum to Base + Distance + Time + Surge)
       if (fare < pricing.minimumFare) fare = pricing.minimumFare;
+
+      // 5. Extras (Night, Toll, Geofence) - ADDED ON TOP OF MINIMUM FARE
+      fare += nightCharge + safeTollCost + geofenceSurcharge;
 
       calculatedFares[vehicleType] = Math.round(fare);
     });

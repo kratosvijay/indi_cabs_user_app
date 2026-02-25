@@ -35,132 +35,212 @@ class BottomBarWidget extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 12.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // --- Service Type Cards ---
-            SizedBox(
-              height:
-                  120, // Increased height to prevent overflow and standardise card size
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    _buildServiceTypeCard(
-                      context: context,
-                      icon: Icons.local_taxi_outlined,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight:
+                MediaQuery.of(context).size.height *
+                0.40, // Occupy at most 40% of screen height
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // --- Service Type Cards ---
+                SizedBox(
+                  height:
+                      120, // Increased height to prevent overflow and standardise card size
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _buildServiceTypeCard(
+                          context: context,
+                          icon: Icons.local_taxi_outlined,
 
-                      label: "Daily Rides",
-                      isSelected: selectedServiceType == RideType.daily,
-                      onTap: () => onServiceTypeSelected(RideType.daily),
-                      isDark: isDark,
-                    ),
-                    _buildServiceTypeCard(
-                      context: context,
-                      icon: Icons.person_add_alt_1_outlined,
-                      label: "Book for Guest",
-                      isSelected: selectedServiceType == RideType.bookForOther,
-                      onTap: () => onServiceTypeSelected(RideType.bookForOther),
-                      isDark: isDark,
-                    ),
-                    _buildServiceTypeCard(
-                      context: context,
-                      icon: Icons.multiple_stop,
-                      label: "Multi-Stop",
-                      isSelected: selectedServiceType == RideType.multiStop,
-                      onTap: () => onServiceTypeSelected(RideType.multiStop),
-                      isDark: isDark,
-                    ),
-                    _buildServiceTypeCard(
-                      context: context,
-                      icon: Icons.timelapse_outlined,
-                      label: "Rentals",
-                      isSelected: selectedServiceType == RideType.rental,
-                      onTap: () => onServiceTypeSelected(RideType.rental),
-                      isDark: isDark,
-                    ),
-                    _buildServiceTypeCard(
-                      context: context,
-                      icon: Icons.person_pin_outlined,
-                      label: "Acting Driver",
-                      isSelected: selectedServiceType == RideType.acting,
-                      onTap: () => onServiceTypeSelected(RideType.acting),
-                      isDark: isDark,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            // --- Popular Destinations (Only show for Daily Rides) ---
-            if (selectedServiceType == RideType.daily) ...[
-              const SizedBox(height: 20),
-              Text(
-                "Popular Destinations",
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white70 : Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 135, // Increased height for better readability
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  scrollDirection: Axis.horizontal,
-                  itemCount: predefinedDestinations.length,
-                  itemBuilder: (context, index) {
-                    final dest = predefinedDestinations[index];
-                    return SizedBox(
-                      width: 130, // Increased width for longer names
-                      child: Card(
-                        margin: const EdgeInsets.only(right: 8),
-                        clipBehavior: Clip.antiAlias,
-                        color: isDark ? Colors.grey[800] : Colors.grey[100],
-                        elevation: 1,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                          label: "Daily Rides",
+                          isSelected: selectedServiceType == RideType.daily,
+                          onTap: () => onServiceTypeSelected(RideType.daily),
+                          isDark: isDark,
                         ),
-                        child: InkWell(
-                          onTap: () => onPredefinedDestinationTap(dest),
-                          child: Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  dest.icon,
-                                  size: 30,
-                                  color: isDark
-                                      ? Colors.blueAccent.shade100
-                                      : Colors.blueAccent,
+                        _buildServiceTypeCard(
+                          context: context,
+                          icon: Icons.person_add_alt_1_outlined,
+                          label: "Book for Guest",
+                          isSelected:
+                              selectedServiceType == RideType.bookForOther,
+                          onTap: () =>
+                              onServiceTypeSelected(RideType.bookForOther),
+                          isDark: isDark,
+                        ),
+                        _buildServiceTypeCard(
+                          context: context,
+                          icon: Icons.multiple_stop,
+                          label: "Multi-Stop",
+                          isSelected: selectedServiceType == RideType.multiStop,
+                          onTap: () =>
+                              onServiceTypeSelected(RideType.multiStop),
+                          isDark: isDark,
+                        ),
+                        _buildServiceTypeCard(
+                          context: context,
+                          icon: Icons.timelapse_outlined,
+                          label: "Rentals",
+                          isSelected: selectedServiceType == RideType.rental,
+                          onTap: () => onServiceTypeSelected(RideType.rental),
+                          isDark: isDark,
+                        ),
+                        _buildServiceTypeCard(
+                          context: context,
+                          icon: Icons.person_pin_outlined,
+                          label: "Acting Driver",
+                          isSelected: selectedServiceType == RideType.acting,
+                          onTap: () => onServiceTypeSelected(RideType.acting),
+                          isDark: isDark,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                // --- Popular Destinations (Only show for Daily Rides) ---
+                if (selectedServiceType == RideType.daily) ...[
+                  const SizedBox(height: 20),
+                  Text(
+                    "Popular Destinations",
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white70 : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 135, // Increased height for better readability
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      scrollDirection: Axis.horizontal,
+                      itemCount: predefinedDestinations.length,
+                      itemBuilder: (context, index) {
+                        final dest = predefinedDestinations[index];
+                        return SizedBox(
+                          width: 130, // Increased width for longer names
+                          child: Card(
+                            margin: const EdgeInsets.only(right: 8),
+                            clipBehavior: Clip.antiAlias,
+                            color: isDark ? Colors.grey[800] : Colors.grey[100],
+                            elevation: 1,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: InkWell(
+                              onTap: () => onPredefinedDestinationTap(dest),
+                              child: Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      dest.icon,
+                                      size: 30,
+                                      color: isDark
+                                          ? Colors.blueAccent.shade100
+                                          : Colors.blueAccent,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      dest.name,
+                                      textAlign: TextAlign.center,
+                                      maxLines: 3,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: isDark
+                                            ? Colors.white70
+                                            : Colors.black87,
+                                        fontWeight: FontWeight.w500,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  dest.name,
-                                  textAlign: TextAlign.center,
-                                  maxLines: 3,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: isDark
-                                        ? Colors.white70
-                                        : Colors.black87,
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
                           ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ],
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    "Shopping & Entertainment",
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white70 : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 135,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      scrollDirection: Axis.horizontal,
+                      itemCount: PredefinedDestination
+                          .entertainmentDestinations
+                          .length,
+                      itemBuilder: (context, index) {
+                        final dest = PredefinedDestination
+                            .entertainmentDestinations[index];
+                        return SizedBox(
+                          width: 130, // Consistently sized width
+                          child: Card(
+                            margin: const EdgeInsets.only(right: 8),
+                            clipBehavior: Clip.antiAlias,
+                            color: isDark ? Colors.grey[800] : Colors.grey[100],
+                            elevation: 1,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: InkWell(
+                              onTap: () => onPredefinedDestinationTap(dest),
+                              child: Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      dest.icon,
+                                      size: 30,
+                                      color: isDark
+                                          ? Colors.blueAccent.shade100
+                                          : Colors.blueAccent,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      dest.name,
+                                      textAlign: TextAlign.center,
+                                      maxLines: 3,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: isDark
+                                            ? Colors.white70
+                                            : Colors.black87,
+                                        fontWeight: FontWeight.w500,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ),
       ),
     );

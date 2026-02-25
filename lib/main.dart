@@ -10,6 +10,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:project_taxi_with_ai/screens/splash_screen.dart';
 
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:upgrader/upgrader.dart';
 import 'dart:async'; // For runZonedGuarded
 
 // **NEW:** Background message handler (must be a top-level function)
@@ -43,36 +44,37 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   }
 }
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await Firebase.initializeApp();
-  } catch (e) {
-    runApp(
-      MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                "Firebase Initialization Failed:\n$e",
-                textAlign: TextAlign.center,
+void main() {
+  // Wrap app execution in a zone to catch errors
+  runZonedGuarded(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
+      try {
+        await Firebase.initializeApp();
+      } catch (e) {
+        runApp(
+          MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text(
+                    "Firebase Initialization Failed:\n$e",
+                    textAlign: TextAlign.center,
+                  ),
+                ),
               ),
             ),
           ),
-        ),
-      ),
-    );
-    // Record to Crashlytics if possible, though it might not be initialized
-    return;
-  }
+        );
+        // Record to Crashlytics if possible, though it might not be initialized
+        return;
+      }
 
-  // Pass all uncaught "fatal" errors from the framework to Crashlytics
-  FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+      // Pass all uncaught "fatal" errors from the framework to Crashlytics
+      FlutterError.onError =
+          FirebaseCrashlytics.instance.recordFlutterFatalError;
 
-  // Wrap app execution in a zone to catch errors
-  runZonedGuarded(
-    () {
       // Background message handler setup
       FirebaseMessaging.onBackgroundMessage(
         _firebaseMessagingBackgroundHandler,
@@ -142,7 +144,13 @@ class MyApp extends StatelessWidget {
         ).apply(bodyColor: Colors.white, displayColor: Colors.white),
         useMaterial3: true,
       ),
-      home: const SplashScreen(),
+      home: UpgradeAlert(
+        upgrader: Upgrader(),
+        showIgnore: false,
+        showLater: false,
+        barrierDismissible: false,
+        child: const SplashScreen(),
+      ),
     );
   }
 }

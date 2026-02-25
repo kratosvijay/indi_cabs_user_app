@@ -7,6 +7,8 @@ typedef PredictionTapCallback = void Function(String placeId);
 typedef HistoryTapCallback = void Function(SearchHistoryItem item);
 typedef FocusChangeCallback = void Function(bool hasFocus);
 typedef ClearSearchCallback = void Function(); // Callback for clearing search
+typedef FavoriteToggleCallback =
+    void Function(SearchHistoryItem item, bool isFavorite);
 
 class SearchBarWidget extends StatelessWidget {
   final TextEditingController destinationController;
@@ -15,11 +17,13 @@ class SearchBarWidget extends StatelessWidget {
   final bool isDestinationSelected;
   final List<PlaceAutocompletePrediction> predictions;
   final List<SearchHistoryItem> searchHistory;
+  final List<FavoritePlace> favoritePlaces; // **NEW**
   final SearchCallback onSearchChanged;
   final PredictionTapCallback onPredictionTap;
   final HistoryTapCallback onHistoryTap;
   final FocusChangeCallback onFocusChange;
   final ClearSearchCallback onClearSearch;
+  final FavoriteToggleCallback onFavoriteToggle; // **NEW**
 
   const SearchBarWidget({
     super.key,
@@ -29,11 +33,13 @@ class SearchBarWidget extends StatelessWidget {
     required this.isDestinationSelected,
     required this.predictions,
     required this.searchHistory,
+    this.favoritePlaces = const [], // Default to empty if not provided
     required this.onSearchChanged,
     required this.onPredictionTap,
     required this.onHistoryTap,
     required this.onFocusChange,
     required this.onClearSearch,
+    required this.onFavoriteToggle,
   });
 
   @override
@@ -203,6 +209,14 @@ class SearchBarWidget extends StatelessWidget {
               itemCount: searchHistory.length,
               itemBuilder: (context, index) {
                 final historyItem = searchHistory[index];
+
+                // Check if this item exists in favorites by name or address
+                final isFavorite = favoritePlaces.any(
+                  (fav) =>
+                      fav.address == historyItem.description ||
+                      fav.name == historyItem.description,
+                );
+
                 return ListTile(
                   leading: const Icon(Icons.history, color: Colors.grey),
                   title: Text(
@@ -212,6 +226,13 @@ class SearchBarWidget extends StatelessWidget {
                     style: TextStyle(
                       color: isDark ? Colors.white : Colors.black87,
                     ),
+                  ),
+                  trailing: IconButton(
+                    icon: Icon(
+                      isFavorite ? Icons.favorite : Icons.favorite_border,
+                      color: isFavorite ? Colors.red : Colors.grey,
+                    ),
+                    onPressed: () => onFavoriteToggle(historyItem, isFavorite),
                   ),
                   dense: true,
                   onTap: () => onHistoryTap(historyItem),
