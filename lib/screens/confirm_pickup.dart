@@ -1157,48 +1157,47 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                                           56.0)
                                       .clamp(56.0, 250.0),
                             ),
-                            child: ListView.builder(
-                              shrinkWrap: true,
-                              itemCount: _activePickupZone!.pickupPoints.length,
-                              itemBuilder: (context, index) {
-                                final point =
-                                    _activePickupZone!.pickupPoints[index];
-                                return RadioListTile<Map<String, dynamic>>(
-                                  value: point,
-                                  groupValue: _selectedPickupPoint,
-                                  title: Text(point['name']),
-                                  activeColor: AppColors.primary,
-                                  onChanged: (value) async {
-                                    setState(() {
-                                      _selectedPickupPoint = value;
-                                    });
-                                    if (value != null &&
-                                        _mapController.isCompleted) {
-                                      final geo = value['location'] as GeoPoint;
-                                      final target = LatLng(
-                                        geo.latitude,
-                                        geo.longitude,
-                                      );
-                                      final controller =
-                                          await _mapController.future;
+                            child: RadioGroup<Map<String, dynamic>>(
+                              groupValue: _selectedPickupPoint,
+                              onChanged: (value) async {
+                                setState(() {
+                                  _selectedPickupPoint = value;
+                                });
+                                if (value != null &&
+                                    _mapController.isCompleted) {
+                                  final geo = value['location'] as GeoPoint;
+                                  final target = LatLng(
+                                    geo.latitude,
+                                    geo.longitude,
+                                  );
+                                  final controller =
+                                      await _mapController.future;
 
-                                      // Only move pin and camera
-                                      setState(() {
-                                        _adjustablePickupLocation = target;
-                                        _hasMovedPin = true;
-                                      });
-                                      controller.animateCamera(
-                                        CameraUpdate.newLatLngZoom(
-                                          target,
-                                          17.5,
-                                        ),
-                                      );
-                                      _getAddressFromLatLng(target);
-                                      _updateMarkers();
-                                    }
-                                  },
-                                );
+                                  setState(() {
+                                    _adjustablePickupLocation = target;
+                                    _hasMovedPin = true;
+                                  });
+                                  controller.animateCamera(
+                                    CameraUpdate.newLatLngZoom(target, 17.5),
+                                  );
+                                  _getAddressFromLatLng(target);
+                                  _updateMarkers();
+                                }
                               },
+                              child: ListView.builder(
+                                shrinkWrap: true,
+                                itemCount:
+                                    _activePickupZone!.pickupPoints.length,
+                                itemBuilder: (context, index) {
+                                  final point =
+                                      _activePickupZone!.pickupPoints[index];
+                                  return RadioListTile<Map<String, dynamic>>(
+                                    value: point,
+                                    title: Text(point['name']),
+                                    activeColor: AppColors.primary,
+                                  );
+                                },
+                              ),
                             ),
                           ),
                           Padding(
