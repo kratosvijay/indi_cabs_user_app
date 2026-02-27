@@ -1331,7 +1331,11 @@ class _HomePageState extends State<HomePage> {
           titleText: 'Book a Ride',
           leading: IconButton(
             icon: const Icon(Icons.menu),
-            onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+            onPressed: () {
+              FocusScope.of(context).unfocus(); // Unfocus before opening drawer
+              SystemChannels.textInput.invokeMethod('TextInput.hide');
+              _scaffoldKey.currentState?.openDrawer();
+            },
           ),
           actions: [
             IconButton(
@@ -1505,13 +1509,44 @@ class _HomePageState extends State<HomePage> {
                                 .toList(),
                             favoritePlaces: _rideController.favoritePlaces
                                 .toList(), // **NEW**
-                            onSearchChanged: _handleSearchChanged,
+                            onSearchChanged: _handleSearchChanged, // RESTORED
                             onPredictionTap: _handlePredictionTap,
-                            onHistoryTap: _handleHistoryTap,
+                            onHistoryTap: _handleHistoryTap, // FIX: RESTORED
                             onFocusChange: (hasFocus) => _onSearchFocusChange(),
-                            onClearSearch: _handleClearSearch,
+                            onClearSearch: _handleClearSearch, // RESTORED
                             onFavoriteToggle:
                                 _handleHistoryFavoriteToggle, // **NEW**
+                            onSelectOnMap: () async {
+                              // **NEW**
+                              // Fallback to current location if camera has never moved, or use center of whatever they are looking at.
+                              final initialPos =
+                                  _rideController.currentPosition.value ??
+                                  const LatLng(0, 0);
+
+                              final result = await Get.to<Map<String, dynamic>>(
+                                () => EditLocationScreen(
+                                  initialLocation: initialPos,
+                                ),
+                              );
+
+                              if (result != null && mounted) {
+                                final newLocation =
+                                    result['location'] as LatLng?;
+                                final newAddress = result['address'] as String?;
+
+                                if (newLocation != null && newAddress != null) {
+                                  _handlePlaceSelection(
+                                    PlaceDetails(
+                                      placeId: '', // PlaceId isn't needed here
+                                      name: newAddress,
+                                      address: newAddress,
+                                      location: newLocation,
+                                    ),
+                                    displayOverrideName: newAddress,
+                                  );
+                                }
+                              }
+                            },
                           ),
                         ),
                         // Favorites List

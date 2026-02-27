@@ -185,100 +185,6 @@ class _RideConfirmationBottomSheetState
     });
   }
 
-  // **MODIFIED:** Helper to build the location row
-  Widget _buildEditableLocationRow({
-    required BuildContext context,
-    required String label,
-    required String address,
-    required IconData icon,
-    VoidCallback? onTap, // Made optional
-    VoidCallback? onSaveFavorite,
-  }) {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Container(
-      // Changed from InkWell
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-      decoration: BoxDecoration(
-        color: isDark ? Colors.grey[800] : Colors.grey[100],
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            color: label == "Pickup"
-                ? Colors.green.shade600
-                : Colors.red.shade600,
-            size: 20,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: isDark ? Colors.grey[400] : Colors.grey[600],
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  address,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: isDark ? Colors.white : Colors.black87,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-              ],
-            ),
-          ),
-
-          // **NEW** Button Row
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (onSaveFavorite != null) // Only show if callback is provided
-                IconButton(
-                  icon: Icon(
-                    Icons.favorite_border,
-                    color: Colors.pinkAccent.shade200,
-                    size: 22,
-                  ),
-                  tooltip: "Save as Favorite",
-                  padding: const EdgeInsets.all(4.0),
-                  constraints: const BoxConstraints(),
-                  onPressed: onSaveFavorite,
-                ),
-              if (onSaveFavorite != null) // Add spacing if fav button exists
-                const SizedBox(width: 8),
-              if (onTap != null) // Only show edit button if callback provided
-                IconButton(
-                  icon: Icon(
-                    Icons.edit_outlined,
-                    color: AppColors.primary,
-                    size: 22,
-                  ),
-                  tooltip: "Edit Location",
-                  padding: const EdgeInsets.all(4.0),
-                  constraints: const BoxConstraints(),
-                  onPressed: onTap,
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   // **MODIFIED:** Helper to show the vehicle info bottom sheet
   void _showVehicleInfoSheet(
     BuildContext context,
@@ -631,41 +537,7 @@ class _RideConfirmationBottomSheetState
           ),
           const SizedBox(height: 16),
 
-          // Pickup/Dropoff Rows
-          _buildEditableLocationRow(
-            context: context,
-            label: "Pickup",
-            address: widget.pickupAddress,
-            icon: Icons.my_location,
-            onTap: widget.onEditPickup,
-            onSaveFavorite: widget.onSavePickupFavorite,
-          ),
-          const SizedBox(height: 8),
-
-          // Intermediate Stops
-          if (widget.intermediateStops != null)
-            for (int i = 0; i < widget.intermediateStops!.length; i++) ...[
-              _buildEditableLocationRow(
-                context: context,
-                label: "Stop ${i + 1}",
-                address:
-                    widget.intermediateStops![i]['address'] as String? ??
-                    "Unknown",
-                icon: Icons.stop_circle_outlined,
-                onTap: null, // Read-only in this sheet
-                onSaveFavorite: null,
-              ),
-              const SizedBox(height: 8),
-            ],
-
-          _buildEditableLocationRow(
-            context: context,
-            label: "Drop-off",
-            address: widget.destinationAddress,
-            icon: Icons.location_on_outlined,
-            onTap: widget.onEditDropoff,
-            onSaveFavorite: widget.onSaveDropoffFavorite,
-          ),
+          // Location Rows Removed By Request
 
           // **NEW:** Show Distance and Time below Drop-off
           if (widget.routeDetails != null)

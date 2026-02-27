@@ -406,6 +406,8 @@ class _ProfilePageState extends State<ProfilePage> {
                                 ? Colors.grey.shade500
                                 : Colors.grey.shade600),
                     ),
+                    const SizedBox(height: 20),
+                    _buildDeleteAccountButton(),
                   ],
                 ),
               ),
@@ -414,6 +416,121 @@ class _ProfilePageState extends State<ProfilePage> {
         ),
       ),
     );
+  }
+
+  Widget _buildDeleteAccountButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: TextButton(
+        onPressed: _isLoading ? null : _showDeleteConfirmation,
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: Colors.redAccent),
+          ),
+        ),
+        child: const Text(
+          "Delete Account",
+          style: TextStyle(
+            color: Colors.redAccent,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showDeleteConfirmation() async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Delete Account"),
+        content: const Text(
+          "Are you sure you want to delete your account? This action is permanent and cannot be undone.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(result: false),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () => Get.back(result: true),
+            child: const Text("Delete", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      _deleteAccount();
+    }
+  }
+
+  Future<void> _deleteAccount() async {
+    setState(() => _isLoading = true);
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      final uid = user.uid;
+
+      // 1. Delete from Firestore
+      await FirebaseFirestore.instance.collection('users').doc(uid).delete();
+
+      // 2. Try to delete profile picture from Storage
+      try {
+        final ref = FirebaseStorage.instance
+            .ref()
+            .child('profile_pictures')
+            .child('$uid.jpg');
+        await ref.delete();
+      } catch (_) {
+        // Ignore errors if the file does not exist
+      }
+
+      // 3. Delete user authentication
+      await user.delete();
+
+      if (mounted) {
+        displaySnackBar(
+          context,
+          "Account deleted successfully",
+          isError: false,
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'requires-recent-login') {
+        if (mounted) {
+          displaySnackBar(
+            context,
+            "Please log out and log in again before deleting your account.",
+            isError: true,
+          );
+        }
+      } else {
+        if (mounted) {
+          displaySnackBar(
+            context,
+            "Failed to delete account: ${e.message}",
+            isError: true,
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        displaySnackBar(
+          context,
+          "We encountered an error while deleting your account: $e",
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   Widget _buildLabel(String text) {

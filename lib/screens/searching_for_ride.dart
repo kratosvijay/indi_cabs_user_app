@@ -445,18 +445,28 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
     _rideStatusSubscription = null;
 
     try {
-      if (_resolvedRideRequestId != null) {
+      String? idToCancel = _resolvedRideRequestId;
+      if (idToCancel == null && widget.rideRequestIdFuture != null) {
+        debugPrint(
+          "Waiting for ride request ID to resolve before cancelling...",
+        );
+        idToCancel = await widget.rideRequestIdFuture;
+      }
+
+      if (idToCancel != null) {
         String collectionPath = widget.isRental
             ? 'rental_requests'
             : 'ride_requests';
         DocumentReference rideRef = FirebaseFirestore.instance
             .collection(collectionPath)
-            .doc(_resolvedRideRequestId);
+            .doc(idToCancel);
         await rideRef.update({'status': 'cancelled_by_user'});
-        debugPrint("SearchingForRideScreen: Ride cancelled in Firestore");
+        debugPrint(
+          "SearchingForRideScreen: Ride cancelled in Firestore ($idToCancel)",
+        );
       } else {
         debugPrint(
-          "SearchingForRideScreen: Cannot cancel, _resolvedRideRequestId is null",
+          "SearchingForRideScreen: Cannot cancel, ride ID could not be resolved",
         );
       }
     } catch (e) {

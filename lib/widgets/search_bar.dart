@@ -24,6 +24,7 @@ class SearchBarWidget extends StatelessWidget {
   final FocusChangeCallback onFocusChange;
   final ClearSearchCallback onClearSearch;
   final FavoriteToggleCallback onFavoriteToggle; // **NEW**
+  final VoidCallback onSelectOnMap; // **NEW**
 
   const SearchBarWidget({
     super.key,
@@ -40,6 +41,7 @@ class SearchBarWidget extends StatelessWidget {
     required this.onFocusChange,
     required this.onClearSearch,
     required this.onFavoriteToggle,
+    required this.onSelectOnMap, // **NEW**
   });
 
   @override
@@ -115,6 +117,48 @@ class SearchBarWidget extends StatelessWidget {
                   ),
                 ],
               ),
+              // Select on Map Button (Visible when focused and empty search)
+              if (destinationFocusNode.hasFocus &&
+                  destinationController.text.isEmpty &&
+                  isSearchEnabled)
+                InkWell(
+                  onTap: () {
+                    FocusScope.of(context).unfocus();
+                    onSelectOnMap();
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 12,
+                      horizontal: 16,
+                    ),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        top: BorderSide(
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? Colors.grey[800]!
+                              : Colors.grey[200]!,
+                        ),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.map, color: Colors.blueAccent),
+                        const SizedBox(width: 12),
+                        Text(
+                          "Select on Map",
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            color:
+                                Theme.of(context).brightness == Brightness.dark
+                                ? Colors.white
+                                : Colors.black87,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               // Predictions List (Animated)
               AnimatedSize(
                 duration: const Duration(milliseconds: 200),

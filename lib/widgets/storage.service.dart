@@ -12,60 +12,67 @@ class StorageService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final historyJson = prefs.getStringList(_searchHistoryKey) ?? [];
-      return historyJson
-          .map((jsonString) {
-              try {
-                return SearchHistoryItem.fromJson(jsonDecode(jsonString));
-              } catch (e) {
-                 debugPrint("Error parsing search history item: $e");
-                 return null; // Skip invalid items
-              }
-          })
-          .whereType<SearchHistoryItem>() // Filter out nulls
-          .toList();
+
+      List<SearchHistoryItem> parsedHistory = [];
+      for (var jsonString in historyJson) {
+        try {
+          final decoded = jsonDecode(jsonString);
+          if (decoded is Map<String, dynamic>) {
+            parsedHistory.add(SearchHistoryItem.fromJson(decoded));
+          }
+        } catch (e) {
+          debugPrint("Error parsing individual search history item: $e");
+          // Specifically avoid throwing so we don't return an empty array due to one bad item
+        }
+      }
+      return parsedHistory;
     } catch (e) {
       debugPrint("Error loading search history: $e");
-      return []; // Return empty list on error
+      return []; // Return empty list only on critical error
     }
   }
 
   // Adds a new item to search history and saves it
   Future<List<SearchHistoryItem>> addSearchToHistory(
-      String description, String placeId, List<SearchHistoryItem> currentHistory) async {
+    String description,
+    String placeId,
+    List<SearchHistoryItem> currentHistory,
+  ) async {
     try {
-      description = description.trim();
-      if (description.isEmpty) return currentHistory; // Don't add empty descriptions
+      final String cleanDesc = description.trim();
+      if (cleanDesc.isEmpty) return currentHistory;
 
-      // Avoid adding duplicate if it's already the most recent
-      if (currentHistory.isNotEmpty) {
-        final first = currentHistory.first;
-        if (first.description == description && (placeId.isEmpty || first.placeId == placeId)) {
-           return currentHistory;
-        }
-      }
-
-      final newItem = SearchHistoryItem(description: description, placeId: placeId);
+      // Make a fresh copy to modify
       List<SearchHistoryItem> updatedHistory = List.from(currentHistory);
 
-      // Remove any previous occurrences of the same item
-      updatedHistory.removeWhere((item) =>
-          (placeId.isNotEmpty && item.placeId == placeId) || // Match by placeId if available
-          (placeId.isEmpty && item.placeId.isEmpty && item.description == description)); // Match by description if placeId is empty
+      // Remove any existing exact or partial matches
+      updatedHistory.removeWhere((item) {
+        // Match by placeId if we have one
+        if (placeId.isNotEmpty && item.placeId == placeId) return true;
+        // Or match strictly by description
+        if (item.description.trim() == cleanDesc) return true;
+        return false;
+      });
 
-      // Add new item to the beginning
-      updatedHistory.insert(0, newItem);
+      // Insert at the top
+      updatedHistory.insert(
+        0,
+        SearchHistoryItem(description: cleanDesc, placeId: placeId),
+      );
 
       // Limit history size
       if (updatedHistory.length > _maxHistoryItems) {
         updatedHistory = updatedHistory.sublist(0, _maxHistoryItems);
       }
 
-      // Save updated history
+      // Save updated history safely
       final prefs = await SharedPreferences.getInstance();
-      final historyJson = updatedHistory.map((item) => jsonEncode(item.toJson())).toList();
-      await prefs.setStringList(_searchHistoryKey, historyJson);
+      final historyStrings = updatedHistory
+          .map((item) => jsonEncode(item.toJson()))
+          .toList();
+      await prefs.setStringList(_searchHistoryKey, historyStrings);
 
-      return updatedHistory; // Return the updated list
+      return updatedHistory;
     } catch (e) {
       debugPrint("Error adding search to history: $e");
       return currentHistory; // Return original list on error
@@ -82,4 +89,3 @@ class StorageService {
     }
   }
 }
-
