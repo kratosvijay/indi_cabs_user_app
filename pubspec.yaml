@@ -67,6 +67,7 @@ dependencies:
   upgrader: 
   app_tracking_transparency:
   volume_controller: ^3.4.2
+  rename: ^3.1.0
   
 
 dev_dependencies:
