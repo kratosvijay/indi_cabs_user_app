@@ -4,6 +4,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'dart:math';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'package:volume_controller/volume_controller.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart'; // Import Firestore
@@ -93,6 +96,52 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
   StreamSubscription<Position>? _locationSubscription;
   late final LocationService _locationService;
   final FirestoreService _firestoreService = FirestoreService(); // Instance
+
+  final FlutterTts _flutterTts = FlutterTts();
+  bool _audioPlayed = false;
+
+  void _playBookingSuccessAudio() async {
+    if (_audioPlayed) return;
+    _audioPlayed = true;
+
+    final List<String> messages = [
+      "Whoo whoo! A cab has been booked. Please wait while the driver is on the way.",
+      "Great news! Your cab is confirmed. The driver is heading your way.",
+      "Success! We've found a driver for you. They will be arriving shortly.",
+      "Buckle up! Your cab is booked and the driver is en route.",
+      "Ride booked successfully! Please hold on while your driver arrives.",
+    ];
+
+    final random = Random();
+    String messageToPlay = messages[random.nextInt(messages.length)];
+
+    await _flutterTts.setLanguage("en-US");
+    await _flutterTts.setPitch(1.0);
+    await _flutterTts.setVolume(1.0);
+
+    // Override iOS silent mode and set audio session to playback
+    await _flutterTts
+        .setIosAudioCategory(IosTextToSpeechAudioCategory.playback, [
+          IosTextToSpeechAudioCategoryOptions.allowBluetooth,
+          IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
+          IosTextToSpeechAudioCategoryOptions.mixWithOthers,
+          IosTextToSpeechAudioCategoryOptions.defaultToSpeaker,
+        ], IosTextToSpeechAudioMode.defaultMode);
+
+    // Save current volume
+    double currentVolume = await VolumeController.instance.getVolume();
+
+    // Set volume to max silently (without showing system UI)
+    VolumeController.instance.showSystemUI = false;
+    VolumeController.instance.setVolume(1.0);
+
+    // Await the TTS completion to restore volume
+    _flutterTts.setCompletionHandler(() {
+      VolumeController.instance.setVolume(currentVolume);
+    });
+
+    await _flutterTts.speak(messageToPlay);
+  }
 
   @override
   void initState() {
@@ -369,6 +418,15 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
               // Also stop the tip timer as we don't need to boost anymore
               _tipTimer?.cancel();
               _showTipCard = false;
+
+              if (mounted) {
+                displaySnackBar(
+                  context,
+                  "A cab has been booked!",
+                  isError: false,
+                );
+              }
+              _playBookingSuccessAudio();
             }
 
             if (driverId != null && driverId.isNotEmpty) {

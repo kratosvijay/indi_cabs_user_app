@@ -1088,7 +1088,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         int minutes = overageSeconds ~/ 60;
         int seconds = overageSeconds % 60;
         timerText =
-            "Waiting charge applies: ${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')} (₹5/min)";
+            "Waiting charge applies: ${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')} (₹3/min)";
         timerColor = Colors.red.shade700;
       }
     }

@@ -238,7 +238,7 @@ export const calculateFares = onCall(async (
 
     let nightCharge = 0.0;
     if (currentHour >= 22 || currentHour < 6) {
-      nightCharge = 50.0;
+      nightCharge = 30.0;
     }
 
     let geofenceSurcharge = 0.0;
