@@ -1,7 +1,12 @@
+import 'package:flutter_cashfree_pg_sdk/api/cfpayment/cfwebcheckoutpayment.dart';
 import 'package:get/get.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
-import 'package:razorpay_flutter/razorpay_flutter.dart';
+import 'package:flutter_cashfree_pg_sdk/api/cfpaymentgateway/cfpaymentgatewayservice.dart';
+import 'package:flutter_cashfree_pg_sdk/api/cfsession/cfsession.dart';
+import 'package:flutter_cashfree_pg_sdk/utils/cfenums.dart';
+import 'package:flutter_cashfree_pg_sdk/utils/cfexceptions.dart';
+import 'package:flutter_cashfree_pg_sdk/api/cferrorresponse/cferrorresponse.dart';
 import 'package:project_taxi_with_ai/widgets/data_models.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -13,8 +18,7 @@ class WalletController extends GetxController {
   final RxList<WalletTransaction> transactions = <WalletTransaction>[].obs;
   final RxBool isLoading = false.obs;
 
-  late Razorpay _razorpay;
-  int _amountToVerify = 0;
+  var cfPaymentGatewayService = CFPaymentGatewayService();
 
   final HttpsCallable _createOrderCallable = FirebaseFunctions.instanceFor(
     region: 'asia-south1',
@@ -26,17 +30,13 @@ class WalletController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    _razorpay = Razorpay();
-    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
-    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
-    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
-
+    cfPaymentGatewayService.setCallback(_verifyPayment, _onError);
     _bindUserWallet();
   }
 
   @override
   void onClose() {
-    _razorpay.clear();
+    // any needed cleanup
     super.onClose();
   }
 
@@ -68,8 +68,10 @@ class WalletController extends GetxController {
             transactions.value = snapshot.docs
                 .map((doc) => WalletTransaction.fromFirestore(doc))
                 .where(
-                  (t) => t.status == 'success',
-                ) // Only show successful transactions
+                  (t) =>
+                      t.status ==
+                      'successful', // Status logic remains or changes to "successful"
+                )
                 .toList();
           });
     }
@@ -88,7 +90,6 @@ class WalletController extends GetxController {
     }
 
     final int amountInPaise = (amount * 100).round();
-    _amountToVerify = amountInPaise;
     isLoading.value = true;
 
     try {
@@ -98,23 +99,32 @@ class WalletController extends GetxController {
       });
 
       final orderId = result.data['orderId'] as String?;
-      if (orderId == null) throw Exception("Failed to create order");
+      final paymentSessionId = result.data['paymentSessionId'] as String?;
 
-      final user = FirebaseAuth.instance.currentUser;
-      final options = {
-        'key': 'rzp_test_rG5fHn4V3K7A8z',
-        'amount': amountInPaise,
-        'name': 'TaxiApp Wallet',
-        'order_id': orderId,
-        'description': 'Add funds to wallet',
-        'prefill': {
-          'email': user?.email ?? '',
-          'contact': user?.phoneNumber ?? '',
-        },
-        'theme': {'color': '#0000FF'},
-      };
+      if (orderId == null || paymentSessionId == null) {
+        throw Exception("Failed to fetch Cashfree payment session.");
+      }
 
-      _razorpay.open(options);
+      var session = CFSessionBuilder()
+          .setEnvironment(CFEnvironment.SANDBOX) // Set to PRODUCTION when live
+          .setOrderId(orderId)
+          .setPaymentSessionId(paymentSessionId)
+          .build();
+
+      var cfWebCheckoutPayment = CFWebCheckoutPaymentBuilder()
+          .setSession(session)
+          .build();
+
+      cfPaymentGatewayService.doPayment(cfWebCheckoutPayment);
+    } on CFException catch (e) {
+      Get.snackbar(
+        "Error",
+        "Failed to configure payment: ${e.message}",
+        snackPosition: SnackPosition.TOP,
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
+      isLoading.value = false;
     } catch (e) {
       Get.snackbar(
         "Error",
@@ -127,14 +137,9 @@ class WalletController extends GetxController {
     }
   }
 
-  void _handlePaymentSuccess(PaymentSuccessResponse response) async {
+  void _verifyPayment(String orderId) async {
     try {
-      await _verifyPaymentCallable.call({
-        'razorpay_order_id': response.orderId,
-        'razorpay_payment_id': response.paymentId,
-        'razorpay_signature': response.signature,
-        'amount': _amountToVerify,
-      });
+      await _verifyPaymentCallable.call({'order_id': orderId});
       Get.snackbar(
         "Success",
         "Funds added successfully!",
@@ -155,22 +160,14 @@ class WalletController extends GetxController {
     }
   }
 
-  void _handlePaymentError(PaymentFailureResponse response) {
+  void _onError(CFErrorResponse errorResponse, String orderId) {
     Get.snackbar(
       "Payment Failed",
-      response.message ?? "Unknown error",
+      errorResponse.getMessage() ?? "Unknown error occurred.",
       snackPosition: SnackPosition.TOP,
       backgroundColor: Colors.red,
       colorText: Colors.white,
     );
     isLoading.value = false;
-  }
-
-  void _handleExternalWallet(ExternalWalletResponse response) {
-    Get.snackbar(
-      "External Wallet",
-      "Opening ${response.walletName}...",
-      snackPosition: SnackPosition.TOP,
-    );
   }
 }

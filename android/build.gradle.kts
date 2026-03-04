@@ -6,6 +6,7 @@ buildscript {
     dependencies {
         // This tells Gradle where to find the google-services plugin
         classpath("com.google.gms:google-services:4.4.1") 
+        classpath("com.google.firebase:firebase-crashlytics-gradle:2.9.9")
         // You might also have a 'kotlin-gradle-plugin' line here, which is fine
     }
 }
@@ -14,6 +15,7 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        maven { url = uri("https://jitpack.io") }
     }
 }
 

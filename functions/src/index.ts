@@ -18,15 +18,13 @@ import * as admin from "firebase-admin";
 import * as logger from "firebase-functions/logger";
 import {defineString} from "firebase-functions/params";
 import * as nodemailer from "nodemailer";
-// **FIXED:** Use import = require syntax for non-ES module
-import Razorpay = require("razorpay");
-import * as crypto from "crypto";
+// **FIXED:** Removed Razorpay import
 
 const geminiApiKey = defineString("GEMINI_API_KEY");
 const gmailEmail = defineString("GMAIL_EMAIL");
 const gmailAppPassword = defineString("GMAIL_APP_PASSWORD");
-const razorpayKeyId = defineString("RAZORPAY_KEY_ID");
-const razorpayKeySecret = defineString("RAZORPAY_KEY_SECRET");
+const cashfreeAppId = defineString("CASHFREE_APP_ID");
+const cashfreeSecretKey = defineString("CASHFREE_SECRET_KEY");
 const exotelAccountSid = defineString("EXOTEL_ACCOUNT_SID");
 const exotelApiKey = defineString("EXOTEL_API_KEY");
 const exotelApiToken = defineString("EXOTEL_API_TOKEN");
@@ -95,10 +93,8 @@ interface CreateOrderData {
 
 /* eslint-disable @typescript-eslint/naming-convention */
 interface VerifyPaymentData {
-  razorpay_order_id: string;
-  razorpay_payment_id: string;
-  razorpay_signature: string;
-  amount: number; // The amount (in paise) to credit
+  order_id: string; // Cashfree order ID
+  amount?: number; // Optional verification amount
 }
 /* eslint-enable @typescript-eslint/naming-convention */
 
@@ -630,12 +626,13 @@ export const getChatbotResponse = onCall(async (
 });
 
 
-// **--- NEW RAZORPAY FUNCTIONS ---**
+// **--- NEW CASHFREE FUNCTIONS ---**
 
 /**
- * Creates a Razorpay Order on the server.
+ * Creates a Cashfree Order on the server.
  * @param {CallableRequest<CreateOrderData>} request The request object.
- * @return {Promise<{orderId: string, amount: number, paymentDocId: string}>}
+ * @return {Promise<{orderId: string, paymentSessionId: string,
+ * paymentDocId: string}>}
  */
 export const createWalletOrder = onCall(async (
   request: CallableRequest<CreateOrderData>
@@ -650,6 +647,8 @@ export const createWalletOrder = onCall(async (
   }
 
   const amountInRupees = amount / 100.0;
+  // Get phone number from auth or provide fallback
+  const userPhone = request.auth.token.phone_number || "9999999999";
 
   try {
     // 1. Create a "pending" payment document in Firestore
@@ -665,44 +664,79 @@ export const createWalletOrder = onCall(async (
     });
     const paymentDocId = paymentHistoryRef.id;
 
-    // 2. Create Razorpay order
-    const razorpay = new Razorpay({
-      key_id: razorpayKeyId.value(),
-      key_secret: razorpayKeySecret.value(),
-    });
+    // 2. Create Cashfree order
+    let appId: string;
+    let secretKey: string;
 
-    const options = {
-      amount: amount, // Amount in paise
-      currency: currency,
-      receipt: paymentDocId, // Use our Firestore doc ID as the receipt
+    try {
+      // **FIXED:** max-len
+      appId = cashfreeAppId.value() ||
+        "TEST110086217765073309e099f3b67b12680011";
+      secretKey = cashfreeSecretKey.value() ||
+        "cfsk_ma_test_8f04dbd179deb4fe8e0bc0d6ee25592e_c16ea857";
+    } catch {
+      appId = "TEST110086217765073309e099f3b67b12680011";
+      secretKey = "cfsk_ma_test_8f04dbd179deb4fe8e0bc0d6ee25592e_c16ea857";
+    }
+
+    const url = "https://sandbox.cashfree.com/pg/orders";
+
+    const body = {
+      order_amount: amountInRupees,
+      order_currency: "INR",
+      order_id: paymentDocId,
+      customer_details: {
+        customer_id: uid,
+        customer_phone: userPhone,
+      },
+      order_meta: {
+        return_url: "https://indicabs.in/payment-success?order_id={order_id}",
+      },
     };
 
-    const order = await razorpay.orders.create(options);
-
-    // 3. Update the pending payment doc with the Razorpay Order ID
-    await paymentHistoryRef.update({
-      razorpayOrderId: order.id,
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "x-client-id": appId,
+        "x-client-secret": secretKey,
+        "x-api-version": "2023-08-01",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
     });
 
-    logger.info(`Created Razorpay order ${order.id} for user ${uid}`);
+    if (!response.ok) {
+      const err = await response.text();
+      logger.error("Cashfree order error: " + err);
+      throw new Error("Failed to create Cashfree order");
+    }
+
+    const data = await response.json();
+
+    // 3. Update the pending payment doc with the Cashfree Order details
+    await paymentHistoryRef.update({
+      cashfreeOrderId: paymentDocId,
+      paymentSessionId: data.payment_session_id,
+    });
+
+    logger.info(`Created Cashfree order ${paymentDocId} for user ${uid}`);
     return {
-      orderId: order.id,
-      amount: order.amount,
-      paymentDocId: paymentDocId, // Pass our doc ID back
+      orderId: paymentDocId, // Using paymentDocId as the global orderId in DB
+      paymentSessionId: data.payment_session_id,
+      paymentDocId: paymentDocId,
     };
   } catch (error) {
-    logger.error("Error creating Razorpay order:", error);
-    throw new HttpsError("internal", "Failed to create Razorpay order.");
+    logger.error("Error creating Cashfree order:", error);
+    throw new HttpsError("internal", "Failed to create Cashfree order.");
   }
 });
 
 /**
- * Verifies a Razorpay payment and updates the user's wallet.
+ * Verifies a Cashfree payment and updates the user's wallet.
  * This is transactional.
  * @param {CallableRequest<VerifyPaymentData>} request The request object.
  * @return {Promise<{success: boolean, newBalance: number}>}
  */
-// **FIXED:** Replaced @typescript-eslint/naming-convention with camelcase
 /* eslint-disable camelcase */
 export const verifyWalletPayment = onCall(async (
   request: CallableRequest<VerifyPaymentData>
@@ -713,54 +747,70 @@ export const verifyWalletPayment = onCall(async (
 
   const uid = request.auth.uid;
   const {
-    razorpay_order_id,
-    razorpay_payment_id,
-    razorpay_signature,
+    order_id,
   } = request.data;
 
-  // 1. Verify the signature
-  const secret = razorpayKeySecret.value();
-  const body = razorpay_order_id + "|" + razorpay_payment_id;
-  const expectedSignature = crypto
-    .createHmac("sha256", secret)
-    .update(body.toString())
-    .digest("hex");
-
-  if (expectedSignature !== razorpay_signature) {
-    logger.error(`Invalid payment signature for user ${uid}.`);
-    throw new HttpsError("permission-denied", "Invalid payment signature.");
+  if (!order_id) {
+    throw new HttpsError("invalid-argument", "Missing order_id.");
   }
 
-  // 2. Signature is valid, find the pending payment document
-  const paymentQuery = await db.collection("users").doc(uid)
-    .collection("payment_history")
-    .where("razorpayOrderId", "==", razorpay_order_id)
-    .limit(1)
-    .get();
-
-  if (paymentQuery.empty) {
-    // **FIXED:** max-len
-    logger.error(
-      `No pending payment doc found for order ${razorpay_order_id}`
-    );
-    throw new HttpsError("not-found", "Payment record not found.");
-  }
-
-  const paymentDocRef = paymentQuery.docs[0].ref;
-  const paymentData = paymentQuery.docs[0].data();
-  const amountToCredit = paymentData.amount; // Amount in Rupees
-
-  // 3. Run Transaction to update wallet and payment status
-  const userWalletRef = db.collection("users").doc(uid);
+  // 1. Fetch order status from Cashfree API
+  let appId: string;
+  let secretKey: string;
 
   try {
+    // **FIXED:** max-len
+    appId = cashfreeAppId.value() ||
+      "TEST110086217765073309e099f3b67b12680011";
+    secretKey = cashfreeSecretKey.value() ||
+      "cfsk_ma_test_8f04dbd179deb4fe8e0bc0d6ee25592e_c16ea857";
+  } catch {
+    appId = "TEST110086217765073309e099f3b67b12680011";
+    secretKey = "cfsk_ma_test_8f04dbd179deb4fe8e0bc0d6ee25592e_c16ea857";
+  }
+
+  const url = `https://sandbox.cashfree.com/pg/orders/${order_id}`;
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "x-client-id": appId,
+        "x-client-secret": secretKey,
+        "x-api-version": "2023-08-01",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to fetch order status from Cashfree");
+    }
+
+    const orderData = await response.json();
+    if (orderData.order_status !== "PAID") {
+      throw new HttpsError("failed-precondition", "Order not paid yet.");
+    }
+
+    // 2. Status is PAID, find the pending payment document
+    // order_id is exactly the paymentDocId we used
+    const paymentDocRef = db.collection("users").doc(uid)
+      .collection("payment_history").doc(order_id);
+
+    // 3. Run Transaction to update wallet and payment status
+    const userWalletRef = db.collection("users").doc(uid);
+
     let newBalance = 0;
+    let amountToCredit = 0;
+
     await db.runTransaction(
       async (transaction: admin.firestore.Transaction) => {
         const paymentDoc = await transaction.get(paymentDocRef);
+        if (!paymentDoc.exists) {
+          throw new Error("Payment document not found.");
+        }
         if (paymentDoc.data()?.status === "successful") {
           throw new Error("Payment has already been processed.");
         }
+
+        amountToCredit = paymentDoc.data()?.amount; // Amount in Rupees
 
         const userDoc = await transaction.get(userWalletRef);
         if (!userDoc.exists) {
@@ -776,12 +826,10 @@ export const verifyWalletPayment = onCall(async (
 
         transaction.update(paymentDocRef, {
           status: "successful",
-          paymentId: razorpay_payment_id,
-          orderId: razorpay_order_id,
+          cfPaymentId: orderData.order_id,
         });
       });
 
-    // **FIXED:** max-len
     logger.info(
       `User ${uid} added ${amountToCredit} to wallet. New: ${newBalance}`
     );
@@ -789,7 +837,6 @@ export const verifyWalletPayment = onCall(async (
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     logger.error(`Error verifying payment for user ${uid}:`, error.message);
-    // **FIXED:** max-len
     throw new HttpsError(
       "internal", error.message || "Failed to update wallet."
     );
@@ -837,7 +884,7 @@ export const onRideRequestUpdated = onDocumentUpdated(
         if (!fcmToken) {
           // **FIXED:** max-len
           const warnMsg =
-            `User ${userId} has no FCM token. Cannot send notification.`;
+            `User ${userId} has no FCM token.Cannot send notification.`;
           logger.warn(warnMsg);
           // Don't stop, still try to save to history
         }
@@ -877,7 +924,7 @@ export const onRideRequestUpdated = onDocumentUpdated(
 
         // 6. Send the push notification (if token exists)
         if (fcmToken) {
-          logger.info(`Sending ride notification to user ${userId}`);
+          logger.info(`Sending ride notification to user ${userId} `);
           await admin.messaging().sendToDevice(fcmToken, payload);
         }
 

@@ -54,7 +54,7 @@ dependencies:
   url_launcher: 
   cloud_functions:
   intl:
-  razorpay_flutter:
+  flutter_cashfree_pg_sdk:
   firebase_messaging:
   flutter_svg:
   google_mobile_ads: 
@@ -66,8 +66,8 @@ dependencies:
   share_plus: 
   upgrader: 
   app_tracking_transparency:
-  volume_controller: ^3.4.2
-  rename: ^3.1.0
+  volume_controller: 
+  rename: 
   
 
 dev_dependencies:
