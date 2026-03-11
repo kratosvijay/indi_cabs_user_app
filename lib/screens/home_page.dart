@@ -103,6 +103,8 @@ class _HomePageState extends State<HomePage> {
     BookingState(),
   );
 
+  bool _wasKeyboardVisible = false;
+
   @override
   void initState() {
     super.initState();
@@ -433,6 +435,70 @@ class _HomePageState extends State<HomePage> {
         context,
         "Select location on map or search again to confirm route for '${item.description}'.",
       );
+    }
+  }
+
+  Future<void> _handleSelectOnMap() async {
+    final initialPos =
+        _rideController.currentPosition.value ?? const LatLng(13.0827, 80.2707);
+
+    FocusScope.of(context).unfocus();
+    await SystemChannels.textInput.invokeMethod('TextInput.hide');
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    if (!mounted) return;
+    final result = await Get.to<Map<String, dynamic>>(
+      () => EditLocationScreen(initialLocation: initialPos),
+    );
+
+    if (result != null && mounted) {
+      final selectedLatLng = result['location'] as LatLng;
+      final selectedAddress = result['address'] as String;
+
+      _handlePlaceSelection(
+        PlaceDetails(
+          placeId: '',
+          name: 'Selected on Map',
+          address: selectedAddress,
+          location: selectedLatLng,
+        ),
+        displayOverrideName: selectedAddress,
+      );
+    }
+  }
+
+  Future<void> _handlePickupLocationTap() async {
+    final initialPos =
+        _rideController.currentPosition.value ?? const LatLng(13.0827, 80.2707);
+
+    FocusScope.of(context).unfocus();
+    await SystemChannels.textInput.invokeMethod('TextInput.hide');
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    if (!mounted) return;
+    final result = await Get.to<Map<String, dynamic>>(
+      () => EditLocationScreen(initialLocation: initialPos),
+    );
+
+    if (result != null && mounted) {
+      final selectedLatLng = result['location'] as LatLng;
+      final selectedAddress = result['address'] as String;
+
+      _pickupController.text = selectedAddress;
+      _rideController.pickupAddress.value = selectedAddress;
+      _rideController.currentPosition.value = selectedLatLng;
+
+      // Update map if destination is already selected
+      if (_destinationPosition != null) {
+        _calculateFaresAndRoute();
+      } else {
+        final controller = _rideController.mapController.value;
+        if (controller != null) {
+          controller.animateCamera(
+            CameraUpdate.newLatLngZoom(selectedLatLng, 15),
+          );
+        }
+      }
     }
   }
 
@@ -1295,6 +1361,17 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    // **NEW:** Automatically dismiss search bar if keyboard closes (e.g., system swipe)
+    final bool isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
+    if (_wasKeyboardVisible && !isKeyboardVisible && _destinationFocusNode.hasFocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _destinationFocusNode.hasFocus) {
+          _destinationFocusNode.unfocus();
+        }
+      });
+    }
+    _wasKeyboardVisible = isKeyboardVisible;
+
     double mapBottomPadding = (_destinationPosition == null)
         ? (_selectedServiceType == RideType.daily ||
                   _selectedServiceType == RideType.acting
@@ -1321,6 +1398,7 @@ class _HomePageState extends State<HomePage> {
       },
       child: Scaffold(
         key: _scaffoldKey,
+        resizeToAvoidBottomInset: false, // Prevents MapView stutter during keyboard animation
         // **NEW:** Add onDrawerChanged callback
         onDrawerChanged: (isOpened) {
           if (isOpened) {
@@ -1495,58 +1573,37 @@ class _HomePageState extends State<HomePage> {
                           ),
                         ),
                         // Search UI
-                        Obx(
-                          () => SearchBarWidget(
-                            key: _searchBarKey, // **NEW:** Assign key
-                            destinationController: _destinationController,
-                            destinationFocusNode: _destinationFocusNode,
-                            isSearchEnabled:
-                                _selectedServiceType == RideType.daily ||
-                                _selectedServiceType == RideType.acting,
-                            isDestinationSelected: _destinationPosition != null,
-                            predictions: _rideController.predictions.toList(),
-                            searchHistory: _rideController.searchHistory
-                                .toList(),
-                            favoritePlaces: _rideController.favoritePlaces
-                                .toList(), // **NEW**
-                            onSearchChanged: _handleSearchChanged, // RESTORED
-                            onPredictionTap: _handlePredictionTap,
-                            onHistoryTap: _handleHistoryTap, // FIX: RESTORED
-                            onFocusChange: (hasFocus) => _onSearchFocusChange(),
-                            onClearSearch: _handleClearSearch, // RESTORED
-                            onFavoriteToggle:
-                                _handleHistoryFavoriteToggle, // **NEW**
-                            onSelectOnMap: () async {
-                              // **NEW**
-                              // Fallback to current location if camera has never moved, or use center of whatever they are looking at.
-                              final initialPos =
-                                  _rideController.currentPosition.value ??
-                                  const LatLng(0, 0);
-
-                              final result = await Get.to<Map<String, dynamic>>(
-                                () => EditLocationScreen(
-                                  initialLocation: initialPos,
-                                ),
-                              );
-
-                              if (result != null && mounted) {
-                                final newLocation =
-                                    result['location'] as LatLng?;
-                                final newAddress = result['address'] as String?;
-
-                                if (newLocation != null && newAddress != null) {
-                                  _handlePlaceSelection(
-                                    PlaceDetails(
-                                      placeId: '', // PlaceId isn't needed here
-                                      name: newAddress,
-                                      address: newAddress,
-                                      location: newLocation,
-                                    ),
-                                    displayOverrideName: newAddress,
-                                  );
-                                }
-                              }
-                            },
+                        Positioned(
+                          top: 10,
+                          left: 0,
+                          right: 0,
+                          child: Obx(
+                            () => SearchBarWidget(
+                              key: _searchBarKey, // **NEW:** Assign key
+                              destinationController: _destinationController,
+                              destinationFocusNode: _destinationFocusNode,
+                              isSearchEnabled:
+                                  _selectedServiceType == RideType.daily ||
+                                  _selectedServiceType == RideType.acting,
+                              isDestinationSelected: _destinationPosition != null,
+                              predictions: _rideController.predictions.toList(),
+                              searchHistory: _rideController.searchHistory
+                                  .toList(),
+                              favoritePlaces: _rideController.favoritePlaces
+                                  .toList(), // **NEW**
+                              pickupAddress: _rideController.pickupAddress.value, // Pass pickup address
+                              onPickupTap: _handlePickupLocationTap, // Navigate to EditLocationScreen
+                              onSearchChanged: _handleSearchChanged, // RESTORED
+                              onPredictionTap: _handlePredictionTap,
+                              onHistoryTap: _handleHistoryTap, // FIX: RESTORED
+                              onFocusChange: (hasFocus) {
+                                // Trigger rebuild to show/hide history
+                                setState(() {});
+                              },
+                              onClearSearch: _handleClearSearch, // RESTORED
+                              onFavoriteToggle: _handleHistoryFavoriteToggle,
+                              onSelectOnMap: _handleSelectOnMap,
+                            ),
                           ),
                         ),
                         // Favorites List

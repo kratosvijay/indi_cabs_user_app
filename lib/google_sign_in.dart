@@ -1,6 +1,5 @@
 // ignore_for_file: unnecessary_nullable_for_final_variable_declarations
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/foundation.dart'
@@ -9,7 +8,6 @@ import 'package:flutter/foundation.dart'
 class GoogleSignInService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
   static final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
-  static final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   /// Attempts to sign in the user with Google.
   /// Returns a [UserCredential] if successful, otherwise returns `null`.
@@ -42,49 +40,8 @@ class GoogleSignInService {
       );
       final User? user = userCredential.user;
 
-      // 5. If sign-in is successful, create/update the user document in Firestore
+      // 5. Return user credentials to let AuthController handle the rest
       if (user != null) {
-        final DocumentReference userDoc = _db.collection('users').doc(user.uid);
-        final DocumentSnapshot docSnapshot = await userDoc.get();
-
-        // If the user document doesn't exist, create it (first-time sign-in)
-        if (!docSnapshot.exists) {
-          // Extract first and last name from display name
-          String firstName = '';
-          String lastName = '';
-          if (user.displayName != null && user.displayName!.isNotEmpty) {
-            final nameParts = user.displayName!.split(' ');
-            firstName = nameParts.first;
-            if (nameParts.length > 1) {
-              lastName = nameParts.sublist(1).join(' ');
-            }
-          }
-
-          final userData = {
-            'uid': user.uid,
-            'firstName': firstName,
-            'lastName': lastName,
-            'email': user.email ?? '',
-            'photoURL': user.photoURL ?? '',
-            'provider': 'google', // To know how they signed up
-            'createdAt': FieldValue.serverTimestamp(),
-            'phoneNumber':
-                user.phoneNumber ??
-                '', // Might be null, will be checked by signin_screen
-            'wallet_balance': 0, // **NEW:** Initialize wallet balance
-          };
-
-          await userDoc.set(userData);
-        } else {
-          // If user exists, maybe update photoURL in case it changed
-          await userDoc.set({
-            'photoURL': user.photoURL ?? '',
-          }, SetOptions(merge: true));
-        }
-
-        // Add small delay to ensure Firestore writes complete before navigation
-        await Future.delayed(const Duration(milliseconds: 300));
-
         return userCredential;
       }
 

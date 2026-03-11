@@ -30,6 +30,7 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
   bool _isLoading = false;
   bool _otpSent = false;
   String? _verificationId;
+  int? _resendToken;
 
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
 
@@ -55,6 +56,7 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
 
     await FirebaseAuth.instance.verifyPhoneNumber(
       phoneNumber: phoneNumber,
+      forceResendingToken: _resendToken,
       verificationCompleted: (PhoneAuthCredential credential) async {
         await _verifyOtp(credential);
       },
@@ -72,6 +74,7 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
         if (mounted) {
           setState(() {
             _verificationId = verificationId;
+            _resendToken = resendToken;
             _otpSent = true;
             _isLoading = false;
           });
@@ -273,6 +276,20 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
                     : (_otpSent ? () => _verifyOtp() : _sendOtp),
                 isLoading: _isLoading,
               ),
+              if (_otpSent) ...[
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: _isLoading ? null : _sendOtp,
+                  child: Text(
+                    'Resend OTP',
+                    style: TextStyle(
+                      color: Theme.of(context).primaryColor,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

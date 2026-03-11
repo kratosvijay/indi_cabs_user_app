@@ -17,14 +17,16 @@ class SearchBarWidget extends StatelessWidget {
   final bool isDestinationSelected;
   final List<PlaceAutocompletePrediction> predictions;
   final List<SearchHistoryItem> searchHistory;
-  final List<FavoritePlace> favoritePlaces; // **NEW**
+  final List<FavoritePlace> favoritePlaces;
+  final String pickupAddress; // **NEW**
+  final VoidCallback onPickupTap; // **NEW**
   final SearchCallback onSearchChanged;
   final PredictionTapCallback onPredictionTap;
   final HistoryTapCallback onHistoryTap;
   final FocusChangeCallback onFocusChange;
   final ClearSearchCallback onClearSearch;
-  final FavoriteToggleCallback onFavoriteToggle; // **NEW**
-  final VoidCallback onSelectOnMap; // **NEW**
+  final FavoriteToggleCallback onFavoriteToggle;
+  final VoidCallback onSelectOnMap;
 
   const SearchBarWidget({
     super.key,
@@ -34,14 +36,16 @@ class SearchBarWidget extends StatelessWidget {
     required this.isDestinationSelected,
     required this.predictions,
     required this.searchHistory,
-    this.favoritePlaces = const [], // Default to empty if not provided
+    required this.pickupAddress, // **NEW**
+    required this.onPickupTap, // **NEW**
+    this.favoritePlaces = const [],
     required this.onSearchChanged,
     required this.onPredictionTap,
     required this.onHistoryTap,
     required this.onFocusChange,
     required this.onClearSearch,
     required this.onFavoriteToggle,
-    required this.onSelectOnMap, // **NEW**
+    required this.onSelectOnMap,
   });
 
   @override
@@ -70,10 +74,75 @@ class SearchBarWidget extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Text Field Row
+              // Animated Pickup Field (Upper Box)
+              AnimatedSize(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+                child: destinationFocusNode.hasFocus
+                    ? InkWell(
+                        onTap: () {
+                          FocusScope.of(context).unfocus();
+                          onPickupTap();
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 16.0,
+                            horizontal: 16.0,
+                          ),
+                          child: Row(
+                            children: [
+                               Icon(
+                                Icons.my_location,
+                                color: Theme.of(context).brightness ==
+                                        Brightness.dark
+                                    ? Colors.white70
+                                    : Colors.black54,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  pickupAddress.isNotEmpty
+                                      ? pickupAddress
+                                      : 'Current Location',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: Theme.of(context).brightness ==
+                                            Brightness.dark
+                                        ? Colors.white
+                                        : Colors.black87,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+
+              // Divider between boxes
+              AnimatedSize(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+                child: destinationFocusNode.hasFocus
+                    ? Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? Colors.grey[800]
+                            : Colors.grey[200],
+                        indent: 16.0,
+                        endIndent: 16.0,
+                      )
+                    : const SizedBox.shrink(),
+              ),
+
+              // Text Field Row (Lower Box)
               Row(
                 children: [
-                  Expanded(
+                   Expanded(
                     child: TextField(
                       controller: destinationController,
                       focusNode: destinationFocusNode,
@@ -82,9 +151,15 @@ class SearchBarWidget extends StatelessWidget {
                         hintText: isSearchEnabled
                             ? 'Enter drop-off location'
                             : 'Select service type below',
-                        prefixIcon: const Icon(
-                          Icons.search,
-                          color: Colors.grey,
+                        prefixIcon: Icon(
+                          destinationFocusNode.hasFocus
+                              ? Icons.location_on
+                              : Icons.search,
+                          color: destinationFocusNode.hasFocus
+                              ? (Theme.of(context).brightness == Brightness.dark
+                                  ? Colors.white
+                                  : Colors.black87)
+                              : Colors.grey,
                         ),
                         border: InputBorder.none,
                         contentPadding: const EdgeInsets.symmetric(
@@ -121,41 +196,57 @@ class SearchBarWidget extends StatelessWidget {
               if (destinationFocusNode.hasFocus &&
                   destinationController.text.isEmpty &&
                   isSearchEnabled)
-                InkWell(
-                  onTap: () {
-                    FocusScope.of(context).unfocus();
-                    onSelectOnMap();
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 12,
-                      horizontal: 16,
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Padding(
+                    padding: const EdgeInsets.only(
+                      right: 16.0,
+                      bottom: 12.0,
+                      top: 4.0,
                     ),
-                    decoration: BoxDecoration(
-                      border: Border(
-                        top: BorderSide(
-                          color: Theme.of(context).brightness == Brightness.dark
-                              ? Colors.grey[800]!
-                              : Colors.grey[200]!,
+                    child: InkWell(
+                      onTap: () {
+                        FocusScope.of(context).unfocus();
+                        onSelectOnMap();
+                      },
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 8,
+                          horizontal: 16,
                         ),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.map, color: Colors.blueAccent),
-                        const SizedBox(width: 12),
-                        Text(
-                          "Select on Map",
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                            color:
-                                Theme.of(context).brightness == Brightness.dark
-                                ? Colors.white
-                                : Colors.black87,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? Colors.grey[800]
+                              : Colors.blue[50],
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: Colors.blueAccent.withValues(alpha: 0.3),
                           ),
                         ),
-                      ],
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.map,
+                              color: Colors.blueAccent,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              "Select on Map",
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(context).brightness ==
+                                        Brightness.dark
+                                    ? Colors.blue[200]
+                                    : Colors.blueAccent[700],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -190,11 +281,7 @@ class SearchBarWidget extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         const Divider(height: 1, thickness: 1),
-        ConstrainedBox(
-          // **FIXED:** Use context
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.3,
-          ),
+        Flexible(
           child: ListView.builder(
             shrinkWrap: true,
             padding: EdgeInsets.zero,
@@ -246,7 +333,7 @@ class SearchBarWidget extends StatelessWidget {
               ),
             ),
           ),
-          Expanded(
+          Flexible(
             child: ListView.builder(
               shrinkWrap: true,
               padding: EdgeInsets.zero,

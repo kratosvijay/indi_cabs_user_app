@@ -6,20 +6,38 @@ typedef ServiceTypeSelectedCallback = void Function(RideType rideType);
 typedef PredefinedTapCallback =
     void Function(PredefinedDestination destination);
 
-class BottomBarWidget extends StatelessWidget {
+class BottomBarWidget extends StatefulWidget {
   final RideType selectedServiceType;
   final ServiceTypeSelectedCallback onServiceTypeSelected;
   final PredefinedTapCallback onPredefinedDestinationTap;
 
-  // **REMOVED:** Keys are no longer needed here,
-  // we will highlight the whole bar using the key from HomePage.
-
   const BottomBarWidget({
-    super.key, // This key is what we use (passed from HomePage)
+    super.key,
     required this.selectedServiceType,
     required this.onServiceTypeSelected,
     required this.onPredefinedDestinationTap,
   });
+
+  @override
+  State<BottomBarWidget> createState() => _BottomBarWidgetState();
+}
+
+class _BottomBarWidgetState extends State<BottomBarWidget> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollDown() {
+    _scrollController.animateTo(
+      _scrollController.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeInOut,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -42,6 +60,7 @@ class BottomBarWidget extends StatelessWidget {
                 0.40, // Occupy at most 40% of screen height
           ),
           child: SingleChildScrollView(
+            controller: _scrollController,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -59,8 +78,8 @@ class BottomBarWidget extends StatelessWidget {
                           icon: Icons.local_taxi_outlined,
 
                           label: "Daily Rides",
-                          isSelected: selectedServiceType == RideType.daily,
-                          onTap: () => onServiceTypeSelected(RideType.daily),
+                          isSelected: widget.selectedServiceType == RideType.daily,
+                          onTap: () => widget.onServiceTypeSelected(RideType.daily),
                           isDark: isDark,
                         ),
                         _buildServiceTypeCard(
@@ -68,34 +87,34 @@ class BottomBarWidget extends StatelessWidget {
                           icon: Icons.person_add_alt_1_outlined,
                           label: "Book for Guest",
                           isSelected:
-                              selectedServiceType == RideType.bookForOther,
+                              widget.selectedServiceType == RideType.bookForOther,
                           onTap: () =>
-                              onServiceTypeSelected(RideType.bookForOther),
+                              widget.onServiceTypeSelected(RideType.bookForOther),
                           isDark: isDark,
                         ),
                         _buildServiceTypeCard(
                           context: context,
                           icon: Icons.multiple_stop,
                           label: "Multi-Stop",
-                          isSelected: selectedServiceType == RideType.multiStop,
+                          isSelected: widget.selectedServiceType == RideType.multiStop,
                           onTap: () =>
-                              onServiceTypeSelected(RideType.multiStop),
+                              widget.onServiceTypeSelected(RideType.multiStop),
                           isDark: isDark,
                         ),
                         _buildServiceTypeCard(
                           context: context,
                           icon: Icons.timelapse_outlined,
                           label: "Rentals",
-                          isSelected: selectedServiceType == RideType.rental,
-                          onTap: () => onServiceTypeSelected(RideType.rental),
+                          isSelected: widget.selectedServiceType == RideType.rental,
+                          onTap: () => widget.onServiceTypeSelected(RideType.rental),
                           isDark: isDark,
                         ),
                         _buildServiceTypeCard(
                           context: context,
                           icon: Icons.person_pin_outlined,
                           label: "Acting Driver",
-                          isSelected: selectedServiceType == RideType.acting,
-                          onTap: () => onServiceTypeSelected(RideType.acting),
+                          isSelected: widget.selectedServiceType == RideType.acting,
+                          onTap: () => widget.onServiceTypeSelected(RideType.acting),
                           isDark: isDark,
                         ),
                       ],
@@ -103,7 +122,7 @@ class BottomBarWidget extends StatelessWidget {
                   ),
                 ),
                 // --- Popular Destinations (Only show for Daily Rides) ---
-                if (selectedServiceType == RideType.daily) ...[
+                if (widget.selectedServiceType == RideType.daily) ...[
                   const SizedBox(height: 20),
                   Text(
                     "Popular Destinations",
@@ -133,7 +152,7 @@ class BottomBarWidget extends StatelessWidget {
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: InkWell(
-                              onTap: () => onPredefinedDestinationTap(dest),
+                              onTap: () => widget.onPredefinedDestinationTap(dest),
                               child: Padding(
                                 padding: const EdgeInsets.all(8.0),
                                 child: Column(
@@ -170,15 +189,30 @@ class BottomBarWidget extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  Text(
-                    "Shopping & Entertainment",
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white70 : Colors.black87,
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          "Shopping & Entertainment",
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white70 : Colors.black87,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: _scrollDown,
+                        icon: Icon(
+                          Icons.keyboard_double_arrow_down,
+                          color: isDark ? Colors.white70 : Colors.black54,
+                        ),
+                        tooltip: 'Scroll Down',
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 4),
                   SizedBox(
                     height: 135,
                     child: ListView.builder(
@@ -201,7 +235,7 @@ class BottomBarWidget extends StatelessWidget {
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: InkWell(
-                              onTap: () => onPredefinedDestinationTap(dest),
+                              onTap: () => widget.onPredefinedDestinationTap(dest),
                               child: Padding(
                                 padding: const EdgeInsets.all(8.0),
                                 child: Column(
