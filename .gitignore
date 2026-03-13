@@ -2,6 +2,7 @@ build/
 .dart_tool/
 
 # Secret keys - VERY IMPORTANT
+.env*
 dotenv.env
 
 # IDE-specific files
@@ -20,4 +21,9 @@ dotenv.env
 # Firebase (if you add these later)
 google-services.json
 GoogleService-Info.plist
+ 
+# Android signing
+*.jks
+*.keystore
+key.properties
 

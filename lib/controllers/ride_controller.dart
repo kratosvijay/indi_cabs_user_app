@@ -8,6 +8,7 @@ import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:project_taxi_with_ai/config/env_config.dart';
 import 'package:project_taxi_with_ai/widgets/data_models.dart';
 import 'package:project_taxi_with_ai/widgets/map_service.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -16,7 +17,6 @@ import 'package:project_taxi_with_ai/widgets/places_service.dart';
 import 'package:project_taxi_with_ai/widgets/directions_service.dart';
 import 'package:project_taxi_with_ai/widgets/firestore_services.dart';
 import 'package:project_taxi_with_ai/widgets/storage.service.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -105,7 +105,7 @@ class RideController extends GetxController {
     }
 
     // Initialize Services
-    final apiKey = dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
+    final apiKey = EnvConfig.instance.googleMapsKey;
     // Use try-catch or check if already assigned to be extra safe, though _isInitialized should handle it.
     try {
       locationService = LocationService(apiKey: apiKey);

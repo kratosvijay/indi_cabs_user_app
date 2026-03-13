@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:project_taxi_with_ai/config/env_config.dart';
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:get/get.dart';
@@ -36,8 +37,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
       // 3. Initialize Google Sign-In
       await GoogleSignIn.instance.initialize(
-        serverClientId:
-            "854114457795-d0hns7g6jnhnoba53v178lomsvop234i.apps.googleusercontent.com",
+        serverClientId: EnvConfig.instance.serverClientId,
       );
 
       // 4. Activate App Check

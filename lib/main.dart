@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:project_taxi_with_ai/config/env_config.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:get/get.dart';
@@ -49,6 +50,18 @@ void main() {
   runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      
+      // Default to dev if no configuration is set (e.g. running main.dart directly)
+      if (!EnvConfig.isSet) {
+        EnvConfig.setConfig(
+          EnvConfig(
+            environment: Environment.dev,
+            appName: 'Indi Cabs Dev',
+            googleMapsKey: 'AIzaSyDxGUTTcU-yMjVfqbhSPeg8GGvfSrqtmSo',
+            serverClientId: '854114457795-d0hns7g6jnhnoba53v178lomsvop234i.apps.googleusercontent.com',
+          ),
+        );
+      }
       try {
         await Firebase.initializeApp();
       } catch (e) {
@@ -97,7 +110,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return GetMaterialApp(
       // initialBinding: ControllerBinding(), // Moved to SplashScreen
-      title: 'Indi Cabs',
+      title: EnvConfig.instance.appName,
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.system,
       theme: ThemeData(
