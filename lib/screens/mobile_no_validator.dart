@@ -7,6 +7,8 @@ import 'package:project_taxi_with_ai/widgets/form_validator.dart';
 import 'home_page.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:project_taxi_with_ai/controllers/auth_controller.dart';
+import 'login_screen.dart';
 
 class PhoneAuthScreen extends StatefulWidget {
   final User user;
@@ -236,7 +238,16 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const ProAppBar(titleText: 'Verify Mobile Number'),
+      appBar: ProAppBar(
+        titleText: 'Verify Mobile Number',
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () async {
+            await AuthController.instance.logout();
+            Get.offAll(() => const SignInScreen());
+          },
+        ),
+      ),
       body: FadeInSlide(
         child: Padding(
           padding: const EdgeInsets.all(24.0),

@@ -27,6 +27,7 @@ class SearchBarWidget extends StatelessWidget {
   final ClearSearchCallback onClearSearch;
   final FavoriteToggleCallback onFavoriteToggle;
   final VoidCallback onSelectOnMap;
+  final VoidCallback? onMenuTap; // **NEW**
 
   const SearchBarWidget({
     super.key,
@@ -46,6 +47,7 @@ class SearchBarWidget extends StatelessWidget {
     required this.onClearSearch,
     required this.onFavoriteToggle,
     required this.onSelectOnMap,
+    this.onMenuTap, // **NEW**
   });
 
   @override
@@ -58,20 +60,12 @@ class SearchBarWidget extends StatelessWidget {
         searchHistory.isNotEmpty &&
         isSearchEnabled;
 
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          16.0,
-          16.0,
-          16.0,
-          0,
-        ), // Adjust top padding
-        child: Card(
-          elevation: 6.0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10.0),
-          ),
-          child: Column(
+    return Card(
+      elevation: 6.0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(30.0),
+      ),
+      child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               // Animated Pickup Field (Upper Box)
@@ -142,6 +136,27 @@ class SearchBarWidget extends StatelessWidget {
               // Text Field Row (Lower Box)
               Row(
                 children: [
+                  // Leading Icon: Menu (unfocused) or Back (focused)
+                  GestureDetector(
+                    onTap: () {
+                      if (destinationFocusNode.hasFocus) {
+                        destinationFocusNode.unfocus();
+                        onFocusChange(false);
+                      } else {
+                        onMenuTap?.call();
+                      }
+                    },
+                    behavior: HitTestBehavior.opaque,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 16.0),
+                      child: Icon(
+                        destinationFocusNode.hasFocus ? Icons.arrow_back : Icons.menu,
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? Colors.white
+                            : Colors.black87,
+                      ),
+                    ),
+                  ),
                    Expanded(
                     child: TextField(
                       controller: destinationController,
@@ -155,12 +170,12 @@ class SearchBarWidget extends StatelessWidget {
                           destinationFocusNode.hasFocus
                               ? Icons.location_on
                               : Icons.search,
-                          color: destinationFocusNode.hasFocus
-                              ? (Theme.of(context).brightness == Brightness.dark
-                                  ? Colors.white
-                                  : Colors.black87)
-                              : Colors.grey,
-                        ),
+                                color: destinationFocusNode.hasFocus
+                                    ? (Theme.of(context).brightness == Brightness.dark
+                                        ? Colors.white
+                                        : Colors.black87)
+                                    : Colors.grey,
+                              ),
                         border: InputBorder.none,
                         contentPadding: const EdgeInsets.symmetric(
                           vertical: 15.0,
@@ -268,8 +283,6 @@ class SearchBarWidget extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      ),
     );
   }
 

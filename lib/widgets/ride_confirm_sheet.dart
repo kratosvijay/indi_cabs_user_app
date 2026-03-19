@@ -68,10 +68,12 @@ class RideConfirmationBottomSheet extends StatefulWidget {
     required this.availability, // **NEW:** Add to constructor
     this.guestName,
     this.guestPhone,
+    this.scrollController, // **NEW:** Support for DraggableScrollableSheet
   });
 
   final String? guestName;
   final String? guestPhone;
+  final ScrollController? scrollController; // **NEW**
 
   @override
   State<RideConfirmationBottomSheet> createState() =>
@@ -510,16 +512,16 @@ class _RideConfirmationBottomSheetState
         right: 16,
         top: 8,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: ListView(
+        controller: widget.scrollController,
+        padding: EdgeInsets.zero,
         children: [
           // Drag Handle
           Center(
             child: Container(
               width: 40,
               height: 5,
-              margin: const EdgeInsets.only(bottom: 10),
+              margin: const EdgeInsets.symmetric(vertical: 6),
               decoration: BoxDecoration(
                 color: isDark ? Colors.grey[600] : Colors.grey[300],
                 borderRadius: BorderRadius.circular(10),
@@ -535,14 +537,12 @@ class _RideConfirmationBottomSheetState
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 16),
-
-          // Location Rows Removed By Request
+          const SizedBox(height: 8),
 
           // **NEW:** Show Distance and Time below Drop-off
           if (widget.routeDetails != null)
             Padding(
-              padding: const EdgeInsets.only(top: 12, bottom: 4),
+              padding: const EdgeInsets.only(top: 8, bottom: 4),
               child: Container(
                 padding: const EdgeInsets.all(5),
                 decoration: BoxDecoration(
@@ -647,30 +647,32 @@ class _RideConfirmationBottomSheetState
           const SizedBox(height: 16),
 
           // Vehicle Options List
-          SizedBox(
-            height: 250,
-            // **MODIFIED:** Support loading state in list
-            child: (widget.calculatedFares == null && !widget.isLoadingFares)
-                ? const Center(
+          (widget.calculatedFares == null && !widget.isLoadingFares)
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(20),
                     child: Text(
                       "Could not calculate fares.",
                       style: TextStyle(color: Colors.red),
                     ),
-                  )
-                // **MODIFIED:** Use _filteredVehicleOptions
-                : _filteredVehicleOptions.isEmpty
-                // **NEW:** Show "No vehicle" message
-                ? const Center(
+                  ),
+                )
+              : _filteredVehicleOptions.isEmpty
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(20),
                     child: Text(
-                      "No vehicles are available for this service right now. Please try again soon.",
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 16, color: Colors.black),
+                      "No vehicles available.",
+                      style: TextStyle(fontSize: 16),
                     ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    itemCount: _filteredVehicleOptions.length,
-                    itemBuilder: (context, index) {
+                  ),
+                )
+              : ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  itemCount: _filteredVehicleOptions.length,
+                  itemBuilder: (context, index) {
                       final vehicle = _filteredVehicleOptions[index];
                       final isSelected = _selectedVehicleType == vehicle.type;
 
@@ -819,8 +821,7 @@ class _RideConfirmationBottomSheetState
                       );
                     },
                   ),
-          ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
 
           // **NEW:** Schedule Button
           Container(
@@ -856,7 +857,7 @@ class _RideConfirmationBottomSheetState
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
 
           // Confirmation Button
           // Confirmation Button

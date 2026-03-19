@@ -135,20 +135,26 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
       }
 
       if (requestedStatus.isGranted) {
-        final contact = await FlutterContacts.openExternalPick();
-        if (contact != null) {
-          String name = contact.displayName;
-          String phone = '';
-          if (contact.phones.isNotEmpty) {
-            // Pick the first available phone number
-            phone = contact.phones.first.number;
-          }
+        final contactId = await FlutterContacts.native.showPicker();
+        if (contactId != null) {
+          final contact = await FlutterContacts.get(
+            contactId,
+            properties: {ContactProperty.name, ContactProperty.phone},
+          );
+          if (contact != null) {
+            String name = contact.displayName ?? '';
+            String phone = '';
+            if (contact.phones.isNotEmpty) {
+              // Pick the first available phone number
+              phone = contact.phones.first.number;
+            }
 
-          setState(() {
-            _guestName = name;
-            _guestPhone = phone;
-            _contactController.text = "$name ($phone)";
-          });
+            setState(() {
+              _guestName = name;
+              _guestPhone = phone;
+              _contactController.text = "$name ($phone)";
+            });
+          }
         }
       } else {
         if (mounted) {

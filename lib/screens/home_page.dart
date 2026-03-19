@@ -48,9 +48,10 @@ import 'package:project_taxi_with_ai/widgets/map_service.dart';
 import 'package:project_taxi_with_ai/widgets/rental_botomsheet.dart';
 import 'package:project_taxi_with_ai/widgets/ride_confirm_sheet.dart';
 import 'package:project_taxi_with_ai/widgets/search_bar.dart';
+import 'package:project_taxi_with_ai/widgets/review_dialog.dart'; // **NEW IMPORT**
 
 import '../widgets/snackbar.dart';
-import 'package:project_taxi_with_ai/widgets/pro_library.dart';
+
 
 // --- Main HomePage Widget ---
 class HomePage extends StatefulWidget {
@@ -97,6 +98,9 @@ class _HomePageState extends State<HomePage> {
   bool _isDropoffInServiceArea = true;
   RideType _selectedServiceType = RideType.daily;
   bool _isMapReadyToRender = false; // **NEW:** Delay map rendering
+  bool _isVehicleSheetOpen = false; // Track if vehicle sheet is visible
+  final DraggableScrollableController _sheetController = DraggableScrollableController();
+  final ValueNotifier<double> _sheetExtent = ValueNotifier<double>(0.4);
 
   // **NEW:** Reactive booking state
   final ValueNotifier<BookingState> _bookingState = ValueNotifier(
@@ -146,9 +150,10 @@ class _HomePageState extends State<HomePage> {
       }
     });
 
-    // **NEW:** Check for notification permission prompt
+    // **NEW:** Check for notification permission prompt & reviews
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkNotificationPermission();
+      _checkForPendingReviews();
     });
 
     // **NEW:** Sync pickup address from controller
@@ -235,6 +240,70 @@ class _HomePageState extends State<HomePage> {
     // Just trigger a rebuild when focus changes
     // The actual check is handled in _handleSearchBarTap before focusing
     if (mounted) setState(() {});
+  }
+
+  Future<void> _checkForPendingReviews() async {
+    if (!mounted) return;
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      // Check ride requests
+      final rideSnapshot = await FirebaseFirestore.instance
+          .collection('ride_requests')
+          .where('userId', isEqualTo: user.uid)
+          .orderBy('createdAt', descending: true)
+          .limit(5)
+          .get();
+
+      for (var doc in rideSnapshot.docs) {
+        final data = doc.data();
+        if (data['status'] == 'completed' && data['reviewed'] != true) {
+          if (mounted) {
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => ReviewDialog(
+                rideRequestId: doc.id,
+                driverId: data['driverId'] ?? '',
+                userId: user.uid,
+                isRental: false,
+              ),
+            );
+          }
+          return; // Show one and exit
+        }
+      }
+
+      // Check rental requests
+      final rentalSnapshot = await FirebaseFirestore.instance
+          .collection('rental_requests')
+          .where('userId', isEqualTo: user.uid)
+          .orderBy('createdAt', descending: true)
+          .limit(5)
+          .get();
+
+      for (var doc in rentalSnapshot.docs) {
+        final data = doc.data();
+        if (data['status'] == 'completed' && data['reviewed'] != true) {
+          if (mounted) {
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => ReviewDialog(
+                rideRequestId: doc.id,
+                driverId: data['driverId'] ?? '',
+                userId: user.uid,
+                isRental: true,
+              ),
+            );
+          }
+          return; // Show one and exit
+        }
+      }
+    } catch (e) {
+      debugPrint("Error checking for pending reviews: $e");
+    }
   }
 
   /// Returns true if user can proceed with booking, false otherwise
@@ -1020,113 +1089,55 @@ class _HomePageState extends State<HomePage> {
   }
 
   // --- Bottom Sheet Triggers ---
-
-  Future<void> _showRideConfirmationSheet(
+  void _showRideConfirmationSheet(
     bool isDropoffInServiceArea, {
-    // Remove calculatedFares and isLoadingFares inputs since we use ValueNotifier
-    // bool isLoadingFares = false,
-    // Map<String, num>? calculatedFares,
-    RouteDetails? routeDetails,
-    PricingRules? pricingRules,
     required num walletBalance,
     required RideType rideType,
     Map<String, bool> availability = const {},
-    bool showScheduleTour = false,
-  }) async {
+  }) {
     final currentPos = _rideController.currentPosition.value;
     final destPos = _destinationPosition;
 
-    if (!mounted || currentPos == null || destPos == null) {
-      return;
-    }
+    if (!mounted || currentPos == null || destPos == null) return;
 
-    String etaString = "...";
-    if (routeDetails != null) {
-      final durationMinutes = (routeDetails.durationSeconds / 60).round();
-      etaString = "$durationMinutes min";
-    }
+    // Open the inline vehicle sheet — map will shrink via AnimatedPositioned
+    setState(() {
+      _isVehicleSheetOpen = true;
+      _sheetExtent.value = 0.65; // Final increase to 65% for absolute visibility
+    });
 
-    // **MODIFIED:** Use ValueListenableBuilder for seamless updates
-    return showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) {
-        return ValueListenableBuilder<BookingState>(
-          valueListenable: _bookingState,
-          builder: (context, state, _) {
-            String displayedEta = etaString;
-            // If we have live state route info, use that.
-            if (state.route != null) {
-              final durationMinutes = (state.route!.durationSeconds / 60)
-                  .round();
-              displayedEta = "$durationMinutes min";
-            } else if (state.isLoading) {
-              displayedEta = "Calculating...";
-            }
+    // After map shrink animation completes, re-animate camera to fit route
+    _animateCameraToRoute();
+  }
 
-            final updatedVehicleOptions = VehicleOption.defaultOptions.map((
-              option,
-            ) {
-              final realEta = _rideController.getNearestDriverEta(option.type);
-              return VehicleOption(
-                type: option.type,
-                imagePath: option.imagePath,
-                price: option.price,
-                eta: realEta,
-              );
-            }).toList();
-
-            return RideConfirmationBottomSheet(
-              currentUser: _currentUser,
-              currentPosition: currentPos,
-              destinationPosition: destPos,
-              pickupAddress: _pickupController.text,
-              destinationAddress: _destinationController.text,
-              isDropoffInServiceArea: isDropoffInServiceArea,
-              vehicleOptions: updatedVehicleOptions,
-              polylines: state.route != null
-                  ? {
-                      Polyline(
-                        polylineId: const PolylineId("route"),
-                        points: state.route!.polylinePoints,
-                        color: Colors.black,
-                        width: 5,
-                      ),
-                    }
-                  : _rideController.polylines,
-              isLoadingFares: state.isLoading,
-              calculatedFares: state.fares,
-              eta: displayedEta,
-              routeDetails: state.route ?? routeDetails,
-              pricingRules: pricingRules ?? _rideController.pricingRules.value,
-              walletBalance: walletBalance,
-              rideType: rideType,
-              availability: availability,
-              showScheduleTour: showScheduleTour,
-              // **NEW:** Edit callbacks
-              // Note: For full seamlessness, these should update state rather than closing sheet,
-              // but given the current architecture, we might need to close and reopen OR handle
-              // the result and update the internal state if possible.
-              // The user asked for "seamless" primarily for fare calculation.
-              onEditPickup: () =>
-                  _handleEditLocation(currentPos, isPickup: true),
-              onEditDropoff: () =>
-                  _handleEditLocation(destPos, isPickup: false),
-              onSaveDropoffFavorite: _handleSaveDropoffFavorite,
-              onSavePickupFavorite: _handleSavePickupFavorite,
-            );
-          },
+  void _animateCameraToRoute() {
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted && _rideController.currentPosition.value != null && _destinationPosition != null) {
+        _rideController.mapService.animateCameraToBounds(
+          _rideController.mapService.calculateBounds(
+            _rideController.currentPosition.value!,
+            _destinationPosition!,
+          ),
+          padding: 20.0,
         );
-      },
-    ).whenComplete(() {
-      // Cleanup when sheet closes
-      if (mounted) {
-        _resetMapAndSearch();
-        setState(() => _rideController.isCalculatingFares.value = false);
       }
     });
   }
+
+
+
+  void _dismissVehicleSheet() {
+    if (!mounted) return;
+    setState(() {
+      _isVehicleSheetOpen = false;
+      _sheetExtent.value = 0.0;
+    });
+    _resetMapAndSearch();
+    _rideController.isCalculatingFares.value = false;
+  }
+
+  // Builds the inline vehicle selection sheet content
+
 
   Future<void> _showRentalBottomSheet({bool isActingDriver = false}) {
     final currentPos = _rideController.currentPosition.value;
@@ -1159,7 +1170,8 @@ class _HomePageState extends State<HomePage> {
     LatLng initialLocation, {
     required bool isPickup,
   }) async {
-    Get.back(); // Close any open dialogs/sheets if needed
+    _dismissVehicleSheet(); // Close the inline vehicle sheet if open
+
 
     final result = await Get.to<Map<String, dynamic>>(
       () => EditLocationScreen(initialLocation: initialLocation),
@@ -1372,32 +1384,33 @@ class _HomePageState extends State<HomePage> {
     }
     _wasKeyboardVisible = isKeyboardVisible;
 
+    final double statusBarHeight = MediaQuery.of(context).padding.top;
     double mapBottomPadding = (_destinationPosition == null)
         ? (_selectedServiceType == RideType.daily ||
                   _selectedServiceType == RideType.acting
               ? MediaQuery.of(context).size.height * 0.40
               : 140)
-        : 30; // 30 for collapsed banner ad height
+        : MediaQuery.of(context).size.height * 0.45;
 
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
-        if (_destinationFocusNode.hasFocus) {
+        if (_isVehicleSheetOpen) {
+          _dismissVehicleSheet();
+        } else if (_destinationFocusNode.hasFocus) {
           FocusScope.of(context).unfocus();
         } else if (_rideController.predictions.isNotEmpty) {
           setState(() {
             _rideController.predictions.clear();
           });
         } else {
-          // SystemNavigator.pop() or let it bubble up if implicit
-          // For now, if no search, we can exit or go back.
-          // Since this is HomePage, back usually exits app or minimizes.
           _showExitConfirmationDialog();
         }
       },
       child: Scaffold(
         key: _scaffoldKey,
+        drawerEnableOpenDragGesture: false, // **NEW:** Only open drawer via button
         resizeToAvoidBottomInset: false, // Prevents MapView stutter during keyboard animation
         // **NEW:** Add onDrawerChanged callback
         onDrawerChanged: (isOpened) {
@@ -1405,34 +1418,7 @@ class _HomePageState extends State<HomePage> {
             _showWalletTour();
           }
         },
-        appBar: ProAppBar(
-          titleText: 'Book a Ride',
-          leading: IconButton(
-            icon: const Icon(Icons.menu),
-            onPressed: () {
-              FocusScope.of(context).unfocus(); // Unfocus before opening drawer
-              SystemChannels.textInput.invokeMethod('TextInput.hide');
-              _scaffoldKey.currentState?.openDrawer();
-            },
-          ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.notifications_outlined),
-              tooltip: 'Notifications',
-              onPressed: () {
-                Get.to(() => NotificationsScreen(user: _currentUser));
-              },
-            ),
-            if (_destinationPosition != null &&
-                (_selectedServiceType == RideType.daily ||
-                    _selectedServiceType == RideType.acting))
-              IconButton(
-                icon: const Icon(Icons.close),
-                tooltip: 'Clear Destination',
-                onPressed: _resetMapAndSearch,
-              ),
-          ],
-        ),
+        // AppBar removed — hamburger + notification are now floating over the map
         drawer: Builder(builder: (context) => _buildDrawer()),
         body: Obx(() {
           return _rideController.isLoadingLocation.value
@@ -1451,55 +1437,74 @@ class _HomePageState extends State<HomePage> {
                       children: [
                         // Google Map
                         if (_isMapReadyToRender)
-                          Positioned.fill(
-                            child: GoogleMap(
-                              initialCameraPosition: MapService.initialPosition,
-                              mapType: MapType.normal,
-                              myLocationEnabled:
-                                  false, // DEBUG: Disabled to rule out location layer crash
-                              myLocationButtonEnabled: false,
-                              zoomControlsEnabled: false,
-                              // **MODIFIED:** Show user markers + driver markers
-                              markers: _rideController.markers.union(
-                                _rideController.driverMarkers,
-                              ),
-                              polylines: _rideController.polylines,
-                              onTap: (_) => FocusScope.of(context).unfocus(),
-
-                              onMapCreated: (controller) {
-                                debugPrint(
-                                  "!!! MAP CREATED CALLBACK FIRED !!!",
-                                );
-                                _rideController.onMapCreated(controller);
-                              },
-                              onCameraMove: (position) {
-                                debugPrint(
-                                  "!!! MAP CAMERA MOVED: ${position.target} !!!",
-                                );
-                              },
-                              padding: EdgeInsets.only(
-                                bottom: mapBottomPadding,
-                                top: 160,
-                              ),
-                              gestureRecognizers:
-                                  <Factory<OneSequenceGestureRecognizer>>{
-                                    Factory<OneSequenceGestureRecognizer>(
-                                      () => EagerGestureRecognizer(),
+                          ValueListenableBuilder<double>(
+                            valueListenable: _sheetExtent,
+                            builder: (context, extent, child) {
+                              final double currentBottom = _isVehicleSheetOpen 
+                                  ? MediaQuery.of(context).size.height * extent 
+                                  : 0;
+                              // Map scales down slightly as sheet expands (Swiggy effect)
+                              final double scale = _isVehicleSheetOpen ? (1.0 + ((extent - 0.4).clamp(0, 1.0) * 0.3)) : 1.0;
+                              
+                              return AnimatedPositioned(
+                                duration: const Duration(milliseconds: 50),
+                                curve: Curves.easeOut,
+                                top: 0,
+                                left: 0,
+                                right: 0,
+                                bottom: currentBottom,
+                                child: Transform.scale(
+                                  scale: scale,
+                                  alignment: Alignment.topCenter,
+                                  child: ClipRRect(
+                                    borderRadius: _isVehicleSheetOpen
+                                        ? const BorderRadius.only(
+                                            bottomLeft: Radius.circular(20),
+                                            bottomRight: Radius.circular(20),
+                                          )
+                                        : BorderRadius.zero,
+                                    child: GoogleMap(
+                                      initialCameraPosition: MapService.initialPosition,
+                                      mapType: MapType.normal,
+                                      myLocationEnabled: false,
+                                      myLocationButtonEnabled: false,
+                                      zoomControlsEnabled: false,
+                                      markers: _rideController.markers.union(
+                                        _rideController.driverMarkers,
+                                      ),
+                                      polylines: _rideController.polylines,
+                                      onTap: (_) => FocusScope.of(context).unfocus(),
+                                      onMapCreated: (controller) {
+                                        debugPrint("!!! MAP CREATED CALLBACK FIRED !!!");
+                                        _rideController.onMapCreated(controller);
+                                      },
+                                      padding: EdgeInsets.only(
+                                        bottom: _isVehicleSheetOpen ? 10 : mapBottomPadding,
+                                        top: statusBarHeight + 80,
+                                      ),
+                                      gestureRecognizers:
+                                          <Factory<OneSequenceGestureRecognizer>>{
+                                            Factory<OneSequenceGestureRecognizer>(
+                                              () => EagerGestureRecognizer(),
+                                            ),
+                                            Factory<PanGestureRecognizer>(
+                                              () => PanGestureRecognizer(),
+                                            ),
+                                            Factory<ScaleGestureRecognizer>(
+                                              () => ScaleGestureRecognizer(),
+                                            ),
+                                            Factory<TapGestureRecognizer>(
+                                              () => TapGestureRecognizer(),
+                                            ),
+                                            Factory<VerticalDragGestureRecognizer>(
+                                              () => VerticalDragGestureRecognizer(),
+                                            ),
+                                          },
                                     ),
-                                    Factory<PanGestureRecognizer>(
-                                      () => PanGestureRecognizer(),
-                                    ),
-                                    Factory<ScaleGestureRecognizer>(
-                                      () => ScaleGestureRecognizer(),
-                                    ),
-                                    Factory<TapGestureRecognizer>(
-                                      () => TapGestureRecognizer(),
-                                    ),
-                                    Factory<VerticalDragGestureRecognizer>(
-                                      () => VerticalDragGestureRecognizer(),
-                                    ),
-                                  },
-                            ),
+                                  ),
+                                ),
+                              );
+                            },
                           )
                         else
                           const Center(child: CircularProgressIndicator()),
@@ -1572,43 +1577,53 @@ class _HomePageState extends State<HomePage> {
                             ],
                           ),
                         ),
-                        // Search UI
+                        // Floating top row: Menu + Search + Notification
                         Positioned(
-                          top: 10,
-                          left: 0,
-                          right: 0,
-                          child: Obx(
-                            () => SearchBarWidget(
-                              key: _searchBarKey, // **NEW:** Assign key
-                              destinationController: _destinationController,
-                              destinationFocusNode: _destinationFocusNode,
-                              isSearchEnabled:
-                                  _selectedServiceType == RideType.daily ||
-                                  _selectedServiceType == RideType.acting,
-                              isDestinationSelected: _destinationPosition != null,
-                              predictions: _rideController.predictions.toList(),
-                              searchHistory: _rideController.searchHistory
-                                  .toList(),
-                              favoritePlaces: _rideController.favoritePlaces
-                                  .toList(), // **NEW**
-                              pickupAddress: _rideController.pickupAddress.value, // Pass pickup address
-                              onPickupTap: _handlePickupLocationTap, // Navigate to EditLocationScreen
-                              onSearchChanged: _handleSearchChanged, // RESTORED
-                              onPredictionTap: _handlePredictionTap,
-                              onHistoryTap: _handleHistoryTap, // FIX: RESTORED
-                              onFocusChange: (hasFocus) {
-                                // Trigger rebuild to show/hide history
-                                setState(() {});
-                              },
-                              onClearSearch: _handleClearSearch, // RESTORED
-                              onFavoriteToggle: _handleHistoryFavoriteToggle,
-                              onSelectOnMap: _handleSelectOnMap,
-                            ),
+                          top: statusBarHeight + 10,
+                          left: 12,
+                          right: 12,
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Unified Search Bar with integrated Menu
+                              Expanded(
+                                child: Obx(
+                                  () => SearchBarWidget(
+                                    key: _searchBarKey,
+                                    destinationController: _destinationController,
+                                    destinationFocusNode: _destinationFocusNode,
+                                    isSearchEnabled:
+                                        _selectedServiceType == RideType.daily ||
+                                        _selectedServiceType == RideType.acting,
+                                    isDestinationSelected: _destinationPosition != null,
+                                    predictions: _rideController.predictions.toList(),
+                                    searchHistory: _rideController.searchHistory.toList(),
+                                    favoritePlaces: _rideController.favoritePlaces.toList(),
+                                    pickupAddress: _rideController.pickupAddress.value,
+                                    onPickupTap: _handlePickupLocationTap,
+                                    onSearchChanged: _handleSearchChanged,
+                                    onPredictionTap: _handlePredictionTap,
+                                    onHistoryTap: _handleHistoryTap,
+                                    onFocusChange: (hasFocus) {
+                                      setState(() {});
+                                    },
+                                    onClearSearch: _handleClearSearch,
+                                    onFavoriteToggle: _handleHistoryFavoriteToggle,
+                                    onSelectOnMap: _handleSelectOnMap,
+                                    onMenuTap: () {
+                                      FocusScope.of(context).unfocus();
+                                      SystemChannels.textInput.invokeMethod('TextInput.hide');
+                                      _scaffoldKey.currentState?.openDrawer();
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         // Favorites List
                         Positioned(
-                          top: 100,
+                          top: statusBarHeight + 75,
                           left: 16,
                           right: 16,
                           child: AnimatedOpacity(
@@ -1645,6 +1660,90 @@ class _HomePageState extends State<HomePage> {
                             ),
                           ),
                         ),
+                        // Swiggy Style Draggable Sheet
+                        if (_isVehicleSheetOpen)
+                          NotificationListener<DraggableScrollableNotification>(
+                            onNotification: (notification) {
+                              _sheetExtent.value = notification.extent;
+                              // Auto-dismiss if dragged to the bottom
+                              if (notification.extent <= 0.15) {
+                                _dismissVehicleSheet();
+                              }
+                              return true;
+                            },
+                            child: DraggableScrollableSheet(
+                              controller: _sheetController,
+                              initialChildSize: 0.65,
+                                                              minChildSize: 0.1, // **MODIFIED:** Allow collapsing lower for dismissal
+                                snapSizes: const [0.1, 0.3, 0.65, 0.8],
+                              maxChildSize: 0.8,
+                              snap: true,
+                              builder: (context, scrollController) {
+                                return Container(
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(context).brightness == Brightness.dark
+                                        ? Colors.grey[900]
+                                        : Colors.white,
+                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(alpha: 0.1),
+                                        blurRadius: 10,
+                                        offset: const Offset(0, -2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: ValueListenableBuilder<BookingState>(
+                                    valueListenable: _bookingState,
+                                    builder: (context, state, _) {
+                                      return RideConfirmationBottomSheet(
+                                        currentUser: _currentUser,
+                                        currentPosition: _rideController.currentPosition.value!,
+                                        destinationPosition: _destinationPosition!,
+                                        pickupAddress: _pickupController.text,
+                                        destinationAddress: _destinationController.text,
+                                        isDropoffInServiceArea: _isDropoffInServiceArea,
+                                        vehicleOptions: VehicleOption.defaultOptions.map((option) {
+                                          final realEta = _rideController.getNearestDriverEta(option.type);
+                                          return VehicleOption(
+                                            type: option.type,
+                                            imagePath: option.imagePath,
+                                            price: option.price,
+                                            eta: realEta,
+                                          );
+                                        }).toList(),
+                                        polylines: state.route != null
+                                            ? {
+                                                Polyline(
+                                                  polylineId: const PolylineId("route"),
+                                                  points: state.route!.polylinePoints,
+                                                  color: Colors.black,
+                                                  width: 5,
+                                                ),
+                                              }
+                                            : _rideController.polylines,
+                                        isLoadingFares: state.isLoading,
+                                        calculatedFares: state.fares,
+                                        eta: state.route != null ? "${(state.route!.durationSeconds / 60).round()} min" : null,
+                                        routeDetails: state.route,
+                                        pricingRules: _rideController.pricingRules.value,
+                                        walletBalance: _rideController.walletBalance.value,
+                                        rideType: _selectedServiceType,
+                                        availability: const {
+                                          'Auto': true, 'Hatchback': true, 'Sedan': true, 'SUV': true, 'ActingDriver': true,
+                                        },
+                                        scrollController: scrollController,
+                                        onEditPickup: () => _handleEditLocation(_rideController.currentPosition.value!, isPickup: true),
+                                        onEditDropoff: () => _handleEditLocation(_destinationPosition!, isPickup: false),
+                                        onSaveDropoffFavorite: _handleSaveDropoffFavorite,
+                                        onSavePickupFavorite: _handleSavePickupFavorite,
+                                      );
+                                    },
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -1778,6 +1877,14 @@ class _HomePageState extends State<HomePage> {
                         );
                       }
                     }
+                  },
+                ),
+                _buildProDrawerItem(
+                  icon: Icons.notifications_none_rounded,
+                  text: 'Notifications',
+                  onTap: () {
+                    Get.back();
+                    Get.to(() => NotificationsScreen(user: _currentUser));
                   },
                 ),
                 const Padding(

@@ -24,6 +24,26 @@ class BottomBarWidget extends StatefulWidget {
 
 class _BottomBarWidgetState extends State<BottomBarWidget> {
   final ScrollController _scrollController = ScrollController();
+  bool _isAtBottom = false;
+
+  @override
+  
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_scrollListener);
+  }
+
+  void _scrollListener() {
+    if (_scrollController.hasClients) {
+      bool atBottom = _scrollController.offset >= _scrollController.position.maxScrollExtent - 20;
+      if (atBottom != _isAtBottom) {
+        setState(() {
+          _isAtBottom = atBottom;
+        });
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -31,12 +51,20 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
     super.dispose();
   }
 
-  void _scrollDown() {
-    _scrollController.animateTo(
-      _scrollController.position.maxScrollExtent,
-      duration: const Duration(milliseconds: 500),
-      curve: Curves.easeInOut,
-    );
+  void _toggleScroll() {
+    if (_isAtBottom) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeInOut,
+      );
+    } else {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeInOut,
+      );
+    }
   }
 
   @override
@@ -203,12 +231,12 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
                         ),
                       ),
                       IconButton(
-                        onPressed: _scrollDown,
+                        onPressed: _toggleScroll,
                         icon: Icon(
-                          Icons.keyboard_double_arrow_down,
+                          _isAtBottom ? Icons.keyboard_double_arrow_up : Icons.keyboard_double_arrow_down,
                           color: isDark ? Colors.white70 : Colors.black54,
                         ),
-                        tooltip: 'Scroll Down',
+                        tooltip: _isAtBottom ? 'Scroll Up' : 'Scroll Down',
                       ),
                     ],
                   ),

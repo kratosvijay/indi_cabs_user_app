@@ -20,6 +20,12 @@ class AuthController extends GetxController {
 
   // Navigation guard to prevent double navigation
   bool _isNavigating = false;
+  
+  // Flag to disable auto-navigation during specific flows (like signup)
+  bool pauseAutoNavigation = false;
+
+  // Flag to differentiate mobile login from Google/Apple
+  bool isPhoneLoginAttempt = false;
 
   @override
   void onReady() {
@@ -30,8 +36,8 @@ class AuthController extends GetxController {
 
   Future<void> _setInitialScreen(User? user) async {
     // Prevent multiple simultaneous navigations
-    if (_isNavigating) {
-      debugPrint("AuthController: Navigation already in progress, skipping");
+    if (_isNavigating || pauseAutoNavigation) {
+      debugPrint("AuthController: Navigation already in progress or paused, skipping");
       return;
     }
 
@@ -89,6 +95,16 @@ class AuthController extends GetxController {
             debugPrint(
               "DEBUG: User document does not exist. Navigating to PhoneAuthScreen.",
             );
+            if (isPhoneLoginAttempt) {
+              isPhoneLoginAttempt = false;
+              await FirebaseAuth.instance.signOut();
+              Get.snackbar(
+                "Error",
+                "Account not found. Please sign up.",
+                snackPosition: SnackPosition.TOP,
+              );
+              return; // Another auth state change will be triggered by signOut
+            }
             Get.offAll(() => PhoneAuthScreen(user: user));
           }
         } catch (e) {
@@ -106,72 +122,7 @@ class AuthController extends GetxController {
 
   final RxBool isLoading = false.obs;
 
-  Future<void> register(
-    String email,
-    String password,
-    String firstName,
-    String lastName,
-  ) async {
-    try {
-      isLoading.value = true;
-      // Block auto-navigation from authStateChanges
-      _isNavigating = true;
-
-      final userCredential = await FirebaseAuth.instance
-          .createUserWithEmailAndPassword(email: email, password: password);
-
-      if (userCredential.user != null) {
-        await userCredential.user!.updateDisplayName("$firstName $lastName");
-        await userCredential.user!.sendEmailVerification();
-
-        // Show verification dialog
-        await Get.defaultDialog(
-          title: "Verify Email",
-          middleText:
-              "A verification email has been sent to $email. Please verify your email address.",
-          textConfirm: "OK",
-          confirmTextColor: Colors.white,
-          onConfirm: () {
-            Get.back(); // Close dialog
-            // Allow navigation and proceed
-            _isNavigating = false;
-            _setInitialScreen(userCredential.user);
-          },
-          barrierDismissible: false,
-        );
-      }
-    } on FirebaseAuthException catch (e) {
-      _isNavigating = false; // Reset flag on error
-      Get.snackbar(
-        "Account Creation Failed",
-        e.message ?? "Unknown error occurred",
-        snackPosition: SnackPosition.TOP,
-      );
-    } catch (e) {
-      _isNavigating = false; // Reset flag on generic error
-      Get.snackbar("Error", e.toString(), snackPosition: SnackPosition.TOP);
-    } finally {
-      isLoading.value = false;
-    }
-  }
-
-  Future<void> login(String email, String password) async {
-    try {
-      isLoading.value = true;
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-    } on FirebaseAuthException catch (e) {
-      Get.snackbar(
-        "Login Failed",
-        e.message ?? "Unknown error occurred",
-        snackPosition: SnackPosition.TOP,
-      );
-    } finally {
-      isLoading.value = false;
-    }
-  }
+  // Removed duplicate/unused email login and register methods
 
   Future<void> logout() async {
     // **FIX:** Reset RideController state on logout instead of deleting it
