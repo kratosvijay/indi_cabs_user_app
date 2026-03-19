@@ -746,11 +746,18 @@ class RideController extends GetxController {
     }
   }
 
-  Future<void> addSearchToHistory(String description, String placeId) async {
+  Future<void> addSearchToHistory({
+    required String description,
+    required String placeId,
+    required String mainText,
+    required String secondaryText,
+  }) async {
     final updatedHistory = await storageService.addSearchToHistory(
-      description,
-      placeId,
-      searchHistory,
+      description: description,
+      placeId: placeId,
+      mainText: mainText,
+      secondaryText: secondaryText,
+      currentHistory: searchHistory,
     );
     searchHistory.assignAll(updatedHistory);
   }

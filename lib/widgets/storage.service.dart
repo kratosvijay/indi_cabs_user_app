@@ -33,11 +33,13 @@ class StorageService {
   }
 
   // Adds a new item to search history and saves it
-  Future<List<SearchHistoryItem>> addSearchToHistory(
-    String description,
-    String placeId,
-    List<SearchHistoryItem> currentHistory,
-  ) async {
+  Future<List<SearchHistoryItem>> addSearchToHistory({
+    required String description,
+    required String placeId,
+    required String mainText,
+    required String secondaryText,
+    required List<SearchHistoryItem> currentHistory,
+  }) async {
     try {
       final String cleanDesc = description.trim();
       if (cleanDesc.isEmpty) return currentHistory;
@@ -57,7 +59,12 @@ class StorageService {
       // Insert at the top
       updatedHistory.insert(
         0,
-        SearchHistoryItem(description: cleanDesc, placeId: placeId),
+        SearchHistoryItem(
+          description: cleanDesc,
+          placeId: placeId,
+          mainText: mainText,
+          secondaryText: secondaryText,
+        ),
       );
 
       // Limit history size

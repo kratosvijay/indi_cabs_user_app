@@ -269,7 +269,6 @@ class SearchBarWidget extends StatelessWidget {
               AnimatedSize(
                 duration: const Duration(milliseconds: 200),
                 child: predictions.isNotEmpty
-                    // **FIXED:** Pass context
                     ? _buildPredictionsList(context)
                     : const SizedBox.shrink(),
               ),
@@ -277,7 +276,6 @@ class SearchBarWidget extends StatelessWidget {
               AnimatedSize(
                 duration: const Duration(milliseconds: 200),
                 child: showHistory
-                    // **FIXED:** Pass context
                     ? _buildSearchHistoryList(context)
                     : const SizedBox.shrink(),
               ),
@@ -287,14 +285,22 @@ class SearchBarWidget extends StatelessWidget {
   }
 
   // Helper for Predictions List
-  // **FIXED:** Added BuildContext context
   Widget _buildPredictionsList(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final double keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+    final double screenHeight = MediaQuery.of(context).size.height;
+    
+    // Calculate a safe max height to tuck under keyboard
+    // 250 is an estimate of top padding + search bar height
+    double maxHeight = screenHeight - keyboardHeight - 250;
+    if (maxHeight < 100) maxHeight = 100; // Minimum usable height
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         const Divider(height: 1, thickness: 1),
-        Flexible(
+        ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxHeight),
           child: ListView.builder(
             shrinkWrap: true,
             padding: EdgeInsets.zero,
@@ -307,12 +313,23 @@ class SearchBarWidget extends StatelessWidget {
                   color: Colors.grey,
                 ),
                 title: Text(
-                  prediction.description,
+                  prediction.mainText,
                   style: TextStyle(
                     color: isDark ? Colors.white : Colors.black87,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                dense: true,
+                subtitle: prediction.secondaryText.isNotEmpty
+                    ? Text(
+                        prediction.secondaryText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: isDark ? Colors.white70 : Colors.black54,
+                          fontSize: 12,
+                        ),
+                      )
+                    : null,
                 onTap: () => onPredictionTap(prediction.placeId),
               );
             },
@@ -323,14 +340,17 @@ class SearchBarWidget extends StatelessWidget {
   }
 
   // Helper for Search History List
-  // **FIXED:** Added BuildContext context
   Widget _buildSearchHistoryList(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final double keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+    final double screenHeight = MediaQuery.of(context).size.height;
+    
+    // Calculate a safe max height to tuck under keyboard
+    double maxHeight = screenHeight - keyboardHeight - 280; // Extra room for "Recent Searches" label
+    if (maxHeight < 100) maxHeight = 100;
+
     return ConstrainedBox(
-      // **FIXED:** Use context
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.3,
-      ),
+      constraints: BoxConstraints(maxHeight: maxHeight),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -358,19 +378,33 @@ class SearchBarWidget extends StatelessWidget {
                 final isFavorite = favoritePlaces.any(
                   (fav) =>
                       fav.address == historyItem.description ||
-                      fav.name == historyItem.description,
+                      fav.name == historyItem.description ||
+                      fav.address == historyItem.mainText ||
+                      fav.name == historyItem.mainText,
                 );
 
                 return ListTile(
                   leading: const Icon(Icons.history, color: Colors.grey),
                   title: Text(
-                    historyItem.description,
+                    historyItem.mainText.isNotEmpty ? historyItem.mainText : historyItem.description,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: isDark ? Colors.white : Colors.black87,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
+                  subtitle: historyItem.secondaryText.isNotEmpty
+                      ? Text(
+                          historyItem.secondaryText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: isDark ? Colors.white70 : Colors.black54,
+                            fontSize: 11,
+                          ),
+                        )
+                      : null,
                   trailing: IconButton(
                     icon: Icon(
                       isFavorite ? Icons.favorite : Icons.favorite_border,
@@ -378,7 +412,6 @@ class SearchBarWidget extends StatelessWidget {
                     ),
                     onPressed: () => onFavoriteToggle(historyItem, isFavorite),
                   ),
-                  dense: true,
                   onTap: () => onHistoryTap(historyItem),
                 );
               },

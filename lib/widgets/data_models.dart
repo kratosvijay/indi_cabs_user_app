@@ -14,19 +14,34 @@ enum RideType { daily, rental, acting, multiStop, bookForOther }
 class PlaceAutocompletePrediction {
   final String description;
   final String placeId;
+  final String mainText; // **NEW**
+  final String secondaryText; // **NEW**
 
   PlaceAutocompletePrediction({
     required this.description,
     required this.placeId,
+    required this.mainText,
+    required this.secondaryText,
   });
 
   factory PlaceAutocompletePrediction.fromJson(Map<String, dynamic> json) {
-    final textData = json['placePrediction']?['text'] as Map<String, dynamic>?;
+    debugPrint("Autocomplete Prediction JSON: $json");
+    final prediction = json['placePrediction'] ?? json['prediction'] ?? json;
+    
+    final textData = prediction['text'] as Map<String, dynamic>?;
     final description = textData?['text'] as String? ?? 'Unknown Prediction';
-    final placeId = json['placePrediction']?['placeId'] as String? ?? '';
+    final placeId = prediction['placeId'] as String? ?? '';
+
+    // Extract structured formatting if available (Google Places API New)
+    final structuredFormat = prediction['structuredFormat'] as Map<String, dynamic>?;
+    final mainText = structuredFormat?['mainText']?['text'] as String? ?? description;
+    final secondaryText = structuredFormat?['secondaryText']?['text'] as String? ?? '';
+
     return PlaceAutocompletePrediction(
       description: description,
       placeId: placeId,
+      mainText: mainText,
+      secondaryText: secondaryText,
     );
   }
 }
@@ -329,18 +344,32 @@ class PredefinedDestination {
 class SearchHistoryItem {
   final String description;
   final String placeId;
+  final String mainText; // **NEW**
+  final String secondaryText; // **NEW**
 
-  SearchHistoryItem({required this.description, required this.placeId});
+  SearchHistoryItem({
+    required this.description,
+    required this.placeId,
+    this.mainText = '',
+    this.secondaryText = '',
+  });
 
   factory SearchHistoryItem.fromJson(Map<String, dynamic> json) {
     return SearchHistoryItem(
       description: json['description'] ?? 'Unknown Location',
       placeId: json['placeId'] ?? '',
+      mainText: json['mainText'] ?? json['description'] ?? '',
+      secondaryText: json['secondaryText'] ?? '',
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {'description': description, 'placeId': placeId};
+    return {
+      'description': description,
+      'placeId': placeId,
+      'mainText': mainText,
+      'secondaryText': secondaryText,
+    };
   }
 }
 

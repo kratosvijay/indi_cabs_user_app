@@ -620,8 +620,10 @@ class _HomePageState extends State<HomePage> {
 
     if (placeDetails.placeId.isNotEmpty) {
       _addSearchToHistory(
-        displayOverrideName ?? placeDetails.address,
-        placeDetails.placeId,
+        description: displayOverrideName ?? placeDetails.address,
+        placeId: placeDetails.placeId,
+        mainText: placeDetails.name,
+        secondaryText: placeDetails.address,
       );
     }
 
@@ -1265,9 +1267,19 @@ class _HomePageState extends State<HomePage> {
   }
   */
 
-  Future<void> _addSearchToHistory(String description, String placeId) async {
+  Future<void> _addSearchToHistory({
+    required String description,
+    required String placeId,
+    required String mainText,
+    required String secondaryText,
+  }) async {
     // Delegated to RideController
-    await _rideController.addSearchToHistory(description, placeId);
+    await _rideController.addSearchToHistory(
+      description: description,
+      placeId: placeId,
+      mainText: mainText,
+      secondaryText: secondaryText,
+    );
   }
 
   /*
