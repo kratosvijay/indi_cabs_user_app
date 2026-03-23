@@ -225,14 +225,14 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
           context: context,
           barrierDismissible: false,
           builder: (context) => AlertDialog(
-            title: const Text("Ride Request Failed"),
-            content: Text("Could not create ride request.\nError: $e"),
+            title: Text("rideRequestFailed".tr),
+            content: Text("${"rideRequestFailedDesc".tr} $e"),
             actions: [
               TextButton(
                 onPressed: () {
                   Get.offAll(() => HomePage(user: widget.user));
                 },
-                child: const Text("Go to Home"),
+                child: Text("goToHome".tr),
               ),
             ],
           ),
@@ -620,10 +620,10 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
     // **NEW:** Dynamic UI based on scheduled time
     final bool isScheduled = widget.scheduledTime != null;
     final String title = isScheduled
-        ? "Your Ride is Scheduled!"
+        ? "rideScheduled".tr
         : _isDriverFound
-        ? "Driver Found! Connecting..."
-        : "Searching for a Ride...";
+        ? "driverFound".tr
+        : "searchingForRide".tr;
 
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -773,7 +773,7 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
                       child: ProButton(
-                        text: "Cancel Ride",
+                        text: "cancelRide".tr,
                         onPressed: _isCancelling
                             ? null
                             : _cancelRide, // Disable if cancelling
@@ -825,7 +825,7 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  widget.destinationAddress ?? "Destination",
+                  widget.destinationAddress ?? "destination".tr,
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -924,7 +924,7 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      "Boost your request",
+                      "boostRequest".tr,
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -932,7 +932,7 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
                       ),
                     ),
                     Text(
-                      "Add a tip to find drivers faster",
+                      "tipDesc".tr,
                       style: TextStyle(
                         fontSize: 13,
                         color: isDark ? Colors.grey[400] : Colors.grey[600],
@@ -948,7 +948,7 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                "Tip Amount",
+                "tipAmount".tr,
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w500,

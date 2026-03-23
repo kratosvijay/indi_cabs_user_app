@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import 'package:project_taxi_with_ai/widgets/data_models.dart';
+import 'package:flutter/services.dart';
 
 // Define callback types
 typedef SearchCallback = void Function(String query);
@@ -28,6 +30,7 @@ class SearchBarWidget extends StatelessWidget {
   final FavoriteToggleCallback onFavoriteToggle;
   final VoidCallback onSelectOnMap;
   final VoidCallback? onMenuTap; // **NEW**
+  final bool isDrawerOpen; // **NEW**
 
   const SearchBarWidget({
     super.key,
@@ -48,6 +51,7 @@ class SearchBarWidget extends StatelessWidget {
     required this.onFavoriteToggle,
     required this.onSelectOnMap,
     this.onMenuTap, // **NEW**
+    this.isDrawerOpen = false, // **NEW**
   });
 
   @override
@@ -137,35 +141,35 @@ class SearchBarWidget extends StatelessWidget {
               Row(
                 children: [
                   // Leading Icon: Menu (unfocused) or Back (focused)
-                  GestureDetector(
-                    onTap: () {
+                  IconButton(
+                    onPressed: () {
                       if (destinationFocusNode.hasFocus) {
                         destinationFocusNode.unfocus();
                         onFocusChange(false);
                       } else {
+                        // Ensure we unfocus before opening drawer to avoid keyboard issues
+                        FocusScope.of(context).unfocus();
+                        FocusManager.instance.primaryFocus?.unfocus();
+                        SystemChannels.textInput.invokeMethod('TextInput.hide');
                         onMenuTap?.call();
                       }
                     },
-                    behavior: HitTestBehavior.opaque,
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 16.0),
-                      child: Icon(
-                        destinationFocusNode.hasFocus ? Icons.arrow_back : Icons.menu,
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? Colors.white
-                            : Colors.black87,
-                      ),
+                    icon: Icon(
+                      destinationFocusNode.hasFocus ? Icons.arrow_back : Icons.menu,
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.white
+                          : Colors.black87,
                     ),
                   ),
                    Expanded(
                     child: TextField(
                       controller: destinationController,
                       focusNode: destinationFocusNode,
-                      enabled: isSearchEnabled,
+                      enabled: isSearchEnabled && !isDrawerOpen,
                       decoration: InputDecoration(
                         hintText: isSearchEnabled
-                            ? 'Enter drop-off location'
-                            : 'Select service type below',
+                            ? 'enterDropOff'.tr
+                            : 'selectServiceType'.tr,
                         prefixIcon: Icon(
                           destinationFocusNode.hasFocus
                               ? Icons.location_on

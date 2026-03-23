@@ -116,14 +116,14 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
           .handleError((error) {
             debugPrint("Error fetching ride history stream: $error");
             if (mounted) {
-              displaySnackBar(context, 'Error loading ride history: $error');
+              displaySnackBar(context, '${'errorLoadingHistory'.tr}: $error');
             }
             return <Ride>[]; // Return empty list on error
           });
     } catch (e) {
       debugPrint("Error setting up ride history stream: $e");
       if (mounted) {
-        displaySnackBar(context, 'Error loading ride history: $e');
+        displaySnackBar(context, '${'errorLoadingHistory'.tr}: $e');
       }
       return Stream.value([]); // Return an empty stream on initial error
     }
@@ -132,7 +132,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const ProAppBar(titleText: 'Ride History'),
+      appBar: ProAppBar(titleText: 'rideHistory'.tr),
       body: FadeInSlide(
         child: StreamBuilder<List<Ride>>(
           stream: _rideHistoryStream,
@@ -146,7 +146,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
             if (snapshot.hasError) {
               return Center(
                 child: Text(
-                  'Error loading history: ${snapshot.error}',
+                  '${'errorLoadingHistory'.tr}: ${snapshot.error}',
                   textAlign: TextAlign.center,
                 ),
               );
@@ -155,21 +155,21 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
             // 3. Empty State
             final rides = snapshot.data;
             if (rides == null || rides.isEmpty) {
-              return const Center(
+              return Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(Icons.history, size: 80, color: Colors.grey),
                     SizedBox(height: 16),
                     Text(
-                      'No Ride History',
+                      'noRideHistory'.tr,
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     Text(
-                      'Your rides will appear here.',
+                      'noRideHistoryDesc'.tr,
                       style: TextStyle(fontSize: 16, color: Colors.grey),
                     ),
                   ],
@@ -302,7 +302,7 @@ class _RideHistoryCard extends StatelessWidget {
               // **NEW:** Show Ride ID
               const SizedBox(height: 4),
               Text(
-                "ID: ${ride.rideId}",
+                "${'id'.tr}: ${ride.rideId}",
                 style: const TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const Divider(height: 20),

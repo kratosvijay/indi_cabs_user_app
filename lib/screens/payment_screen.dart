@@ -84,7 +84,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
     return Scaffold(
       // gradient AppBar (choice 1B)
-      appBar: const ProAppBar(titleText: 'Select Payment Method'),
+      appBar: ProAppBar(titleText: 'selectPaymentMethod'.tr),
       body: SafeArea(
         child: FadeInSlide(
           child: SingleChildScrollView(
@@ -98,22 +98,22 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 const SizedBox(height: 16),
 
                 // Wallet section
-                _sectionHeader('My Wallet'),
+                _sectionHeader('myWallet'.tr),
                 _buildPaymentTile(
                   option: _options.firstWhere((o) => o.key == 'Wallet'),
                   subtitle:
-                      'Balance: ${currencyFormatter.format(widget.currentBalance)}',
+                      '${'balance'.tr}: ${currencyFormatter.format(widget.currentBalance)}',
                   isEnabled: _canUseWallet(),
                   disabledMessage: _canUseWallet()
                       ? null
-                      : 'Insufficient balance for this ride',
+                      : 'insufficientBalance'.tr,
                 ),
 
                 const SizedBox(height: 12),
                 const Divider(),
 
                 // Cash
-                _sectionHeader('Cash'),
+                _sectionHeader('cash'.tr),
                 _buildPaymentTile(
                   option: _options.firstWhere((o) => o.key == 'Cash'),
                   isEnabled: true,
@@ -122,43 +122,50 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 const Divider(),
 
                 // PayLater group
-                _sectionHeader('Pay Later'),
+                _sectionHeader('payLater'.tr),
                 _buildPaymentTile(
                   option: _options.firstWhere((o) => o.key == 'LazyPay'),
-                  isEnabled: true,
+                  isEnabled: false,
+                  disabledMessage: 'comingSoon'.tr,
                   small: true,
                 ),
                 _buildPaymentTile(
                   option: _options.firstWhere((o) => o.key == 'Simpl'),
-                  isEnabled: true,
+                  isEnabled: false,
+                  disabledMessage: 'comingSoon'.tr,
                   small: true,
                 ),
                 _buildPaymentTile(
                   option: _options.firstWhere((o) => o.key == 'Postpaid'),
-                  isEnabled: true,
+                  isEnabled: false,
+                  disabledMessage: 'comingSoon'.tr,
                   small: true,
                 ),
                 _buildPaymentTile(
                   option: _options.firstWhere((o) => o.key == 'AmazonPayLater'),
-                  isEnabled: true,
+                  isEnabled: false,
+                  disabledMessage: 'comingSoon'.tr,
                   small: true,
                 ),
                 const SizedBox(height: 12),
                 const Divider(),
 
                 // UPI
-                _sectionHeader('UPI'),
+                _sectionHeader('upi'.tr),
                 _buildPaymentTile(
                   option: _options.firstWhere((o) => o.key == 'GPay'),
-                  isEnabled: true,
+                  isEnabled: false,
+                  disabledMessage: 'comingSoon'.tr,
                 ),
                 _buildPaymentTile(
                   option: _options.firstWhere((o) => o.key == 'PhonePe'),
-                  isEnabled: true,
+                  isEnabled: false,
+                  disabledMessage: 'comingSoon'.tr,
                 ),
                 _buildPaymentTile(
                   option: _options.firstWhere((o) => o.key == 'Paytm'),
-                  isEnabled: true,
+                  isEnabled: false,
+                  disabledMessage: 'comingSoon'.tr,
                 ),
 
                 const SizedBox(height: 28),
@@ -199,9 +206,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Total Fare',
-                  style: TextStyle(fontWeight: FontWeight.w600),
+                Text(
+                   'totalFare'.tr,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -218,9 +225,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Text(
-                'Selected',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
+              Text(
+                'selected'.tr,
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(height: 4),
               Text(
@@ -399,7 +406,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     final canConfirm = _selectedPaymentMethod.isNotEmpty;
     return ProButton(
       text:
-          'Confirm — ${_selectedPaymentMethod.isEmpty ? '' : _selectedPaymentMethod}',
+          '${'confirmPayment'.tr} — ${_selectedPaymentMethod.isEmpty ? '' : _selectedPaymentMethod}',
       onPressed: canConfirm
           ? () {
               // Return the chosen method

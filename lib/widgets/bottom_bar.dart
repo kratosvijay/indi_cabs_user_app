@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import 'package:project_taxi_with_ai/widgets/data_models.dart';
 
 // Callbacks
@@ -105,7 +106,7 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
                           context: context,
                           icon: Icons.local_taxi_outlined,
 
-                          label: "Daily Rides",
+                          label: "dailyRides".tr,
                           isSelected: widget.selectedServiceType == RideType.daily,
                           onTap: () => widget.onServiceTypeSelected(RideType.daily),
                           isDark: isDark,
@@ -113,7 +114,7 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
                         _buildServiceTypeCard(
                           context: context,
                           icon: Icons.person_add_alt_1_outlined,
-                          label: "Book for Guest",
+                          label: "bookForGuest".tr,
                           isSelected:
                               widget.selectedServiceType == RideType.bookForOther,
                           onTap: () =>
@@ -123,7 +124,7 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
                         _buildServiceTypeCard(
                           context: context,
                           icon: Icons.multiple_stop,
-                          label: "Multi-Stop",
+                          label: "multiStop".tr,
                           isSelected: widget.selectedServiceType == RideType.multiStop,
                           onTap: () =>
                               widget.onServiceTypeSelected(RideType.multiStop),
@@ -132,7 +133,7 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
                         _buildServiceTypeCard(
                           context: context,
                           icon: Icons.timelapse_outlined,
-                          label: "Rentals",
+                          label: "rentals".tr,
                           isSelected: widget.selectedServiceType == RideType.rental,
                           onTap: () => widget.onServiceTypeSelected(RideType.rental),
                           isDark: isDark,
@@ -140,7 +141,7 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
                         _buildServiceTypeCard(
                           context: context,
                           icon: Icons.person_pin_outlined,
-                          label: "Acting Driver",
+                          label: "actingDriver".tr,
                           isSelected: widget.selectedServiceType == RideType.acting,
                           onTap: () => widget.onServiceTypeSelected(RideType.acting),
                           isDark: isDark,
@@ -153,7 +154,7 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
                 if (widget.selectedServiceType == RideType.daily) ...[
                   const SizedBox(height: 20),
                   Text(
-                    "Popular Destinations",
+                    "popularDestinations".tr,
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -175,9 +176,15 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
                             margin: const EdgeInsets.only(right: 8),
                             clipBehavior: Clip.antiAlias,
                             color: isDark ? Colors.grey[800] : Colors.grey[100],
-                            elevation: 1,
+                            elevation: isDark ? 6 : 4,
+                            shadowColor: isDark 
+                                ? const Color(0xFFFFD700).withValues(alpha: 0.6) 
+                                : Colors.black.withValues(alpha: 0.3),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
+                              side: isDark
+                                  ? const BorderSide(color: Color(0xFFFFD700), width: 1.5)
+                                  : BorderSide.none,
                             ),
                             child: InkWell(
                               onTap: () => widget.onPredefinedDestinationTap(dest),
@@ -190,7 +197,7 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
                                       dest.icon,
                                       size: 30,
                                       color: isDark
-                                          ? Colors.blueAccent.shade100
+                                          ? const Color(0xFFFFD700)
                                           : Colors.blueAccent,
                                     ),
                                     const SizedBox(height: 8),
@@ -222,7 +229,7 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
                     children: [
                       Expanded(
                         child: Text(
-                          "Shopping & Entertainment",
+                          "shoppingEntertainment".tr,
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -258,9 +265,15 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
                             margin: const EdgeInsets.only(right: 8),
                             clipBehavior: Clip.antiAlias,
                             color: isDark ? Colors.grey[800] : Colors.grey[100],
-                            elevation: 1,
+                            elevation: isDark ? 6 : 4,
+                            shadowColor: isDark 
+                                ? const Color(0xFFFFD700).withValues(alpha: 0.6) 
+                                : Colors.black.withValues(alpha: 0.3),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
+                              side: isDark
+                                  ? const BorderSide(color: Color(0xFFFFD700), width: 1.5)
+                                  : BorderSide.none,
                             ),
                             child: InkWell(
                               onTap: () => widget.onPredefinedDestinationTap(dest),
@@ -273,7 +286,7 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
                                       dest.icon,
                                       size: 30,
                                       color: isDark
-                                          ? Colors.blueAccent.shade100
+                                          ? const Color(0xFFFFD700)
                                           : Colors.blueAccent,
                                     ),
                                     const SizedBox(height: 8),
@@ -318,7 +331,7 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
     required bool isDark,
   }) {
     final selectedColor = isDark
-        ? Colors.blueAccent.shade100
+        ? const Color(0xFFFFD700)
         : Colors.blueAccent;
     final unselectedColor = isDark
         ? Colors.grey.shade400
@@ -326,7 +339,7 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
 
     // Background color
     final backgroundColor = isSelected
-        ? (isDark ? Colors.blue.withValues(alpha: 0.2) : Colors.blue.shade50)
+        ? (isDark ? const Color(0xFFFFD700).withValues(alpha: 0.15) : Colors.blue.shade50)
         : (isDark ? Colors.grey[800] : Colors.white);
 
     final textColor = isSelected

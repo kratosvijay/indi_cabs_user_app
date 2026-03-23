@@ -39,6 +39,7 @@ class RideController extends GetxController {
   final RxSet<Marker> markers = <Marker>{}.obs;
   final RxSet<Polyline> polylines = <Polyline>{}.obs;
   final RxBool isLoadingLocation = true.obs;
+  final RxnString mapStyleJson = RxnString(null); // Reactive map style for GoogleMap.style
 
   // Addresses
   final RxString pickupAddress = ''.obs;
@@ -320,6 +321,18 @@ class RideController extends GetxController {
     mapService.onMapCreated(controller);
     if (currentPosition.value != null) {
       mapService.animateCamera(currentPosition.value!, zoom: 15);
+    }
+  }
+
+  Future<void> updateMapStyle(bool isDarkMode) async {
+    try {
+      if (isDarkMode) {
+        mapStyleJson.value = await rootBundle.loadString('assets/json/map_style_dark.json');
+      } else {
+        mapStyleJson.value = null; // null resets to default light style
+      }
+    } catch (e) {
+      debugPrint("RideController: Error loading map style asset: $e");
     }
   }
 

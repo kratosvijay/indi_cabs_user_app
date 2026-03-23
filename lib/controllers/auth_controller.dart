@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:project_taxi_with_ai/screens/home_page.dart';
 import 'package:project_taxi_with_ai/screens/login_screen.dart';
+import 'package:project_taxi_with_ai/screens/language_screen.dart';
 import 'package:project_taxi_with_ai/screens/mobile_no_validator.dart';
 import 'package:project_taxi_with_ai/google_sign_in.dart';
 import 'package:project_taxi_with_ai/controllers/ride_controller.dart';
@@ -43,9 +44,18 @@ class AuthController extends GetxController {
 
     _isNavigating = true;
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? selectedLanguage = prefs.getString('selectedLanguage');
+
+      // 1. Language Check (Always First)
+      if (selectedLanguage == null) {
+        Get.offAll(() => const LanguageSelectionScreen());
+        return;
+      }
+      Get.updateLocale(Locale(selectedLanguage));
+
       if (user == null) {
-        // Check Onboarding
-        final prefs = await SharedPreferences.getInstance();
+        // 2. Onboarding Check
         final bool hasSeenOnboarding =
             prefs.getBool('hasSeenOnboarding') ?? false;
 
@@ -55,7 +65,7 @@ class AuthController extends GetxController {
           Get.offAll(() => const SignInScreen());
         }
       } else {
-        // Check if user profile is complete (has phone number)
+        // 3. User Profile Completeness Check
         try {
           final userDoc = await FirebaseFirestore.instance
               .collection('users')
@@ -83,18 +93,14 @@ class AuthController extends GetxController {
 
               Get.offAll(() => HomePage(user: user));
             } else {
-              debugPrint(
-                "DEBUG: Phone number missing/empty. Navigating to PhoneAuthScreen.",
-              );
+              debugPrint("DEBUG: Phone number missing/empty. Navigating to PhoneAuthScreen.");
               Get.offAll(() => PhoneAuthScreen(user: user));
             }
           } else {
             // Add delay for new users too
             await Future.delayed(const Duration(milliseconds: 500));
 
-            debugPrint(
-              "DEBUG: User document does not exist. Navigating to PhoneAuthScreen.",
-            );
+            debugPrint("DEBUG: User document does not exist. Navigating to PhoneAuthScreen.");
             if (isPhoneLoginAttempt) {
               isPhoneLoginAttempt = false;
               await FirebaseAuth.instance.signOut();
@@ -109,9 +115,10 @@ class AuthController extends GetxController {
           }
         } catch (e) {
           Get.snackbar("Error", "Failed to load user profile");
-          // Fallback to login or stay?
         }
       }
+    } catch (e) {
+      debugPrint("AuthController: Error in _setInitialScreen: $e");
     } finally {
       // Reset the flag after a short delay to allow navigation to complete
       Future.delayed(const Duration(milliseconds: 500), () {
@@ -122,10 +129,7 @@ class AuthController extends GetxController {
 
   final RxBool isLoading = false.obs;
 
-  // Removed duplicate/unused email login and register methods
-
   Future<void> logout() async {
-    // **FIX:** Reset RideController state on logout instead of deleting it
     if (Get.isRegistered<RideController>()) {
       debugPrint("DEBUG: Resetting RideController on logout");
       RideController.instance.reset();
@@ -186,8 +190,6 @@ class AuthController extends GetxController {
           await userCredential.user!.updateDisplayName(name);
         }
       }
-
-      // Navigation is handled by _setInitialScreen listener
     } catch (e) {
       debugPrint("Apple Sign In Error: $e");
       Get.snackbar(

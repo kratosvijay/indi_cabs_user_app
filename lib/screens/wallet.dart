@@ -24,7 +24,7 @@ class WalletScreen extends StatelessWidget {
     );
 
     return Scaffold(
-      appBar: const ProAppBar(titleText: "My Wallet"),
+      appBar: ProAppBar(titleText: "myWallet".tr),
       body: FadeInSlide(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20.0),
@@ -57,7 +57,7 @@ class WalletScreen extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          "Current Balance",
+                          "currentBalance".tr,
                           style: TextStyle(
                             fontSize: 16,
                             color: Colors.white.withValues(alpha: 0.8),
@@ -73,7 +73,7 @@ class WalletScreen extends StatelessWidget {
                             color: Colors.white.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(20),
                           ),
-                          child: const Row(
+                          child: Row(
                             children: [
                               Icon(
                                 Icons.account_balance_wallet,
@@ -82,7 +82,7 @@ class WalletScreen extends StatelessWidget {
                               ),
                               SizedBox(width: 6),
                               Text(
-                                "Wallet",
+                                "wallet".tr,
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
@@ -112,7 +112,7 @@ class WalletScreen extends StatelessWidget {
 
               // Add Money Section
               Text(
-                "Add Money",
+                "addMoney".tr,
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -150,7 +150,7 @@ class WalletScreen extends StatelessWidget {
                       Icons.currency_rupee,
                       color: isDark ? Colors.white70 : Colors.black54,
                     ),
-                    hintText: "Enter amount",
+                    hintText: "enterAmount".tr,
                     hintStyle: TextStyle(
                       color: isDark
                           ? Colors.grey.shade600
@@ -162,7 +162,7 @@ class WalletScreen extends StatelessWidget {
               const SizedBox(height: 20),
               Obx(
                 () => ProButton(
-                  text: controller.isLoading.value ? "Adding..." : "Add Money",
+                  text: controller.isLoading.value ? "adding".tr : "addMoney".tr,
                   isLoading: controller.isLoading.value,
                   onPressed: () {
                     final amount = double.tryParse(amountController.text);
@@ -172,8 +172,8 @@ class WalletScreen extends StatelessWidget {
                       FocusScope.of(context).unfocus();
                     } else {
                       Get.snackbar(
-                        "Invalid Amount",
-                        "Minimum recharge amount is ₹100",
+                        "invalidAmount".tr,
+                        "minRechargeNote".tr,
                         snackPosition: SnackPosition.TOP,
                         backgroundColor: Colors.red,
                         colorText: Colors.white,
@@ -188,7 +188,7 @@ class WalletScreen extends StatelessWidget {
 
               // Transactions
               Text(
-                "Recent Transactions",
+                "recentTransactions".tr,
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -212,7 +212,7 @@ class WalletScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            "No transactions yet",
+                            "noTransactions".tr,
                             style: TextStyle(
                               color: isDark
                                   ? Colors.grey.shade600
@@ -272,7 +272,7 @@ class WalletScreen extends StatelessWidget {
                             ),
                           ),
                           title: Text(
-                            isCredit ? "Money Added" : "Ride Payment",
+                            isCredit ? "moneyAdded".tr : "ridePayment".tr,
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               color: isDark ? Colors.white : Colors.black87,

@@ -119,13 +119,18 @@ class ProButton extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       if (icon != null) ...[icon!, const SizedBox(width: 12)],
-                      Text(
-                        text,
-                        style: TextStyle(
-                          color: textColor ?? Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.1,
+                      Flexible(
+                        child: Text(
+                          text,
+                          textAlign: icon != null ? TextAlign.start : TextAlign.center,
+                          style: TextStyle(
+                            color: textColor ?? Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.1,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],

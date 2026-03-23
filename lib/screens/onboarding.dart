@@ -17,21 +17,18 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final List<_OnboardingPageData> _pages = [
     _OnboardingPageData(
       icon: Icons.local_taxi_outlined,
-      title: "Welcome to Indi Cabs",
-      description:
-          "Find a reliable ride in just a few taps. Your destination is at your fingertips.",
+      title: "welcome".tr,
+      description: "welcomeDesc".tr,
     ),
     _OnboardingPageData(
       icon: Icons.shield_outlined,
-      title: "Safety is Our Priority",
-      description:
-          "Track your ride in real-time and travel with verified, professional drivers.",
+      title: "safetyFirst".tr,
+      description: "safetyFirstDesc".tr,
     ),
     _OnboardingPageData(
       icon: Icons.credit_card,
-      title: "Easy & Secure Payments",
-      description:
-          "Pay seamlessly with cash, card, or UPI. Get your fare estimate before you book.",
+      title: "securePayments".tr,
+      description: "securePaymentsDesc".tr,
     ),
   ];
 
@@ -61,7 +58,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               alignment: Alignment.topRight,
               child: TextButton(
                 onPressed: _finishOnboarding,
-                child: const Text("Skip"),
+                child: Text("skip".tr),
               ),
             ),
             // PageView
@@ -107,7 +104,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   }
                 },
                 child: Text(
-                  _currentPage == _pages.length - 1 ? "Get Started" : "Next",
+                  _currentPage == _pages.length - 1 ? "getStarted".tr : "next".tr,
                   style: const TextStyle(fontSize: 16),
                 ),
               ),

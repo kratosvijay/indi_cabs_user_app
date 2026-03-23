@@ -816,19 +816,21 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                       // --- Title and Fare Row ---
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        crossAxisAlignment: CrossAxisAlignment.baseline,
-                        textBaseline: TextBaseline.alphabetic,
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Text(
-                            widget.isRental
-                                ? 'Confirm Rental'
-                                : (widget.intermediateStops != null
-                                      ? 'Confirm Multi-Stop'
-                                      : 'Confirm Ride'),
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: textColor,
+                          Expanded(
+                            child: Text(
+                              widget.isRental
+                                  ? 'confirmRental'.tr
+                                  : (widget.intermediateStops != null
+                                        ? 'confirmMultiStop'.tr
+                                        : 'confirmRide'.tr),
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: textColor,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           if (isRefreshing)
@@ -862,7 +864,7 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                         Padding(
                           padding: const EdgeInsets.only(top: 4.0),
                           child: Text(
-                            "+ ₹${_currentConvenienceFee.toStringAsFixed(0)} convenience fee",
+                            "+ ₹${_currentConvenienceFee.toStringAsFixed(0)} ${'convenienceFee'.tr}",
                             style: TextStyle(
                               fontSize: 12,
                               color: AppColors.primary,
@@ -875,7 +877,7 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                       // --- Tip Slider ---
                       const SizedBox(height: 16),
                       Text(
-                        'Add a Tip: ₹${_tipValue.round()}',
+                        '${'addATip'.tr}: ₹${_tipValue.round()}',
                         style: TextStyle(fontSize: 16, color: textColor),
                       ),
                       Slider(
@@ -902,11 +904,11 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
                           title: Text(
-                            "Use Wallet Balance",
+                            "useWalletBalance".tr,
                             style: TextStyle(fontSize: 16, color: textColor),
                           ),
                           subtitle: Text(
-                            "Available: ₹${widget.walletBalance!.toStringAsFixed(0)}",
+                            "${"available".tr}: ₹${widget.walletBalance!.toStringAsFixed(0)}",
                             style: TextStyle(fontSize: 12, color: subTextColor),
                           ),
                           value: _useWalletBalance,
@@ -914,9 +916,12 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                           onChanged: isRefreshing
                               ? null
                               : (bool value) {
-                                  setSheetState(
-                                    () => _useWalletBalance = value,
-                                  );
+                                  setSheetState(() {
+                                    _useWalletBalance = value;
+                                    if (!value && _selectedPaymentMethod == 'Wallet') {
+                                      _selectedPaymentMethod = 'Cash';
+                                    }
+                                  });
                                 },
                         ),
                       if (widget.walletBalance != null &&
@@ -939,9 +944,12 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                                   ),
                                 );
                                 if (result != null) {
-                                  setSheetState(
-                                    () => _selectedPaymentMethod = result,
-                                  );
+                                  setSheetState(() {
+                                    _selectedPaymentMethod = result;
+                                    if (result == 'Wallet') {
+                                      _useWalletBalance = true;
+                                    }
+                                  });
                                 }
                               },
                         style: OutlinedButton.styleFrom(
@@ -966,8 +974,8 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                       // --- Confirm Booking Button ---
                       ProButton(
                         text: _useWalletBalance
-                            ? 'Book Now (Cash: ₹${max(0, (totalFare - (widget.walletBalance ?? 0))).toStringAsFixed(0)})'
-                            : 'Book Now (Total: ₹${totalFare.toStringAsFixed(0)})',
+                            ? "${'bookNow'.tr} (${'cash'.tr}: ₹${max(0, (totalFare - (widget.walletBalance ?? 0))).toStringAsFixed(0)})"
+                            : "${'bookNow'.tr} (${'total'.tr}: ₹${totalFare.toStringAsFixed(0)})",
                         isLoading: _isBooking || isRefreshing,
                         // backgroundColor: Colors.blueAccent, // Use default gradient
                         onPressed: (_isBooking || isRefreshing)
@@ -1013,8 +1021,8 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
       appBar: ProAppBar(
         title: Text(
           widget.isRental
-              ? "Confirm Rental Pickup"
-              : "Confirm Daily Ride Pickup",
+              ? "confirmRental".tr
+              : "confirmRide".tr,
         ),
       ),
       body: Builder(
@@ -1139,7 +1147,7 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                           Padding(
                             padding: const EdgeInsets.all(16.0),
                             child: Text(
-                              "Select Pick-up Point",
+                              "selectPickupPoint".tr,
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -1203,7 +1211,7 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                           Padding(
                             padding: const EdgeInsets.all(16.0),
                             child: ProButton(
-                              text: "Confirm Pickup Point",
+                              text: "confirmPickupPoint".tr,
                               isLoading: _isRefreshingFare || _isBooking,
                               onPressed:
                                   _selectedPickupPoint == null ||
@@ -1232,10 +1240,10 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                       padding: const EdgeInsets.all(16.0),
                       child: ProButton(
                         text: _hasMovedPin
-                            ? "Update Pickup & Refresh Fare"
+                            ? "updatePickupRefreshFare".tr
                             : (widget.isRental
-                                  ? "Proceed with Rental Details"
-                                  : "Proceed to Payment"),
+                                  ? "proceedWithRentalDetails".tr
+                                  : "proceedToPayment".tr),
                         isLoading: _isRefreshingFare,
                         backgroundColor: _hasMovedPin
                             ? Colors.orange.shade700

@@ -119,6 +119,12 @@ class VehicleOption {
   // Static lists for easy access
   static List<VehicleOption> get defaultOptions => [
     VehicleOption(
+      type: 'Auto',
+      imagePath: 'assets/images/auto_rickshaw.png',
+      price: '₹80',
+      eta: '4 mins',
+    ),
+    VehicleOption(
       type: 'Hatchback',
       imagePath: 'assets/images/car_hatchback.png',
       price: '₹150',
@@ -135,12 +141,6 @@ class VehicleOption {
       imagePath: 'assets/images/car_suv.png',
       price: '₹250',
       eta: '8 mins',
-    ),
-    VehicleOption(
-      type: 'Auto',
-      imagePath: 'assets/images/auto_rickshaw.png',
-      price: '₹80',
-      eta: '4 mins',
     ),
     VehicleOption(
       type: 'ActingDriver',

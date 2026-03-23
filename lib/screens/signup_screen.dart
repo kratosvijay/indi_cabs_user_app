@@ -48,17 +48,17 @@ class _SignUpScreenState extends State<SignUpScreen> {
     final phone = _phoneController.text.trim();
 
     if (firstName.isEmpty || lastName.isEmpty || email.isEmpty || phone.isEmpty) {
-      Get.snackbar("Error", "All fields are required", snackPosition: SnackPosition.TOP);
+      Get.snackbar("error".tr, "allFieldsRequired".tr, snackPosition: SnackPosition.TOP);
       return;
     }
 
     if (!GetUtils.isEmail(email)) {
-      Get.snackbar("Error", "Email address is not valid", snackPosition: SnackPosition.TOP);
+      Get.snackbar("error".tr, "invalidEmail".tr, snackPosition: SnackPosition.TOP);
       return;
     }
 
     if (!FormValidator.isValidPhoneNumber(phone)) {
-      Get.snackbar("Error", "Please enter a valid 10-digit phone number", snackPosition: SnackPosition.TOP);
+      Get.snackbar("error".tr, "invalidPhone".tr, snackPosition: SnackPosition.TOP);
       return;
     }
 
@@ -74,7 +74,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
       },
       verificationFailed: (FirebaseAuthException e) {
         if (mounted) {
-          Get.snackbar("Error", e.message ?? "Failed to send OTP", snackPosition: SnackPosition.TOP);
+          Get.snackbar("error".tr, e.message ?? "Failed to send OTP", snackPosition: SnackPosition.TOP);
           setState(() => _isLoading = false);
         }
       },
@@ -86,7 +86,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
             _otpSent = true;
             _isLoading = false;
           });
-          Get.snackbar("Success", "OTP sent successfully!", snackPosition: SnackPosition.TOP);
+          Get.snackbar("success".tr, "otpSentSuccess".tr, snackPosition: SnackPosition.TOP);
         }
       },
       codeAutoRetrievalTimeout: (String verificationId) {
@@ -162,7 +162,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         await _setupPermissions(user);
 
         if (mounted) {
-          Get.snackbar("Success", "Account created successfully!", snackPosition: SnackPosition.TOP);
+          Get.snackbar("success".tr, "accountCreatedSuccess".tr, snackPosition: SnackPosition.TOP);
           AuthController.instance.pauseAutoNavigation = false;
           
           // Re-initialize RideController explicitly or it might be missing
@@ -171,12 +171,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
       }
     } on FirebaseAuthException catch (e) {
       if (mounted) {
-        Get.snackbar("Error", e.message ?? "Invalid OTP or verification failed.", snackPosition: SnackPosition.TOP);
+        Get.snackbar("error".tr, e.message ?? "Invalid OTP or verification failed.", snackPosition: SnackPosition.TOP);
       }
       AuthController.instance.pauseAutoNavigation = false;
     } catch (e) {
       if (mounted) {
-        Get.snackbar("Error", "An unexpected error occurred: $e", snackPosition: SnackPosition.TOP);
+        Get.snackbar("error".tr, "An unexpected error occurred: $e", snackPosition: SnackPosition.TOP);
       }
       AuthController.instance.pauseAutoNavigation = false;
     } finally {
@@ -190,7 +190,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: ProAppBar(
-        titleText: 'Sign Up',
+        titleText: 'signUp'.tr,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
@@ -207,7 +207,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    _otpSent ? 'Verify OTP' : 'Create Account',
+                    _otpSent ? 'verifyOtp'.tr : 'createAccount'.tr,
                     style: const TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
@@ -219,33 +219,33 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   if (!_otpSent) ...[
                     ProTextField(
                       controller: _firstNameController,
-                      hintText: 'Enter your first name',
+                      hintText: 'firstNameHint'.tr,
                       icon: Icons.person_outline,
                     ),
                     const SizedBox(height: 20),
                     ProTextField(
                       controller: _lastNameController,
-                      hintText: 'Enter your last name',
+                      hintText: 'lastNameHint'.tr,
                       icon: Icons.person_outline,
                     ),
                     const SizedBox(height: 20),
                     ProTextField(
                       controller: _emailController,
-                      hintText: 'Enter your email',
+                      hintText: 'emailHint'.tr,
                       icon: Icons.email_outlined,
                       keyboardType: TextInputType.emailAddress,
                     ),
                     const SizedBox(height: 20),
                     ProTextField(
                       controller: _phoneController,
-                      hintText: '10-digit mobile number',
+                      hintText: 'mobileHint'.tr,
                       icon: Icons.phone,
                       keyboardType: TextInputType.phone,
                     ),
                   ] else ...[
                     ProTextField(
                       controller: _otpController,
-                      hintText: 'Enter 6-digit code',
+                      hintText: 'otpHint'.tr,
                       icon: Icons.password,
                       keyboardType: TextInputType.number,
                     ),
@@ -253,7 +253,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
                   const SizedBox(height: 30),
                   ProButton(
-                    text: _otpSent ? "Verify & Sign Up" : "Next",
+                    text: _otpSent ? "verifyAndSignUp".tr : "next".tr,
                     isLoading: _isLoading,
                     onPressed: _isLoading
                         ? null
@@ -265,7 +265,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     TextButton(
                       onPressed: _isLoading ? null : _sendOtp,
                       child: Text(
-                        'Resend OTP',
+                        'resendOtp'.tr,
                         style: TextStyle(
                           color: Theme.of(context).primaryColor,
                           fontSize: 16,
@@ -277,11 +277,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
                   const SizedBox(height: 15),
                   if (!_otpSent)
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
-                          "Already have an account?",
+                          "alreadyHaveAccount".tr,
                           style: TextStyle(
                             color: Theme.of(
                               context,
@@ -293,7 +294,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                             Get.back();
                           },
                           child: Text(
-                            'Sign In',
+                            'signIn'.tr,
                             style: TextStyle(
                               color: Theme.of(
                                 context,

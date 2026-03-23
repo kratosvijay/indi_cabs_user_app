@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // --- Helper Functions ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    function isDriver() {
+      return isSignedIn() && exists(/databases/$(database)/documents/drivers/$(request.auth.uid));
+    }
+    function isUser() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    // --- Users Collection ---
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+      allow read: if isDriver(); // Drivers can see user details for active rides
+      match /payment_history/{paymentId} {
+        allow read: if isOwner(userId);
+        allow write: if false; // Only Cloud Functions should update this
+      }
+      match /notifications/{notifId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // --- Drivers Collection ---
+    match /drivers/{driverId} {
+      allow read, write: if isOwner(driverId);
+      allow read: if isSignedIn(); // Users can see driver details
+    }
+
+    // --- Ride Requests ---
+    match /ride_requests/{rideId} {
+      allow create: if isUser();
+      allow read: if isOwner(resource.data.userId) || isOwner(resource.data.driverId) || (isSignedIn() && resource.data.status == 'searching');
+      allow update: if isOwner(resource.data.userId) || isOwner(resource.data.driverId) || (isDriver() && resource.data.status == 'searching');
+    }
+
+    // --- Rental Requests ---
+    match /rental_requests/{rideId} {
+      allow create: if isUser();
+      allow read: if isOwner(resource.data.userId) || isOwner(resource.data.driverId) || (isSignedIn() && resource.data.status == 'searching');
+      allow update: if isOwner(resource.data.userId) || isOwner(resource.data.driverId) || (isDriver() && resource.data.status == 'searching');
+    }
+
+    // --- Pricing Rules & Geofences ---
+    match /pricing_rules/{city} {
+      allow read: if isSignedIn();
+      allow write: if false; // Admin only (manual/CLI)
+    }
+    match /geofenced_zones/{zoneId} {
+      allow read: if isSignedIn();
+      allow write: if false; // Admin only
+    }
+
+    // --- Fleet Operators ---
+    match /fleet_operators/{operatorId} {
+      allow read, write: if isOwner(operatorId);
+    }
+
+    // --- Earnings ---
+    match /earnings/{earningId} {
+      allow read: if isSignedIn() && resource.data.driverId == request.auth.uid;
+      allow write: if false; // Only Cloud Functions
+    }
+
+    // --- Counters ---
+    match /counters/{counterId} {
+      allow read: if isSignedIn();
+      allow write: if false; // Only Cloud Functions
+    }
+  }
+}

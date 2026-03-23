@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:project_taxi_with_ai/app_colors.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -8,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:project_taxi_with_ai/widgets/snackbar.dart';
 import 'package:project_taxi_with_ai/widgets/pro_library.dart';
+import 'package:project_taxi_with_ai/screens/language_screen.dart';
 
 class ProfilePage extends StatefulWidget {
   final User user;
@@ -391,21 +393,22 @@ class _ProfilePageState extends State<ProfilePage> {
                     ProButton(
                       text: "Save Changes",
                       isLoading: _isLoading,
-                      // Disable button if no changes
                       onPressed: _hasChanges ? _updateProfile : null,
-                      // Grey out background if disabled
-                      backgroundColor: _hasChanges
-                          ? null // Use default gradient
-                          : (isDark
-                                ? Colors.grey.shade800
-                                : Colors.grey.shade300),
-                      // Grey out text if disabled
-                      textColor: _hasChanges
-                          ? Colors.white
-                          : (isDark
-                                ? Colors.grey.shade500
-                                : Colors.grey.shade600),
+                      backgroundColor:
+                          _hasChanges
+                              ? null
+                              : (isDark
+                                  ? Colors.grey.shade800
+                                  : Colors.grey.shade300),
+                      textColor:
+                          _hasChanges
+                              ? Colors.white
+                              : (isDark
+                                  ? Colors.grey.shade500
+                                  : Colors.grey.shade600),
                     ),
+                    const SizedBox(height: 20),
+                    _buildLanguageTile(context),
                     const SizedBox(height: 20),
                     _buildDeleteAccountButton(),
                   ],
@@ -414,6 +417,38 @@ class _ProfilePageState extends State<ProfilePage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildLanguageTile(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E1E1E) : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark ? Colors.grey.shade800 : Colors.transparent,
+          width: 1,
+        ),
+      ),
+      child: ListTile(
+        leading: Icon(
+          Icons.language,
+          color: isDark ? Colors.grey : AppColors.lightEnd,
+        ),
+        title: Text(
+          'language'.tr,
+          style: TextStyle(
+            color: isDark ? Colors.white : Colors.black87,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+        onTap: () {
+          Get.to(() => const LanguageSelectionScreen(isFromProfile: true));
+        },
       ),
     );
   }

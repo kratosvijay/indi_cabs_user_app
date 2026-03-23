@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:math'; // For min/max used in bounds calculation
 
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter/material.dart' hide Route;
 import 'package:flutter/services.dart';
@@ -42,13 +43,15 @@ import 'package:project_taxi_with_ai/widgets/favorites.dart';
 // Import Other Screens
 import 'package:project_taxi_with_ai/screens/profile_page.dart';
 import 'package:project_taxi_with_ai/screens/edit_location.dart';
-import 'package:project_taxi_with_ai/widgets/home_page_tour.dart';
+import 'package:project_taxi_with_ai/screens/language_screen.dart';
 import 'package:project_taxi_with_ai/widgets/location_service.dart';
 import 'package:project_taxi_with_ai/widgets/map_service.dart';
 import 'package:project_taxi_with_ai/widgets/rental_botomsheet.dart';
 import 'package:project_taxi_with_ai/widgets/ride_confirm_sheet.dart';
 import 'package:project_taxi_with_ai/widgets/search_bar.dart';
 import 'package:project_taxi_with_ai/widgets/review_dialog.dart'; // **NEW IMPORT**
+import 'package:project_taxi_with_ai/widgets/custom_showcase.dart';
+import 'package:showcaseview/showcaseview.dart';
 
 import '../widgets/snackbar.dart';
 
@@ -76,6 +79,11 @@ class _HomePageState extends State<HomePage> {
   final GlobalKey _searchBarKey = GlobalKey();
   final GlobalKey _bottomBarKey = GlobalKey();
   final GlobalKey _walletKey = GlobalKey();
+
+  final GlobalKey _walletShowcaseKey = GlobalKey();
+  final GlobalKey _rideLaterShowcaseKey = GlobalKey();
+  final GlobalKey _searchShowcaseKey = GlobalKey();
+  bool _hasTriggeredOnboarding = false;
 
   // --- Services ---
   // --- Services ---
@@ -151,10 +159,37 @@ class _HomePageState extends State<HomePage> {
     });
 
     // **NEW:** Check for notification permission prompt & reviews
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       _checkNotificationPermission();
       _checkForPendingReviews();
+
+      if (!_hasTriggeredOnboarding && mounted) {
+        _hasTriggeredOnboarding = true;
+        final prefs = await SharedPreferences.getInstance();
+        final hasSeen = prefs.getBool('hasSeenAppOnboarding') ?? false;
+        if (!hasSeen) {
+          if (mounted) {
+            ShowcaseView.get().startShowCase([
+              _searchShowcaseKey
+            ]);
+          }
+          await prefs.setBool('hasSeenAppOnboarding', true);
+        }
+      }
     });
+
+    ShowcaseView.register(
+      hideFloatingActionWidgetForShowcase: [],
+      onFinish: () async {
+        final prefs = await SharedPreferences.getInstance();
+        final hasSeenWallet = prefs.getBool('hasSeenWalletTour') ?? false;
+        if (!hasSeenWallet && mounted && _destinationPosition == null) {
+          _scaffoldKey.currentState?.openDrawer();
+          await prefs.setBool('hasSeenWalletTour', true);
+        }
+      },
+    );
+
 
     // **NEW:** Sync pickup address from controller
     ever(_rideController.pickupAddress, (address) {
@@ -196,7 +231,14 @@ class _HomePageState extends State<HomePage> {
     _destinationController.dispose();
     _destinationFocusNode.dispose();
     // _markersFocusNode.dispose();
+    ShowcaseView.get().unregister();
     super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _rideController.updateMapStyle(Theme.of(context).brightness == Brightness.dark);
   }
 
   // **NEW:** Helper to save notification to Firestore
@@ -219,20 +261,6 @@ class _HomePageState extends State<HomePage> {
       }
     } catch (e) {
       debugPrint("Error saving foreground message: $e");
-    }
-  }
-
-  Future<void> _showWalletTour() async {
-    await Future.delayed(const Duration(milliseconds: 500));
-    if (mounted) {
-      await ContextualFeatureTour.showTourStep(
-        context: context,
-        key: _walletKey,
-        prefKey: kHasSeenWalletTour,
-        title: "My Wallet",
-        description:
-            "Add money to your secure wallet using Razorpay for faster, cash-free payments.",
-      );
     }
   }
 
@@ -1105,7 +1133,7 @@ class _HomePageState extends State<HomePage> {
     // Open the inline vehicle sheet — map will shrink via AnimatedPositioned
     setState(() {
       _isVehicleSheetOpen = true;
-      _sheetExtent.value = 0.65; // Final increase to 65% for absolute visibility
+      _sheetExtent.value = 0.72; // Final increase to 72% for absolute visibility
     });
 
     // After map shrink animation completes, re-animate camera to fit route
@@ -1404,32 +1432,52 @@ class _HomePageState extends State<HomePage> {
               : 140)
         : MediaQuery.of(context).size.height * 0.45;
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) return;
-        if (_isVehicleSheetOpen) {
-          _dismissVehicleSheet();
-        } else if (_destinationFocusNode.hasFocus) {
-          FocusScope.of(context).unfocus();
-        } else if (_rideController.predictions.isNotEmpty) {
-          setState(() {
-            _rideController.predictions.clear();
-          });
-        } else {
-          _showExitConfirmationDialog();
-        }
-      },
-      child: Scaffold(
-        key: _scaffoldKey,
-        drawerEnableOpenDragGesture: false, // **NEW:** Only open drawer via button
-        resizeToAvoidBottomInset: false, // Prevents MapView stutter during keyboard animation
-        // **NEW:** Add onDrawerChanged callback
-        onDrawerChanged: (isOpened) {
-          if (isOpened) {
-            _showWalletTour();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final systemOverlayStyle = isDark
+        ? SystemUiOverlayStyle.light.copyWith(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: Brightness.light,
+          )
+        : SystemUiOverlayStyle.dark.copyWith(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: Brightness.dark,
+          );
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: systemOverlayStyle,
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) return;
+          if (_isVehicleSheetOpen) {
+            _dismissVehicleSheet();
+          } else if (_destinationFocusNode.hasFocus) {
+            FocusScope.of(context).unfocus();
+          } else if (_rideController.predictions.isNotEmpty) {
+            setState(() {
+              _rideController.predictions.clear();
+            });
+          } else {
+            _showExitConfirmationDialog();
           }
         },
+        child: Scaffold(
+              key: _scaffoldKey,
+            onDrawerChanged: (isOpen) async {
+              setState(() {}); // **NEW:** Ensure SearchBarWidget updates its enabled state
+              if (isOpen && mounted) {
+                final prefs = await SharedPreferences.getInstance();
+                final hasSeen = prefs.getBool('hasSeenWalletTour') ?? false;
+                if (!hasSeen) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    ShowcaseView.get().startShowCase([_walletShowcaseKey]);
+                  });
+                  await prefs.setBool('hasSeenWalletTour', true);
+                }
+              }
+            },
+            drawerEnableOpenDragGesture: false, // **NEW:** Only open drawer via button
+        resizeToAvoidBottomInset: false, // Prevents MapView stutter during keyboard animation
         // AppBar removed — hamburger + notification are now floating over the map
         drawer: Builder(builder: (context) => _buildDrawer()),
         body: Obx(() {
@@ -1437,11 +1485,9 @@ class _HomePageState extends State<HomePage> {
               ? const Center(child: CircularProgressIndicator())
               : GestureDetector(
                   onTap: () {
-                    // Only unfocus if search panel is actually showing
-                    if (_destinationFocusNode.hasFocus &&
-                        (_rideController.predictions.isNotEmpty ||
-                            _rideController.searchHistory.isNotEmpty)) {
+                    if (_destinationFocusNode.hasFocus) {
                       FocusScope.of(context).unfocus();
+                      SystemChannels.textInput.invokeMethod('TextInput.hide');
                     }
                   },
                   child: SizedBox.expand(
@@ -1478,6 +1524,7 @@ class _HomePageState extends State<HomePage> {
                                     child: GoogleMap(
                                       initialCameraPosition: MapService.initialPosition,
                                       mapType: MapType.normal,
+                                      style: _rideController.mapStyleJson.value,
                                       myLocationEnabled: false,
                                       myLocationButtonEnabled: false,
                                       zoomControlsEnabled: false,
@@ -1599,34 +1646,45 @@ class _HomePageState extends State<HomePage> {
                             children: [
                               // Unified Search Bar with integrated Menu
                               Expanded(
-                                child: Obx(
-                                  () => SearchBarWidget(
-                                    key: _searchBarKey,
-                                    destinationController: _destinationController,
-                                    destinationFocusNode: _destinationFocusNode,
-                                    isSearchEnabled:
-                                        _selectedServiceType == RideType.daily ||
-                                        _selectedServiceType == RideType.acting,
-                                    isDestinationSelected: _destinationPosition != null,
-                                    predictions: _rideController.predictions.toList(),
-                                    searchHistory: _rideController.searchHistory.toList(),
-                                    favoritePlaces: _rideController.favoritePlaces.toList(),
-                                    pickupAddress: _rideController.pickupAddress.value,
-                                    onPickupTap: _handlePickupLocationTap,
-                                    onSearchChanged: _handleSearchChanged,
-                                    onPredictionTap: _handlePredictionTap,
-                                    onHistoryTap: _handleHistoryTap,
-                                    onFocusChange: (hasFocus) {
-                                      setState(() {});
-                                    },
-                                    onClearSearch: _handleClearSearch,
-                                    onFavoriteToggle: _handleHistoryFavoriteToggle,
-                                    onSelectOnMap: _handleSelectOnMap,
-                                    onMenuTap: () {
-                                      FocusScope.of(context).unfocus();
-                                      SystemChannels.textInput.invokeMethod('TextInput.hide');
-                                      _scaffoldKey.currentState?.openDrawer();
-                                    },
+                                child: CustomShowcase(
+                                  showcaseKey: _searchShowcaseKey,
+                                  title: 'whereTo'.tr,
+                                  description:
+                                      'enterPickupDrop'.tr,
+                                  isLastStep: true,
+                                  targetShapeBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                                  child: Obx(
+                                    () => SearchBarWidget(
+                                      key: _searchBarKey,
+                                      isDrawerOpen: _scaffoldKey.currentState?.isDrawerOpen ?? false,
+                                      destinationController: _destinationController,
+                                      destinationFocusNode: _destinationFocusNode,
+                                      isSearchEnabled:
+                                          _selectedServiceType == RideType.daily ||
+                                          _selectedServiceType == RideType.acting,
+                                      isDestinationSelected: _destinationPosition != null,
+                                      predictions: _rideController.predictions.toList(),
+                                      searchHistory: _rideController.searchHistory.toList(),
+                                      favoritePlaces: _rideController.favoritePlaces.toList(),
+                                      pickupAddress: _rideController.pickupAddress.value,
+                                      onPickupTap: _handlePickupLocationTap,
+                                      onSearchChanged: _handleSearchChanged,
+                                      onPredictionTap: _handlePredictionTap,
+                                      onHistoryTap: _handleHistoryTap,
+                                      onFocusChange: (hasFocus) {
+                                        setState(() {});
+                                      },
+                                      onClearSearch: _handleClearSearch,
+                                      onFavoriteToggle: _handleHistoryFavoriteToggle,
+                                      onSelectOnMap: _handleSelectOnMap,
+                                      onMenuTap: () {
+                                        FocusScope.of(context).unfocus();
+                                        FocusManager.instance.primaryFocus?.unfocus();
+                                        SystemChannels.textInput.invokeMethod('TextInput.hide');
+                                        _scaffoldKey.currentState?.openDrawer();
+                                        setState(() {}); // **NEW:** Force update to disable search bar
+                                      },
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1741,6 +1799,8 @@ class _HomePageState extends State<HomePage> {
                                         pricingRules: _rideController.pricingRules.value,
                                         walletBalance: _rideController.walletBalance.value,
                                         rideType: _selectedServiceType,
+                                        showcaseKey: _rideLaterShowcaseKey,
+                                        showScheduleTour: true, // Only triggers if not already seen in BottomSheet initState logic
                                         availability: const {
                                           'Auto': true, 'Hatchback': true, 'Sedan': true, 'SUV': true, 'ActingDriver': true,
                                         },
@@ -1756,13 +1816,14 @@ class _HomePageState extends State<HomePage> {
                               },
                             ),
                           ),
-                      ],
-                    ),
+                    ],
                   ),
-                );
-        }),
-      ), // Close Scaffold
-    ); // Close PopScope
+                ),
+              );
+            }),
+          ),
+        ),
+    );
   }
 
   // --- Helper Methods ---
@@ -1853,24 +1914,30 @@ class _HomePageState extends State<HomePage> {
               children: [
                 _buildProDrawerItem(
                   icon: Icons.history,
-                  text: 'Ride History',
+                  text: 'rideHistory'.tr,
                   onTap: () {
                     Get.back();
                     Get.to(() => RideHistoryScreen(user: _currentUser));
                   },
                 ),
-                _buildProDrawerItem(
-                  key: _walletKey,
-                  icon: Icons.account_balance_wallet_outlined,
-                  text: 'My Wallet',
-                  onTap: () {
-                    Get.back();
-                    Get.to(() => WalletScreen(user: _currentUser));
-                  },
+                CustomShowcase(
+                  showcaseKey: _walletShowcaseKey,
+                  title: "My Wallet",
+                  description: "Manage your balance and recharge easily",
+                  isLastStep: true,
+                  child: _buildProDrawerItem(
+                    key: _walletKey,
+                    icon: Icons.account_balance_wallet_outlined,
+                    text: 'myWallet'.tr,
+                    onTap: () {
+                      Get.back();
+                      Get.to(() => WalletScreen(user: _currentUser));
+                    },
+                  ),
                 ),
                 _buildProDrawerItem(
                   icon: Icons.person_outline,
-                  text: 'Profile',
+                  text: 'profile'.tr,
                   onTap: () async {
                     Get.back();
                     final result = await Get.to(
@@ -1893,7 +1960,7 @@ class _HomePageState extends State<HomePage> {
                 ),
                 _buildProDrawerItem(
                   icon: Icons.notifications_none_rounded,
-                  text: 'Notifications',
+                  text: 'notifications'.tr,
                   onTap: () {
                     Get.back();
                     Get.to(() => NotificationsScreen(user: _currentUser));
@@ -1905,15 +1972,23 @@ class _HomePageState extends State<HomePage> {
                 ),
                 _buildProDrawerItem(
                   icon: Icons.support_agent,
-                  text: 'Support',
+                  text: 'support'.tr,
                   onTap: () {
                     Get.back();
                     Get.to(() => const SupportHubScreen());
                   },
                 ),
                 _buildProDrawerItem(
+                  icon: Icons.language,
+                  text: 'language'.tr,
+                  onTap: () {
+                    Get.back();
+                    Get.to(() => const LanguageSelectionScreen(isFromProfile: true));
+                  },
+                ),
+                _buildProDrawerItem(
                   icon: Icons.info_outline,
-                  text: 'About',
+                  text: 'about'.tr,
                   onTap: () {
                     Get.back();
                     Get.to(() => const AboutScreen());
@@ -1930,13 +2005,13 @@ class _HomePageState extends State<HomePage> {
               children: [
                 _buildProDrawerItem(
                   icon: Icons.logout,
-                  text: 'Logout',
+                  text: 'logout'.tr,
                   onTap: _signOut,
                   isDestructive: true,
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  "Version 1.2.1",
+                  "${'version'.tr} 1.2.1",
                   style: TextStyle(
                     color: Theme.of(context).disabledColor,
                     fontSize: 12,

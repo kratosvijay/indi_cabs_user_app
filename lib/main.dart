@@ -5,6 +5,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:project_taxi_with_ai/app_colors.dart';
+import 'package:project_taxi_with_ai/utils/app_translations.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -12,6 +13,7 @@ import 'package:project_taxi_with_ai/screens/splash_screen.dart';
 
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:upgrader/upgrader.dart';
+import 'package:flutter/services.dart';
 import 'dart:async'; // For runZonedGuarded
 
 // **NEW:** Background message handler (must be a top-level function)
@@ -50,6 +52,9 @@ void main() {
   runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      
+      // Enable edge-to-edge support for Android 15+
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       
       // Default to dev if no configuration is set (e.g. running main.dart directly)
       if (!EnvConfig.isSet) {
@@ -112,6 +117,9 @@ class MyApp extends StatelessWidget {
       // initialBinding: ControllerBinding(), // Moved to SplashScreen
       title: EnvConfig.instance.appName,
       debugShowCheckedModeBanner: false,
+      translations: AppTranslations(),
+      locale: Get.deviceLocale,
+      fallbackLocale: const Locale('en', 'US'),
       themeMode: ThemeMode.system,
       theme: ThemeData(
         brightness: Brightness.light,

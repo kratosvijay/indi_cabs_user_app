@@ -106,7 +106,7 @@ class WalletController extends GetxController {
       }
 
       var session = CFSessionBuilder()
-          .setEnvironment(CFEnvironment.SANDBOX) // Set to PRODUCTION when live
+          .setEnvironment(CFEnvironment.PRODUCTION) // Set to PRODUCTION when live
           .setOrderId(orderId)
           .setPaymentSessionId(paymentSessionId)
           .build();

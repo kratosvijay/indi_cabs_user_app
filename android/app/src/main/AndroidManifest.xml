@@ -11,6 +11,7 @@
         android:name="${applicationName}"
         android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
+        android:resizeableActivity="true"
         tools:node="merge">
         <activity
             android:name=".MainActivity"
@@ -39,6 +40,25 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+
+        <!-- Overrides for Cashfree SDK orientation restrictions (Support for Android 16 large screens) -->
+        <activity
+            android:name="com.cashfree.pg.core.api.ui.CashfreeSubscriptionCheckoutActivity"
+            android:screenOrientation="unspecified"
+            tools:replace="android:screenOrientation" />
+        <activity
+            android:name="com.cashfree.pg.core.api.ui.CashfreeSubscriptionVerificationActivity"
+            android:screenOrientation="unspecified"
+            tools:replace="android:screenOrientation" />
+        <activity
+            android:name="com.cashfree.pg.core.api.ui.CashfreeCoreNativeVerificationActivity"
+            android:screenOrientation="unspecified"
+            tools:replace="android:screenOrientation" />
+        <activity
+            android:name="com.cashfree.pg.ui.hidden.checkout.CashfreeNativeCheckoutActivity"
+            android:screenOrientation="unspecified"
+            tools:replace="android:screenOrientation" />
+
                 <meta-data android:name="flutter_performance_mode_display_refresh_rate" android:value="true" />
 
         <!-- Don't delete the meta-data below.

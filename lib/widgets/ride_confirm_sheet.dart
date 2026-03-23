@@ -6,12 +6,14 @@ import 'package:get/get.dart';
 
 import 'package:project_taxi_with_ai/widgets/data_models.dart';
 import 'package:project_taxi_with_ai/widgets/firestore_services.dart';
-import 'package:project_taxi_with_ai/widgets/home_page_tour.dart';
 import 'package:project_taxi_with_ai/widgets/scheduler.dart';
 import 'package:project_taxi_with_ai/screens/wallet.dart'; // **NEW** // For EditLocationScreen
 import 'package:project_taxi_with_ai/widgets/pro_library.dart'; // Import ProButton
 import 'package:project_taxi_with_ai/widgets/equalizer_loading.dart'; // **NEW**
 import 'package:project_taxi_with_ai/app_colors.dart';
+import 'package:project_taxi_with_ai/widgets/custom_showcase.dart';
+import 'package:showcaseview/showcaseview.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // Define the callback type as a simple function
 typedef EditLocationCallback = void Function();
@@ -39,8 +41,9 @@ class RideConfirmationBottomSheet extends StatefulWidget {
   final List<Map<String, dynamic>>? intermediateStops;
   final num walletBalance;
   final RideType rideType; // **NEW:** Accept ride type
-  final bool showScheduleTour; // **NEW:** Add tour flag
   final Map<String, bool> availability; // **NEW:** Accept availability
+  final GlobalKey? showcaseKey; // **NEW:** Key for showcase tour
+  final bool showScheduleTour; // **NEW:** Whether to show the tour
 
   const RideConfirmationBottomSheet({
     super.key,
@@ -64,8 +67,9 @@ class RideConfirmationBottomSheet extends StatefulWidget {
     this.intermediateStops,
     required this.walletBalance,
     required this.rideType, // **NEW:** Add to constructor
-    this.showScheduleTour = false, // **NEW:** Add to constructor
     required this.availability, // **NEW:** Add to constructor
+    this.showcaseKey, // **NEW:** Key for showcase tour
+    this.showScheduleTour = false, // **NEW:** Whether to show the tour
     this.guestName,
     this.guestPhone,
     this.scrollController, // **NEW:** Support for DraggableScrollableSheet
@@ -102,6 +106,17 @@ class _RideConfirmationBottomSheetState
   void initState() {
     super.initState();
 
+    if (widget.showScheduleTour && widget.showcaseKey != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final prefs = await SharedPreferences.getInstance();
+        final hasSeen = prefs.getBool('hasSeenScheduleTour') ?? false;
+        if (!hasSeen && mounted) {
+          ShowcaseView.get().startShowCase([widget.showcaseKey!]);
+          await prefs.setBool('hasSeenScheduleTour', true);
+        }
+      });
+    }
+
     // **MODIFIED:** Filter by type AND availability
     _filteredVehicleOptions = widget.vehicleOptions.where((option) {
       // Check if this vehicle type is available
@@ -110,11 +125,8 @@ class _RideConfirmationBottomSheetState
       if (widget.rideType == RideType.acting) {
         return option.type == 'ActingDriver' && isAvailable;
       }
+      
       // For Daily and MultiStop, show all *except* ActingDriver
-      // **MODIFIED:** MultiStop should also hide Auto
-      if (widget.rideType == RideType.multiStop && option.type == 'Auto') {
-        return false;
-      }
       return option.type != 'ActingDriver' && isAvailable;
     }).toList();
 
@@ -136,11 +148,6 @@ class _RideConfirmationBottomSheetState
     } else if (_filteredVehicleOptions.isNotEmpty) {
       _selectedVehicleType = _filteredVehicleOptions.first.type;
       _selectedVehicle = _filteredVehicleOptions.first;
-    }
-
-    // **NEW:** Check if we need to show the schedule tour
-    if (widget.showScheduleTour) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _showScheduleTour());
     }
   }
 
@@ -168,23 +175,6 @@ class _RideConfirmationBottomSheetState
         }
       }
     }
-  }
-
-  // **NEW:** Function to show the schedule button tour
-  void _showScheduleTour() {
-    // Add a small delay to make sure the bottom sheet has finished animating up
-    Future.delayed(const Duration(milliseconds: 300), () {
-      if (mounted) {
-        ContextualFeatureTour.showTourStep(
-          context: context,
-          key: _scheduleButtonKey,
-          prefKey: kHasSeenScheduleTour,
-          title: "Book Now or Schedule",
-          description:
-              "Tap here to book your ride immediately, or press to select a future date and time. A ₹100 convenience fee applies for scheduled rides.",
-        );
-      }
-    });
   }
 
   // **MODIFIED:** Helper to show the vehicle info bottom sheet
@@ -246,7 +236,7 @@ class _RideConfirmationBottomSheetState
               const SizedBox(height: 20),
               // Pricing Details
               Text(
-                "Fare Details",
+                "Fare Details".tr,
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -257,32 +247,32 @@ class _RideConfirmationBottomSheetState
               // Show breakdown if rules are available
               if (vehicleRules != null) ...[
                 _buildFareInfoRow(
-                  "Base Fare",
+                  "baseFare".tr,
                   "₹${vehicleRules.baseFare.toStringAsFixed(0)}",
                   isDark,
                 ),
                 // **MODIFIED:** Don't show per/km if it's 0 (for Acting Driver)
                 if (vehicleRules.perKilometer > 0)
                   _buildFareInfoRow(
-                    "Per Kilometer",
+                    "perKilometer".tr,
                     "₹${vehicleRules.perKilometer.toStringAsFixed(0)} / km",
                     isDark,
                   ),
                 // **MODIFIED:** Show per/min if it's > 0 (for Acting Driver)
                 if (vehicleRules.perMinute > 0)
                   _buildFareInfoRow(
-                    "Per Minute",
+                    "perMinute".tr,
                     "₹${vehicleRules.perMinute.toStringAsFixed(0)} / min",
                     isDark,
                   ),
 
                 _buildFareInfoRow(
-                  "Minimum Fare",
+                  "minimumFare".tr,
                   "₹${vehicleRules.minimumFare.toStringAsFixed(0)}",
                   isDark,
                 ),
                 _buildFareInfoRow(
-                  "Tolls (if any)",
+                  "tollsIfAny".tr,
                   "+ ₹${tollCost.toStringAsFixed(0)}",
                   isDark,
                 ),
@@ -291,7 +281,7 @@ class _RideConfirmationBottomSheetState
                 if (vehicle.type == 'ActingDriver') ...[
                   const Divider(height: 20),
                   Text(
-                    "Service Policy:",
+                    "servicePolicy".tr,
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
@@ -299,15 +289,15 @@ class _RideConfirmationBottomSheetState
                     ),
                   ),
                   _buildFareInfoRow(
-                    "Food & Night Stay",
-                    "Food & accommodation (for trips > 10 hours) must be provided by the user.",
+                    "foodAndNightStay".tr,
+                    "foodAndNightStayDesc".tr,
                     isDark,
                   ),
                 ],
 
                 const Divider(height: 20),
                 Text(
-                  "Other Charges (applied by server):",
+                  "otherCharges".tr,
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -315,16 +305,16 @@ class _RideConfirmationBottomSheetState
                   ),
                 ),
                 _buildFareInfoRow(
-                  "Waiting Charge",
-                  "₹5/min (after 3 free mins)",
+                  "waitingCharge".tr,
+                  "waitingChargeValue".tr,
                   isDark,
                 ),
-                _buildFareInfoRow("Night Charge (10pm-6am)", "+ ₹50", isDark),
+                _buildFareInfoRow("nightCharge".tr, "+ ₹50", isDark),
 
                 const Divider(height: 20),
                 // **NEW:** Explicitly show the final calculated total so users know toll is included
                 _buildFareInfoRow(
-                  "Total Estimated Fare",
+                  "totalEstimatedFare".tr,
                   "₹${calculatedPrice?.toStringAsFixed(0) ?? 'N/A'}",
                   isDark,
                   isBold: true,
@@ -332,7 +322,7 @@ class _RideConfirmationBottomSheetState
               ] else ...[
                 // Fallback if pricing rules didn't load
                 _buildFareInfoRow(
-                  "Total Estimated Fare",
+                  "totalEstimatedFare".tr,
                   "₹${calculatedPrice?.toStringAsFixed(0) ?? 'N/A'}",
                   isDark,
                   isBold: true,
@@ -340,7 +330,7 @@ class _RideConfirmationBottomSheetState
                 Padding(
                   padding: const EdgeInsets.only(top: 8.0),
                   child: Text(
-                    "Detailed fare breakdown is unavailable at this time.",
+                    "fareBreakdownUnavailable".tr,
                     style: TextStyle(
                       color: isDark ? Colors.grey[400] : Colors.grey[600],
                       fontStyle: FontStyle.italic,
@@ -368,7 +358,7 @@ class _RideConfirmationBottomSheetState
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        "Note: This is an estimated fare. The final fare may vary based on the actual route taken, traffic conditions, and any additional stops or waiting time.",
+                        "fareNote".tr,
                         style: TextStyle(
                           fontSize: 12,
                           color: isDark ? Colors.grey[300] : Colors.black87,
@@ -381,7 +371,7 @@ class _RideConfirmationBottomSheetState
               ),
               const SizedBox(height: 16),
               const SizedBox(height: 24),
-              ProButton(text: "Got it", onPressed: () => Get.back()),
+              ProButton(text: "gotIt".tr, onPressed: () => Get.back()),
               SizedBox(
                 height: MediaQuery.of(context).padding.bottom + 8,
               ), // Padding for safe area
@@ -512,11 +502,10 @@ class _RideConfirmationBottomSheetState
         right: 16,
         top: 8,
       ),
-      child: ListView(
-        controller: widget.scrollController,
-        padding: EdgeInsets.zero,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Drag Handle
+          // Drag Handle (Static)
           Center(
             child: Container(
               width: 40,
@@ -529,7 +518,7 @@ class _RideConfirmationBottomSheetState
             ),
           ),
           Text(
-            "Select a Ride",
+            "selectARide".tr,
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
@@ -539,404 +528,430 @@ class _RideConfirmationBottomSheetState
           ),
           const SizedBox(height: 8),
 
-          // **NEW:** Show Distance and Time below Drop-off
-          if (widget.routeDetails != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 8, bottom: 4),
-              child: Container(
-                padding: const EdgeInsets.all(5),
-                decoration: BoxDecoration(
-                  color: isDark ? Colors.grey[800] : Colors.grey[100],
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    // Total Distance
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "TOTAL DISTANCE",
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: isDark
-                                  ? Colors.grey[400]
-                                  : Colors.grey[600],
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.directions_car_filled,
-                                size: 20,
-                                color: AppColors.primary,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                "${(widget.routeDetails!.distanceMeters / 1000).toStringAsFixed(1)} km",
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: isDark ? Colors.white : Colors.black87,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+          // Scrollable Content
+          Flexible(
+            child: ListView(
+              controller: widget.scrollController,
+              shrinkWrap: true,
+              padding: EdgeInsets.zero,
+              children: [
+                // **NEW:** Show Distance and Time below Drop-off
+                if (widget.routeDetails != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4, bottom: 2),
+                    child: Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.grey[800] : Colors.grey[100],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+                        ),
                       ),
-                    ),
-                    // Divider
-                    Container(
-                      height: 30,
-                      width: 1,
-                      color: isDark ? Colors.grey[600] : Colors.grey[300],
-                    ),
-                    const SizedBox(width: 16),
-                    // Time to Travel
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Row(
                         children: [
-                          Text(
-                            "TIME TO TRAVEL",
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: isDark
-                                  ? Colors.grey[400]
-                                  : Colors.grey[600],
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.access_time_filled,
-                                size: 20,
-                                color: AppColors.primary,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                _formatDuration(
-                                  widget.routeDetails!.durationSeconds,
+                          // Total Distance
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "totalDistance".tr,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark
+                                        ? Colors.grey[400]
+                                        : Colors.grey[600],
+                                    letterSpacing: 0.5,
+                                  ),
                                 ),
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: isDark ? Colors.white : Colors.black87,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-          const SizedBox(height: 16),
-
-          // Vehicle Options List
-          (widget.calculatedFares == null && !widget.isLoadingFares)
-              ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(20),
-                    child: Text(
-                      "Could not calculate fares.",
-                      style: TextStyle(color: Colors.red),
-                    ),
-                  ),
-                )
-              : _filteredVehicleOptions.isEmpty
-              ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(20),
-                    child: Text(
-                      "No vehicles available.",
-                      style: TextStyle(fontSize: 16),
-                    ),
-                  ),
-                )
-              : ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  itemCount: _filteredVehicleOptions.length,
-                  itemBuilder: (context, index) {
-                      final vehicle = _filteredVehicleOptions[index];
-                      final isSelected = _selectedVehicleType == vehicle.type;
-
-                      // **MODIFIED:** Add convenience fee to calculated price
-                      final num? basePrice =
-                          widget.calculatedFares?[vehicle.type];
-                      final num? calculatedPrice = (basePrice != null)
-                          ? basePrice + _convenienceFee
-                          : null;
-
-                      // Only hide if NOT loading AND price is invalid
-                      if (!widget.isLoadingFares &&
-                          (calculatedPrice == null || calculatedPrice <= 0)) {
-                        return const SizedBox.shrink();
-                      }
-
-                      final String displayPrice = calculatedPrice != null
-                          ? "₹${calculatedPrice.toStringAsFixed(0)}"
-                          : "";
-
-                      return GestureDetector(
-                        onTap: () => setState(() {
-                          _selectedVehicleType = vehicle.type;
-                          _selectedVehicle = vehicle;
-                        }),
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(vertical: 4.0),
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 6.0,
-                            horizontal: 8.0,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? (isDark
-                                      ? Colors.blue.withValues(alpha: 0.2)
-                                      : Colors.blue.shade50)
-                                : (isDark ? Colors.grey[800] : Colors.grey[50]),
-                            borderRadius: BorderRadius.circular(8.0),
-                            border: Border.all(
-                              color: isSelected
-                                  ? AppColors.primary
-                                  : (isDark
-                                        ? Colors.grey[700]!
-                                        : Colors.grey.shade300),
-                              width: isSelected ? 1.5 : 1.0,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Image.asset(
-                                vehicle.imagePath,
-                                width: 45,
-                                height: 45,
-                                errorBuilder: (c, o, s) => const Icon(
-                                  Icons.error_outline,
-                                  size: 30,
-                                  color: Colors.redAccent,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisAlignment: MainAxisAlignment.center,
+                                const SizedBox(height: 4),
+                                Row(
                                   children: [
-                                    Row(
-                                      children: [
-                                        Text(
-                                          vehicle.type,
-                                          style: TextStyle(
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.bold,
-                                            color: isDark
-                                                ? Colors.white
-                                                : Colors.black87,
-                                          ),
-                                        ),
-                                        if (_getPassengerCount(vehicle.type) !=
-                                            null) ...[
-                                          const SizedBox(width: 8),
-                                          Icon(
-                                            Icons.person,
-                                            size: 16,
-                                            color: isDark
-                                                ? Colors.white70
-                                                : Colors.black54,
-                                          ),
-                                          const SizedBox(width: 2),
-                                          Text(
-                                            "${_getPassengerCount(vehicle.type)} Max",
-                                            style: TextStyle(
-                                              fontSize: 13,
-                                              color: isDark
-                                                  ? Colors.white70
-                                                  : Colors.black54,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ],
-                                      ],
+                                    Icon(
+                                      Icons.directions_car_filled,
+                                      size: 20,
+                                      color: AppColors.primary,
                                     ),
+                                    const SizedBox(width: 6),
                                     Text(
-                                      "Driver ETA: ${vehicle.eta}",
+                                      "${(widget.routeDetails!.distanceMeters / 1000).toStringAsFixed(1)} km",
                                       style: TextStyle(
-                                        color: isDark
-                                            ? Colors.grey[400]
-                                            : Colors.grey[700],
-                                        fontSize: 13,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark ? Colors.white : Colors.black87,
                                       ),
                                     ),
                                   ],
                                 ),
-                              ),
-                              // **MODIFIED:** Show Equalizer or Price
-                              widget.isLoadingFares
-                                  ? EqualizerLoading(isDark: isDark)
-                                  : Text(
-                                      displayPrice,
+                              ],
+                            ),
+                          ),
+                          // Divider
+                          Container(
+                            height: 30,
+                            width: 1,
+                            color: isDark ? Colors.grey[600] : Colors.grey[300],
+                          ),
+                          const SizedBox(width: 16),
+                          // Time to Travel
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "timeToTravel".tr,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark
+                                        ? Colors.grey[400]
+                                        : Colors.grey[600],
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.access_time_filled,
+                                      size: 20,
+                                      color: AppColors.primary,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      _formatDuration(
+                                        widget.routeDetails!.durationSeconds,
+                                      ),
                                       style: TextStyle(
                                         fontSize: 16,
                                         fontWeight: FontWeight.bold,
-                                        color: isDark
-                                            ? Colors.white
-                                            : Colors.black87,
+                                        color: isDark ? Colors.white : Colors.black87,
                                       ),
                                     ),
-                              IconButton(
-                                icon: Icon(
-                                  Icons.info_outline,
-                                  color: AppColors.primary,
+                                  ],
                                 ),
-                                tooltip: "View fare details",
-                                padding: const EdgeInsets.all(4.0),
-                                constraints: const BoxConstraints(),
-                                onPressed: () {
-                                  _showVehicleInfoSheet(
-                                    context,
-                                    vehicle,
-                                    calculatedPrice,
-                                  );
-                                },
-                              ),
-                            ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                const SizedBox(height: 16),
+
+                // Vehicle Options List
+                (widget.calculatedFares == null && !widget.isLoadingFares)
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Text(
+                            "couldNotCalculateFares".tr,
+                            style: const TextStyle(color: Colors.red),
                           ),
                         ),
-                      );
-                    },
-                  ),
-          const SizedBox(height: 10),
+                      )
+                    : _filteredVehicleOptions.isEmpty
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Text(
+                            "noVehiclesAvailable".tr,
+                            style: const TextStyle(fontSize: 16),
+                          ),
+                        ),
+                      )
+                    : ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        itemCount: _filteredVehicleOptions.length,
+                        itemBuilder: (context, index) {
+                            final vehicle = _filteredVehicleOptions[index];
+                            final isSelected = _selectedVehicleType == vehicle.type;
 
-          // **NEW:** Schedule Button
-          Container(
-            key: _scheduleButtonKey,
-            child: OutlinedButton.icon(
-              onPressed: _pickSchedule,
-              icon: Icon(
-                Icons.calendar_today_outlined,
-                size: 20,
-                color: isDark ? Colors.white70 : Colors.black87,
-              ),
-              label: Text(
-                _scheduledTime == null
-                    ? "Ride Later"
-                    : "Scheduled for ${DateFormat('dd MMM, hh:mm a').format(_scheduledTime!)}",
-                style: TextStyle(
-                  fontWeight: _scheduledTime == null
-                      ? FontWeight.normal
-                      : FontWeight.bold,
-                  color: _scheduledTime == null
-                      ? (isDark ? Colors.white70 : Colors.black87)
-                      : AppColors.primary,
-                ),
-              ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: isDark ? Colors.white : Colors.black87,
-                side: BorderSide(
-                  color: _scheduledTime == null
-                      ? (isDark ? Colors.grey[600]! : Colors.grey[400]!)
-                      : AppColors.primary,
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
+                            // **MODIFIED:** Add convenience fee to calculated price
+                            final num? basePrice =
+                                widget.calculatedFares?[vehicle.type];
+                            final num? calculatedPrice = (basePrice != null)
+                                ? basePrice + _convenienceFee
+                                : null;
+
+                            // Only hide if NOT loading AND price is invalid
+                            if (!widget.isLoadingFares &&
+                                (calculatedPrice == null || calculatedPrice <= 0)) {
+                              return const SizedBox.shrink();
+                            }
+
+                            final String displayPrice = calculatedPrice != null
+                                ? "₹${calculatedPrice.toStringAsFixed(0)}"
+                                : "";
+
+                            return GestureDetector(
+                              onTap: () => setState(() {
+                                _selectedVehicleType = vehicle.type;
+                                _selectedVehicle = vehicle;
+                              }),
+                              child: Container(
+                                margin: const EdgeInsets.symmetric(vertical: 2.0),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 4.0,
+                                  horizontal: 8.0,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? (isDark
+                                            ? Colors.blue.withValues(alpha: 0.2)
+                                            : Colors.blue.shade50)
+                                      : (isDark ? Colors.grey[800] : Colors.grey[50]),
+                                  borderRadius: BorderRadius.circular(8.0),
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? AppColors.primary
+                                        : (isDark
+                                              ? Colors.grey[700]!
+                                              : Colors.grey.shade300),
+                                    width: isSelected ? 1.5 : 1.0,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Image.asset(
+                                      vehicle.imagePath,
+                                      width: 45,
+                                      height: 35,
+                                      errorBuilder: (c, o, s) => const Icon(
+                                        Icons.error_outline,
+                                        size: 30,
+                                        color: Colors.redAccent,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Flexible(
+                                                child: Text(
+                                                  vehicle.type,
+                                                  style: TextStyle(
+                                                    fontSize: 15,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: isDark
+                                                        ? Colors.white
+                                                        : Colors.black87,
+                                                  ),
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              if (_getPassengerCount(vehicle.type) !=
+                                                  null) ...[
+                                                const SizedBox(width: 8),
+                                                Icon(
+                                                  Icons.person,
+                                                  size: 16,
+                                                  color: isDark
+                                                      ? Colors.white70
+                                                      : Colors.black54,
+                                                ),
+                                                const SizedBox(width: 2),
+                                                Text(
+                                                  "${_getPassengerCount(vehicle.type)} ${'max'.tr}",
+                                                  style: TextStyle(
+                                                    fontSize: 13,
+                                                    color: isDark
+                                                        ? Colors.white70
+                                                        : Colors.black54,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                          Text(
+                                            "${'driverEta'.tr}: ${vehicle.eta}",
+                                            style: TextStyle(
+                                              color: isDark
+                                                  ? Colors.grey[400]
+                                                  : Colors.grey[700],
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    // **MODIFIED:** Show Equalizer or Price
+                                    widget.isLoadingFares
+                                        ? EqualizerLoading(isDark: isDark)
+                                        : Text(
+                                            displayPrice,
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                              color: isDark
+                                                  ? Colors.white
+                                                  : Colors.black87,
+                                            ),
+                                          ),
+                                    IconButton(
+                                      icon: Icon(
+                                        Icons.info_outline,
+                                        color: AppColors.primary,
+                                      ),
+                                      tooltip: "viewFareDetails".tr,
+                                      padding: const EdgeInsets.all(4.0),
+                                      constraints: const BoxConstraints(),
+                                      onPressed: () {
+                                        _showVehicleInfoSheet(
+                                          context,
+                                          vehicle,
+                                          calculatedPrice,
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+              ],
             ),
           ),
-          const SizedBox(height: 6),
 
-          // Confirmation Button
-          // Confirmation Button
-          ProButton(
-            text: widget.isLoadingFares
-                ? "Calculating Fares..."
-                : !widget.isDropoffInServiceArea
-                ? 'Drop-off outside service area'
-                : _filteredVehicleOptions.isEmpty
-                ? "No Vehicles Available"
-                : 'Confirm ${_selectedVehicle?.type ?? 'Ride'}',
-            isLoading: widget.isLoadingFares,
-            backgroundColor:
-                (_filteredVehicleOptions.isEmpty ||
-                    !widget.isDropoffInServiceArea)
-                ? (isDark ? Colors.grey[700] : Colors.grey)
-                : null, // Use default gradient
-            onPressed:
-                _filteredVehicleOptions.isEmpty ||
-                    widget.isDropoffInServiceArea == false ||
-                    _selectedVehicle == null ||
-                    widget.isLoadingFares
-                ? null
-                : () {
-                    // **NEW:** Check Wallet Balance
-                    if (widget.walletBalance < -50) {
-                      showDialog(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text("Low Wallet Balance"),
-                          content: const Text(
-                            "Your wallet balance is in negative. You cannot book a ride until you make it positive. Please recharge your wallet to book a ride.",
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Get.back(),
-                              child: const Text("Cancel"),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                Get.back(); // Close dialog
-                                Get.back(); // Close bottom sheet
-                                Get.to(
-                                  () => WalletScreen(user: widget.currentUser),
-                                );
-                              },
-                              child: const Text("Recharge"),
-                            ),
-                          ],
+          // Static Footer (Schedule & Confirm Buttons)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CustomShowcase(
+                  showcaseKey: widget.showcaseKey ?? GlobalKey(),
+                  title: "Ride Later",
+                  description: "Schedule your ride for a later time or date",
+                  isLastStep: true,
+                  child: SizedBox(
+                    key: _scheduleButtonKey,
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _pickSchedule,
+                      icon: Icon(
+                        Icons.calendar_today_outlined,
+                        size: 20,
+                        color: isDark ? Colors.white70 : Colors.black87,
+                      ),
+                      label: Text(
+                         _scheduledTime == null
+                             ? "rideLater".tr
+                             : "${'scheduledFor'.tr} ${DateFormat('dd MMM, hh:mm a').format(_scheduledTime!)}",
+                        style: TextStyle(
+                          fontWeight: _scheduledTime == null
+                              ? FontWeight.normal
+                              : FontWeight.bold,
+                          color: _scheduledTime == null
+                              ? (isDark ? Colors.white70 : Colors.black87)
+                              : AppColors.primary,
                         ),
-                      );
-                      return;
-                    }
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: isDark ? Colors.white : Colors.black87,
+                        side: BorderSide(
+                          color: _scheduledTime == null
+                              ? (isDark ? Colors.grey[600]! : Colors.grey[400]!)
+                              : AppColors.primary,
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
 
-                    Get.back(); // Close this sheet
-                    // **MODIFIED:** Add fee to selected fare
-                    final num baseFare =
-                        widget.calculatedFares![_selectedVehicle!.type]!;
-                    final num selectedFare = baseFare + _convenienceFee;
+                // Confirmation Button
+                ProButton(
+                  text: widget.isLoadingFares
+                      ? "calculatingFares".tr
+                      : !widget.isDropoffInServiceArea
+                      ? 'dropoffOutsideServiceArea'.tr
+                      : _filteredVehicleOptions.isEmpty
+                      ? "noVehiclesAvailableBtn".tr
+                      : '${'confirm'.tr} ${_selectedVehicle?.type ?? 'Ride'}',
+                  isLoading: widget.isLoadingFares,
+                  backgroundColor:
+                      (_filteredVehicleOptions.isEmpty ||
+                          !widget.isDropoffInServiceArea)
+                      ? (isDark ? Colors.grey[700] : Colors.grey)
+                      : null, // Use default gradient
+                  onPressed:
+                      _filteredVehicleOptions.isEmpty ||
+                          widget.isDropoffInServiceArea == false ||
+                          _selectedVehicle == null ||
+                          widget.isLoadingFares
+                      ? null
+                      : () {
+                          // **NEW:** Check Wallet Balance
+                          if (widget.walletBalance < -50) {
+                            showDialog(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: Text("lowWalletBalance".tr),
+                                content: Text(
+                                  "lowWalletBalanceDesc".tr,
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Get.back(),
+                                    child: Text("cancel".tr),
+                                  ),
+                                  TextButton(
+                                    onPressed: () {
+                                      Get.back(); // Close dialog
+                                      Get.back(); // Close bottom sheet
+                                      Get.to(
+                                        () => WalletScreen(user: widget.currentUser),
+                                      );
+                                    },
+                                    child: Text("recharge".tr),
+                                  ),
+                                ],
+                              ),
+                            );
+                            return;
+                          }
 
-                    _firestoreService.navigateToConfirmPickup(
-                      context,
-                      currentUser: widget.currentUser,
-                      currentPosition: widget.currentPosition,
-                      destinationPosition: widget.destinationPosition,
-                      selectedVehicle: _selectedVehicle!,
-                      polylines: widget.polylines,
-                      calculatedFare: selectedFare,
-                      routeDetails: widget.routeDetails,
-                      intermediateStops: widget.intermediateStops,
-                      walletBalance: widget.walletBalance,
-                      scheduledTime: _scheduledTime, // **NEW**
-                      convenienceFee: _convenienceFee, // **NEW**
-                      guestName: widget.guestName,
-                      guestPhone: widget.guestPhone,
-                    );
-                  },
+                          Get.back(); // Close this sheet
+                          // **MODIFIED:** Add fee to selected fare
+                          final num baseFare =
+                              widget.calculatedFares![_selectedVehicle!.type]!;
+                          final num selectedFare = baseFare + _convenienceFee;
+
+                          _firestoreService.navigateToConfirmPickup(
+                            context,
+                            currentUser: widget.currentUser,
+                            currentPosition: widget.currentPosition,
+                            destinationPosition: widget.destinationPosition,
+                            selectedVehicle: _selectedVehicle!,
+                            polylines: widget.polylines,
+                            calculatedFare: selectedFare,
+                            routeDetails: widget.routeDetails,
+                            intermediateStops: widget.intermediateStops,
+                            walletBalance: widget.walletBalance,
+                            scheduledTime: _scheduledTime, // **NEW**
+                            convenienceFee: _convenienceFee, // **NEW**
+                            guestName: widget.guestName,
+                            guestPhone: widget.guestPhone,
+                          );
+                        },
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
         ],
       ),
     );

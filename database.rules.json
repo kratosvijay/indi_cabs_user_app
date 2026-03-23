@@ -1,0 +1,20 @@
+{
+  "rules": {
+    "drivers": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "$uid === auth.uid",
+        "location": {
+          ".read": "auth != null",
+          ".write": "$uid === auth.uid"
+        }
+      }
+    },
+    "presence": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "$uid === auth.uid"
+      }
+    }
+  }
+}

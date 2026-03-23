@@ -273,8 +273,8 @@ export const calculateFares = onCall(async (
       } else {
         // First 12 km at normal price
         fare += 12 * pricing.perKilometer;
-        // Remaining km at reduced price (price - 3)
-        const reducedRate = Math.max(0, pricing.perKilometer - 3);
+        // Remaining km at reduced price (price - 2)
+        const reducedRate = Math.max(0, pricing.perKilometer - 2);
         fare += (distanceKm - 12) * reducedRate;
       }
 
@@ -671,15 +671,16 @@ export const createWalletOrder = onCall(async (
     try {
       // **FIXED:** max-len
       appId = cashfreeAppId.value() ||
-        "TEST110086217765073309e099f3b67b12680011";
+        "122159383830534a2818b3e83373951221";
       secretKey = cashfreeSecretKey.value() ||
-        "cfsk_ma_test_8f04dbd179deb4fe8e0bc0d6ee25592e_c16ea857";
+        "cfsk_ma_prod_dbc842b88cfc4660f817dc4186d5a380_c19d4e45";
     } catch {
-      appId = "TEST110086217765073309e099f3b67b12680011";
-      secretKey = "cfsk_ma_test_8f04dbd179deb4fe8e0bc0d6ee25592e_c16ea857";
+      appId = "122159383830534a2818b3e83373951221";
+      secretKey =
+        "cfsk_ma_prod_dbc842b88cfc4660f817dc4186d5a380_c19d4e45";
     }
 
-    const url = "https://sandbox.cashfree.com/pg/orders";
+    const url = "https://api.cashfree.com/pg/orders";
 
     const body = {
       order_amount: amountInRupees,
@@ -761,15 +762,15 @@ export const verifyWalletPayment = onCall(async (
   try {
     // **FIXED:** max-len
     appId = cashfreeAppId.value() ||
-      "TEST110086217765073309e099f3b67b12680011";
+      "122159383830534a2818b3e83373951221";
     secretKey = cashfreeSecretKey.value() ||
-      "cfsk_ma_test_8f04dbd179deb4fe8e0bc0d6ee25592e_c16ea857";
+      "cfsk_ma_prod_dbc842b88cfc4660f817dc4186d5a380_c19d4e45";
   } catch {
-    appId = "TEST110086217765073309e099f3b67b12680011";
-    secretKey = "cfsk_ma_test_8f04dbd179deb4fe8e0bc0d6ee25592e_c16ea857";
+    appId = "122159383830534a2818b3e83373951221";
+    secretKey = "cfsk_ma_prod_dbc842b88cfc4660f817dc4186d5a380_c19d4e45";
   }
 
-  const url = `https://sandbox.cashfree.com/pg/orders/${order_id}`;
+  const url = `https://api.cashfree.com/pg/orders/${order_id}`;
 
   try {
     const response = await fetch(url, {

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:project_taxi_with_ai/screens/policy_screen.dart';
 import 'package:project_taxi_with_ai/widgets/pro_library.dart';
+import 'package:get/get.dart';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
@@ -9,7 +11,7 @@ class AboutScreen extends StatelessWidget {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      appBar: const ProAppBar(titleText: "About Us"),
+      appBar: ProAppBar(titleText: "aboutUs".tr),
       body: FadeInSlide(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 30.0),
@@ -65,7 +67,7 @@ class AboutScreen extends StatelessWidget {
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        "Version 1.2.1",
+                        "${'version'.tr} 1.2.1",
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
@@ -108,7 +110,7 @@ class AboutScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      "About IndiCabs",
+                      "aboutIndiCabs".tr,
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -117,7 +119,7 @@ class AboutScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      "IndiCabs is a smart ride-hailing platform designed to make everyday travel simple, reliable, and affordable. Operated by Indiverse Enterprises Pvt Ltd, IndiCabs connects riders with verified drivers through a seamless and secure mobile experience.",
+                      "aboutIndiCabsDesc".tr,
                       style: TextStyle(
                         fontSize: 15,
                         color: isDark
@@ -128,7 +130,7 @@ class AboutScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      "Our mission is to transform local transportation by combining technology, safety, and convenience into one powerful platform.",
+                      "mission".tr,
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
@@ -145,7 +147,7 @@ class AboutScreen extends StatelessWidget {
 
               // What We Do
               Text(
-                "🚗 What We Do",
+                "🚗 ${'whatWeDo'.tr}",
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
@@ -155,19 +157,28 @@ class AboutScreen extends StatelessWidget {
               const SizedBox(height: 16),
               _buildSimpleListItem(
                 context,
-                "Book instant rides within the city",
+                "bookInstantRides".tr,
               ),
-              _buildSimpleListItem(context, "Track drivers in real time"),
-              _buildSimpleListItem(context, "Make secure in-app payments"),
-              _buildSimpleListItem(context, "Experience transparent pricing"),
+              _buildSimpleListItem(context, "trackDrivers".tr),
+              _buildSimpleListItem(context, "securePayments".tr),
+              _buildSimpleListItem(context, "transparentPricing".tr),
               _buildSimpleListItem(
                 context,
-                "Travel safely with verified drivers",
+                "travelSafely".tr,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                "pricingInInr".tr,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.blue.shade300 : Colors.blue.shade700,
+                ),
               ),
 
               const SizedBox(height: 24),
               Text(
-                "For Drivers:",
+                "${'forDrivers'.tr}:",
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
@@ -175,17 +186,17 @@ class AboutScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              _buildSimpleListItem(context, "Flexible earning opportunities"),
-              _buildSimpleListItem(context, "Smart ride matching"),
-              _buildSimpleListItem(context, "Real-time navigation"),
-              _buildSimpleListItem(context, "Transparent ride details"),
-              _buildSimpleListItem(context, "Secure digital settlements"),
+              _buildSimpleListItem(context, "flexibleEarning".tr),
+              _buildSimpleListItem(context, "smartMatching".tr),
+              _buildSimpleListItem(context, "realTimeNav".tr),
+              _buildSimpleListItem(context, "transparentDetails".tr),
+              _buildSimpleListItem(context, "secureSettlements".tr),
 
               const SizedBox(height: 40),
 
               // Safety & Trust
               Text(
-                "🔒 Safety & Trust",
+                "🔒 ${'safetyAndTrust'.tr}",
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
@@ -194,21 +205,21 @@ class AboutScreen extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               Text(
-                "We prioritize rider and driver safety through:",
+                "safetyDesc".tr,
                 style: TextStyle(
                   fontSize: 15,
                   color: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
                 ),
               ),
               const SizedBox(height: 12),
-              _buildSimpleListItem(context, "Real-time trip tracking"),
-              _buildSimpleListItem(context, "Verified driver onboarding"),
-              _buildSimpleListItem(context, "Secure payment processing"),
-              _buildSimpleListItem(context, "In-app support"),
-              _buildSimpleListItem(context, "Account verification mechanisms"),
+              _buildSimpleListItem(context, "realTimeTracking".tr),
+              _buildSimpleListItem(context, "verifiedOnboarding".tr),
+              _buildSimpleListItem(context, "securePayments".tr),
+              _buildSimpleListItem(context, "support".tr),
+              _buildSimpleListItem(context, "dataPrivacy".tr),
               const SizedBox(height: 12),
               Text(
-                "Your data privacy and ride security are at the core of our platform.",
+                "dataPrivacy".tr,
                 style: TextStyle(
                   fontSize: 15,
                   fontStyle: FontStyle.italic,
@@ -220,7 +231,7 @@ class AboutScreen extends StatelessWidget {
 
               // Smart Technology
               Text(
-                "📍 Smart Technology",
+                "📍 ${'smartTech'.tr}",
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
@@ -229,20 +240,20 @@ class AboutScreen extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               Text(
-                "IndiCabs uses advanced technology including:",
+                "smartTechDesc".tr,
                 style: TextStyle(
                   fontSize: 15,
                   color: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
                 ),
               ),
               const SizedBox(height: 12),
-              _buildSimpleListItem(context, "Real-time GPS tracking"),
-              _buildSimpleListItem(context, "Intelligent ride matching"),
-              _buildSimpleListItem(context, "Secure cloud infrastructure"),
-              _buildSimpleListItem(context, "Reliable payment integration"),
+              _buildSimpleListItem(context, "realTimeTracking".tr),
+              _buildSimpleListItem(context, "smartMatching".tr),
+              _buildSimpleListItem(context, "cloudInfra".tr),
+              _buildSimpleListItem(context, "securePayments".tr),
               const SizedBox(height: 12),
               Text(
-                "Our platform ensures smooth communication between riders and drivers while maintaining transparency in every ride.",
+                "transparency".tr,
                 style: TextStyle(
                   fontSize: 15,
                   color: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
@@ -275,7 +286,7 @@ class AboutScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      "💡 Our Vision",
+                      "💡 ${'vision'.tr}",
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -284,7 +295,7 @@ class AboutScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      "We aim to build a trusted transportation ecosystem that empowers drivers and delivers dependable mobility solutions to communities across India.",
+                      "visionDesc".tr,
                       style: TextStyle(
                         fontSize: 15,
                         color: isDark
@@ -295,7 +306,7 @@ class AboutScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      "IndiCabs is committed to innovation, customer satisfaction, and sustainable growth in urban mobility.",
+                      "commitment".tr,
                       style: TextStyle(
                         fontSize: 15,
                         color: isDark
@@ -330,7 +341,7 @@ class AboutScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      "Operated by: Indiverse Enterprises Pvt Ltd",
+                      "${'operatedBy'.tr}: Indiverse Enterprises Pvt Ltd",
                       style: TextStyle(
                         fontSize: 15,
                         color: isDark
@@ -340,7 +351,7 @@ class AboutScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      "Chennai, Tamil Nadu, India",
+                      "address".tr,
                       style: TextStyle(
                         fontSize: 15,
                         color: isDark
@@ -361,7 +372,7 @@ class AboutScreen extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        "For enquiries: support@indicabs.net",
+                        "${'contactUs'.tr}: support@indicabs.net",
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -371,9 +382,64 @@ class AboutScreen extends StatelessWidget {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 24),
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 0,
+                      runSpacing: 0,
+                      children: [
+                        TextButton(
+                          onPressed: () {
+                            Get.to(() => PolicyScreen(
+                                  title: "termsAndConditions".tr,
+                                  content:
+                                      "Welcome to IndiCabs. By using our services, you agree to comply with and be bound by the following terms and conditions of use, which together with our privacy policy govern IndiCabs's relationship with you in relation to this app and website. The term 'IndiCabs' or 'us' or 'we' refers to the owner of the website and app, Indiverse Enterprises Pvt Ltd, whose registered office is in Chennai, Tamil Nadu, India. The term 'you' refers to the user or viewer of our app.\n\n"
+                                      "1. Use of Service: You must be at least 18 years of age to use this service.\n"
+                                      "2. User Accounts: You are responsible for maintaining the confidentiality of your account and password.\n"
+                                      "3. Payments: All payments must be made through the app's integrated payment systems or in cash as specified.\n"
+                                      "4. Liability: IndiCabs is not liable for any direct, indirect, incidental, or consequential damages resulting from the use or inability to use the service.\n"
+                                      "5. Changes to Terms: We reserve the right to modify these terms at any time.",
+                                ));
+                          },
+                          child: Text("terms".tr),
+                        ),
+                        const Text(" • "),
+                        TextButton(
+                          onPressed: () {
+                            Get.to(() => PolicyScreen(
+                                  title: "refundsAndCancellations".tr,
+                                  content:
+                                      "At IndiCabs, we strive to ensure a smooth experience. Our refund and cancellation policy is as follows:\n\n"
+                                      "1. Cancellation by User: You may cancel your ride request at any time. However, a cancellation fee may be charged if the driver has already accepted and reached the pickup point or is nearby.\n"
+                                      "2. Cancellation by Driver: If a driver cancels the ride, no fee will be charged to the user, and we will attempt to find another driver immediately.\n"
+                                      "3. Refunds: Any excess amount charged or technical failure during digital payments will be refunded to the original payment source within 5-7 working days after verification.\n"
+                                      "4. Disputes: For any payment-related disputes, please contact us at support@indicabs.net with your ride ID.",
+                                ));
+                          },
+                          child: Text("refundPolicy".tr),
+                        ),
+                        const Text(" • "),
+                        TextButton(
+                          onPressed: () {
+                            Get.to(() => PolicyScreen(
+                                  title: "privacyPolicy".tr,
+                                  content:
+                                      "At IndiCabs, we take your privacy seriously. This policy explains how we collect and use your data:\n\n"
+                                      "1. Data Collection: We collect information you provide (name, email, phone) and location data to facilitate rides.\n"
+                                      "2. Data Usage: Your data is used to process bookings, ensure safety, and improve our services.\n"
+                                      "3. Data Sharing: We share necessary details with drivers to complete your ride. We do not sell your personal data to third parties.\n"
+                                      "4. Security: We implement industry-standard security measures to protect your information.\n"
+                                      "5. Your Rights: You can request access or deletion of your data through the app settings.",
+                                ));
+                          },
+                          child: Text("privacyPolicy".tr),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 40),
                     Text(
-                      "© ${DateTime.now().year} Indi Cabs. All rights reserved.",
+                      "© ${DateTime.now().year} Indi Cabs. ${'rightsReserved'.tr}",
                       style: TextStyle(
                         fontSize: 12,
                         color: isDark

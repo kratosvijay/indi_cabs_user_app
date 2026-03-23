@@ -32,8 +32,8 @@ class _SignInScreenState extends State<SignInScreen> {
     final phoneNumber = "+91${_phoneController.text.trim()}";
     if (!FormValidator.isValidPhoneNumber(_phoneController.text.trim())) {
       Get.snackbar(
-        "Error",
-        "Please enter a valid 10-digit phone number",
+        "error".tr,
+        "invalidPhone".tr,
         snackPosition: SnackPosition.TOP,
       );
       return;
@@ -50,7 +50,7 @@ class _SignInScreenState extends State<SignInScreen> {
       verificationFailed: (FirebaseAuthException e) {
         if (mounted) {
           Get.snackbar(
-            "Error",
+            "error".tr,
             e.message ?? "Failed to send OTP",
             snackPosition: SnackPosition.TOP,
           );
@@ -66,8 +66,8 @@ class _SignInScreenState extends State<SignInScreen> {
             _isLoading = false;
           });
           Get.snackbar(
-            "Success",
-            "OTP sent successfully!",
+            "success".tr,
+            "otpSentSuccess".tr,
             snackPosition: SnackPosition.TOP,
           );
         }
@@ -105,7 +105,7 @@ class _SignInScreenState extends State<SignInScreen> {
     } on FirebaseAuthException catch (e) {
       if (mounted) {
         Get.snackbar(
-          "Error",
+          "error".tr,
           e.message ?? "Invalid OTP or verification failed.",
           snackPosition: SnackPosition.TOP,
         );
@@ -113,7 +113,7 @@ class _SignInScreenState extends State<SignInScreen> {
     } catch (e) {
       if (mounted) {
         Get.snackbar(
-          "Error",
+          "error".tr,
           "An unexpected error occurred: $e",
           snackPosition: SnackPosition.TOP,
         );
@@ -131,7 +131,7 @@ class _SignInScreenState extends State<SignInScreen> {
 
     return Scaffold(
       appBar: ProAppBar(
-        titleText: 'Sign In',
+        titleText: 'signIn'.tr,
         leading: _otpSent
             ? IconButton(
                 icon: const Icon(Icons.arrow_back),
@@ -164,7 +164,7 @@ class _SignInScreenState extends State<SignInScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      _otpSent ? 'Verify OTP' : 'Welcome Back!',
+                      _otpSent ? 'verifyOtp'.tr : 'welcomeBack'.tr,
                       style: const TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.bold,
@@ -173,7 +173,7 @@ class _SignInScreenState extends State<SignInScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      _otpSent ? 'Enter the code sent to your phone' : 'Sign in to continue',
+                      _otpSent ? 'enterCode'.tr : 'signInToContinue'.tr,
                       style: TextStyle(
                         fontSize: 16,
                         color: Theme.of(
@@ -187,21 +187,21 @@ class _SignInScreenState extends State<SignInScreen> {
                     if (!_otpSent)
                       ProTextField(
                         controller: _phoneController,
-                        hintText: '10-digit mobile number',
+                        hintText: 'mobileHint'.tr,
                         icon: Icons.phone,
                         keyboardType: TextInputType.phone,
                       )
                     else
                       ProTextField(
                         controller: _otpController,
-                        hintText: 'Enter 6-digit code',
+                        hintText: 'otpHint'.tr,
                         icon: Icons.password,
                         keyboardType: TextInputType.number,
                       ),
                       
                     const SizedBox(height: 30),
                     ProButton(
-                      text: _otpSent ? "Verify & Sign In" : "Request OTP",
+                      text: _otpSent ? "verifyAndSignIn".tr : "requestOtp".tr,
                       isLoading: _isLoading || controller.isLoading.value,
                       onPressed: _isLoading
                           ? null
@@ -213,7 +213,7 @@ class _SignInScreenState extends State<SignInScreen> {
                       TextButton(
                         onPressed: _isLoading ? null : _sendOtp,
                         child: Text(
-                          'Resend OTP',
+                          'resendOtp'.tr,
                           style: TextStyle(
                             color: Theme.of(context).primaryColor,
                             fontSize: 16,
@@ -224,11 +224,12 @@ class _SignInScreenState extends State<SignInScreen> {
                     ],
 
                     const SizedBox(height: 20),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
-                          "Don't have an account?",
+                          "noAccount".tr,
                           style: TextStyle(
                             color: Theme.of(
                               context,
@@ -240,7 +241,7 @@ class _SignInScreenState extends State<SignInScreen> {
                             Get.to(() => const SignUpScreen());
                           },
                           child: Text(
-                            'Sign Up',
+                            'signUp'.tr,
                             style: TextStyle(
                               color: Theme.of(
                                 context,
@@ -255,20 +256,20 @@ class _SignInScreenState extends State<SignInScreen> {
                     if (!_otpSent) ...[
                       const SizedBox(height: 20),
                       // --- OR Divider ---
-                      const Row(
+                      Row(
                         children: [
-                          Expanded(child: Divider(thickness: 1)),
+                          const Expanded(child: Divider(thickness: 1)),
                           Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 8.0),
-                            child: Text('OR'),
+                            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                            child: Text('or'.tr),
                           ),
-                          Expanded(child: Divider(thickness: 1)),
+                          const Expanded(child: Divider(thickness: 1)),
                         ],
                       ),
                       const SizedBox(height: 20),
                       // --- Social Login Buttons ---
                       ProButton(
-                        text: 'Continue with Google',
+                        text: 'continueWithGoogle'.tr,
                         backgroundColor: Colors.white,
                         textColor: Colors.black87,
                         icon: Image.asset(
@@ -283,7 +284,7 @@ class _SignInScreenState extends State<SignInScreen> {
                       const SizedBox(height: 15),
                       // --- Apple Sign In ---
                       ProButton(
-                        text: 'Continue with Apple',
+                        text: 'continueWithApple'.tr,
                         backgroundColor: Colors.black,
                         textColor: Colors.white,
                         icon: Image.asset(

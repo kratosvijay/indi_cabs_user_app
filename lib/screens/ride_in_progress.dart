@@ -193,8 +193,8 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
       }
       if (mounted) {
         Get.snackbar(
-          "Driver Arrived",
-          "Your driver has reached the pickup location.",
+          "driverArrived".tr,
+          "driverArrivedDesc".tr,
           snackPosition: SnackPosition.TOP,
           backgroundColor: Colors.black.withValues(alpha: 0.6),
           colorText: Colors.white,
@@ -219,8 +219,8 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
       }
       if (mounted) {
         Get.snackbar(
-          "Ride Started",
-          "Enjoy your ride! Tracking destination...",
+          "rideStarted".tr,
+          "rideStartedDesc".tr,
           snackPosition: SnackPosition.TOP,
           backgroundColor: Colors.deepPurple,
           colorText: Colors.white,
@@ -240,12 +240,12 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
       }
     } else if (status == 'completed') {
       if (mounted) {
-        displaySnackBar(context, "Ride Completed!", isError: false);
+        displaySnackBar(context, "rideCompleted".tr, isError: false);
       }
       _navigateToHome(delaySeconds: 3);
     } else if (status == 'cancelled' || status == 'cancelled_by_driver') {
       if (mounted) {
-        displaySnackBar(context, "Ride has been cancelled.");
+        displaySnackBar(context, "rideCancelled".tr);
       }
       _navigateToHome();
     }
@@ -313,7 +313,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
           icon: BitmapDescriptor.defaultMarkerWithHue(
             BitmapDescriptor.hueGreen,
           ),
-          infoWindow: InfoWindow(title: "Pickup", snippet: _pickupAddress),
+          infoWindow: InfoWindow(title: "pickup".tr, snippet: _pickupAddress),
         ),
       );
 
@@ -324,7 +324,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
             position: _driver!.currentLocation,
             icon: _rideController.getVehicleIcon(_driver!.vehicleType),
             infoWindow: InfoWindow(
-              title: "Your Driver",
+              title: "yourDriver".tr,
               snippet: _driver!.carNumber,
             ),
             flat: true,
@@ -355,7 +355,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                   BitmapDescriptor.hueOrange,
                 ),
                 infoWindow: InfoWindow(
-                  title: "Stop $stopNumber",
+                  title: "${"stop".tr} $stopNumber",
                   snippet: stopData['address'],
                 ),
               ),
@@ -376,7 +376,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
               BitmapDescriptor.hueAzure,
             ),
             infoWindow: InfoWindow(
-              title: "Drop-off",
+              title: "dropOff".tr,
               snippet: _destinationAddress,
             ),
           ),
@@ -662,26 +662,26 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
       return;
     }
 
-    String content = 'Are you sure you want to cancel this ride request?';
+    String content = 'cancelConfirmation'.tr;
     if (_driverHasArrived) {
       content +=
-          '\n\nSince the driver has arrived, a cancellation fee of ₹30 will be deducted from your wallet.';
+          '\n\n${'cancellationFeeNotice'.tr}';
     }
 
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Cancel Ride?'),
+        title: Text('cancelRideTitle'.tr),
         content: Text(content),
         actions: [
           TextButton(
             onPressed: () => Get.back(result: false),
-            child: const Text('No'),
+            child: Text('no'.tr),
           ),
           TextButton(
             style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
             onPressed: () => Get.back(result: true),
-            child: const Text('Yes, Cancel'),
+            child: Text('yesCancel'.tr),
           ),
         ],
       ),
@@ -815,10 +815,10 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         displayOtp = _isRideStarted
             ? (_endRidePin ?? "----")
             : (_startRidePin ?? "----");
-        otpLabel = _isRideStarted ? "End Ride PIN" : "Start Ride PIN";
+        otpLabel = _isRideStarted ? "endRidePin".tr : "startRidePin".tr;
       } else {
         displayOtp = _dailySafetyPin ?? "----";
-        otpLabel = "SAFETY PIN";
+        otpLabel = "safetyPin".tr;
       }
 
       return Scaffold(
@@ -826,12 +826,12 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         appBar: ProAppBar(
           title: Text(
             _isEditingPickup
-                ? "Adjust Pickup Location"
+                ? "adjustPickup".tr
                 : (_driverHasArrived
                       ? (_isRideStarted
-                            ? "Ride In Progress"
-                            : "Driver has Arrived")
-                      : "Driver is on the way"),
+                            ? "rideInProgress".tr
+                            : "driverArrived".tr)
+                      : "driverOnWay".tr),
           ),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
@@ -841,8 +841,8 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                   status == 'started') {
                 if (mounted) {
                   Get.snackbar(
-                    "Ride Minimized",
-                    "Ride continues in background. Resume from Ride History.",
+                    "rideMinimized".tr,
+                    "rideMinimizedDesc".tr,
                     snackPosition: SnackPosition.TOP,
                     backgroundColor: Colors.blueGrey.shade800,
                     colorText: Colors.white,
@@ -1457,12 +1457,14 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text(
-                                    "Total Fare",
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: textColor,
+                                  Expanded(
+                                    child: Text(
+                                      "totalFare".tr,
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: textColor,
+                                      ),
                                     ),
                                   ),
                                   Text(
@@ -1489,13 +1491,15 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(
-                                  "Payment Method",
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight
-                                        .w500, // Slightly less bold than Total Fare
-                                    color: textColor,
+                                Expanded(
+                                  child: Text(
+                                    "paymentMethod".tr,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight
+                                          .w500, // Slightly less bold than Total Fare
+                                      color: textColor,
+                                    ),
                                   ),
                                 ),
                                 Container(
@@ -1534,7 +1538,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                               child: OutlinedButton.icon(
                                 onPressed: _handleAddStop,
                                 icon: const Icon(Icons.add_location_alt),
-                                label: const Text("Add Stop"),
+                                label: Text("addStop".tr),
                                 style: OutlinedButton.styleFrom(
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 12,
