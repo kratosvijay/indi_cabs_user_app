@@ -32,6 +32,15 @@
 				<string>com.googleusercontent.apps.854114457795-s41e2lrlma7t19lbkocuv5dhadmf6gcp</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>geo</string>
+				<string>maps</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
@@ -43,6 +52,9 @@
 		<string>tel</string>
 		<string>http</string>
 		<string>https</string>
+		<string>googlemaps</string>
+		<string>comgooglemaps</string>
+		<string>maps</string>
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>

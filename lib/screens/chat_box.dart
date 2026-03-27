@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:project_taxi_with_ai/controllers/ride_controller.dart';
 
 import '../widgets/snackbar.dart';
 import 'package:project_taxi_with_ai/widgets/pro_library.dart';
@@ -21,13 +23,22 @@ class RideChatMessage {
   });
 
   factory RideChatMessage.fromFirestore(DocumentSnapshot doc) {
-    Map data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>? ?? {};
+    var ts = data['timestamp'];
+    Timestamp timestamp;
+    if (ts is Timestamp) {
+      timestamp = ts;
+    } else if (ts is String) {
+      timestamp = Timestamp.fromDate(DateTime.tryParse(ts) ?? DateTime.now());
+    } else {
+      timestamp = Timestamp.now();
+    }
     return RideChatMessage(
       id: doc.id,
-      text: data['text'] ?? '',
-      senderId: data['senderId'] ?? '',
-      timestamp: data['timestamp'] ?? Timestamp.now(),
-      isRead: data['isRead'] ?? false,
+      text: data['text']?.toString() ?? '',
+      senderId: data['senderId']?.toString() ?? '',
+      timestamp: timestamp,
+      isRead: data['isRead'] == true,
     );
   }
 }
@@ -60,8 +71,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // List of predefined messages
   final List<String> _predefinedMessages = [
-    "I'm on my way",
-    "I've arrived",
+    "Are you coming?",
     "I'm at the pickup location",
     "I'll be there in 5 minutes",
     "Where are you?",
@@ -153,8 +163,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
                 // Identify unread messages from the recipient
                 final unreadDocs = snapshot.data!.docs.where((doc) {
-                  return doc['senderId'] == widget.recipientId &&
-                      doc['isRead'] == false;
+                  final data = doc.data() as Map<String, dynamic>? ?? {};
+                  return data['senderId'] == widget.recipientId &&
+                      data['isRead'] != true;
                 }).toList();
 
                 if (unreadDocs.isNotEmpty) {
@@ -198,31 +209,43 @@ class _ChatScreenState extends State<ChatScreen> {
         spacing: 8.0,
         runSpacing: 8.0,
         alignment: WrapAlignment.start,
-        children: _predefinedMessages.map((text) {
-          return ActionChip(
-            label: Text(
-              text,
-              style: TextStyle(
-                color: isDark ? Colors.white : Colors.black87,
-                fontSize: 12,
-              ),
-            ),
+        children: [
+          ActionChip(
+            avatar: const Icon(Icons.location_on, size: 14, color: Colors.white),
+            label: const Text("Pin my location", style: TextStyle(color: Colors.white, fontSize: 12)),
             onPressed: () {
-              _sendMessage(text); // Send the predefined message
-              setState(
-                () => _showPredefinedMessages = false,
-              ); // Collapse after sending
+              final pos = RideController.instance.currentPosition.value;
+              if (pos != null) {
+                _sendMessage("📍 My Location:\nhttps://www.google.com/maps/search/?api=1&query=${pos.latitude},${pos.longitude}");
+              } else {
+                if (mounted) displaySnackBar(context, "Location not available yet.");
+              }
             },
-            backgroundColor: isDark ? Colors.grey[800] : Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18.0),
-              side: BorderSide(
-                color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
-              ),
-            ),
+            backgroundColor: Colors.redAccent,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18.0), side: const BorderSide(color: Colors.transparent)),
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-          );
-        }).toList(),
+          ),
+          ..._predefinedMessages.map((text) {
+            return ActionChip(
+              label: Text(
+                text,
+                style: TextStyle(
+                  color: isDark ? Colors.white : Colors.black87,
+                  fontSize: 12,
+                ),
+              ),
+              onPressed: () => _sendMessage(text), // Don't collapse
+              backgroundColor: isDark ? Colors.grey[800] : Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18.0),
+                side: BorderSide(
+                  color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+                ),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            );
+          }),
+        ],
       ),
     );
   }
@@ -323,19 +346,35 @@ class _ChatBubble extends StatelessWidget {
     return Column(
       crossAxisAlignment: alignment,
       children: [
-        Container(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.75,
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 10.0),
-          margin: const EdgeInsets.symmetric(vertical: 4.0),
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(16.0),
-          ),
-          child: Text(
-            message.text,
-            style: TextStyle(color: textColor, fontSize: 16),
+        InkWell(
+          onTap: () async {
+            final urlMatch = RegExp(r"(https?://[^\s]+)").firstMatch(message.text);
+            if (urlMatch != null) {
+              final uri = Uri.parse(urlMatch.group(0)!);
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
+            }
+          },
+          borderRadius: BorderRadius.circular(16.0),
+          child: Container(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.75,
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 10.0),
+            margin: const EdgeInsets.symmetric(vertical: 4.0),
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(16.0),
+            ),
+            child: Text(
+              message.text,
+              style: TextStyle(
+                color: textColor, 
+                fontSize: 16,
+                decoration: message.text.contains("http") ? TextDecoration.underline : null,
+              ),
+            ),
           ),
         ),
         // **NEW:** Read receipt logic (Double Tick)

@@ -240,7 +240,8 @@ export const calculateFares = onCall(async (
     let geofenceSurcharge = 0.0;
     const zonesSnapshot = await db.collection("geofenced_zones").get();
 
-    // Check all route points against all zones. Apply the max surcharge.
+    // Check all route points against all zones.
+    // Apply the sum of all intersected surcharges.
     for (const doc of zonesSnapshot.docs) {
       const zone = doc.data() as GeofencedZone;
       if (zone.surcharge_amount && zone.surcharge_amount > 0 && zone.boundary) {
@@ -253,12 +254,11 @@ export const calculateFares = onCall(async (
         }
 
         if (intersectsZone) {
-          if (zone.surcharge_amount > geofenceSurcharge) {
-            geofenceSurcharge = zone.surcharge_amount;
-          }
+          geofenceSurcharge += zone.surcharge_amount;
           logger.info(
             `Found intersecting zone ${doc.id}, ` +
-            `current max surcharge is ${geofenceSurcharge}`
+            `added surcharge ${zone.surcharge_amount}. ` +
+            `Total is ${geofenceSurcharge}`
           );
         }
       }
@@ -1072,7 +1072,10 @@ export const bridgeCall = onCall(async (
     const subdomain = exotelSubdomain.value() || "api";
     const virtualNumber = exotelVirtualNumber.value();
 
-    const url = `https://${subdomain}.exotel.com/v1/Accounts/${accountSid}/Calls/connect.json`;
+    const domain = subdomain.includes(".exotel.com") ?
+      subdomain :
+      `${subdomain}.exotel.com`;
+    const url = `https://${domain}/v1/Accounts/${accountSid}/Calls/connect.json`;
 
     // Form Data
     const formData = new URLSearchParams();

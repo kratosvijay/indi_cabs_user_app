@@ -154,6 +154,15 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
   bool _hasMovedPin = false;
   late final String _apiKey;
 
+  double _getAdaptiveFontSize(double baseSize) {
+    if (Get.locale?.languageCode != 'en') {
+      return baseSize * 0.85; // Reduce by 15% for non-English
+    }
+    return baseSize;
+  }
+
+  // --- Confirm Ride Handler ---
+
   late num _currentCalculatedFare;
   late TextEditingController _addressSheetController;
   RouteDetails? _currentRouteDetails;
@@ -601,9 +610,13 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
   }
 
   /// Creates the ride/rental request in Firestore
-  Future<void> _confirmRide() async {
+  Future<void> _confirmRide({StateSetter? setSheetState}) async {
     if (_isBooking) return;
-    setState(() => _isBooking = true);
+    if (setSheetState != null) {
+      setSheetState(() => _isBooking = true);
+    } else {
+      setState(() => _isBooking = true);
+    }
 
     final String finalPickupAddress =
         _addressSheetController.text.trim().isNotEmpty
@@ -620,7 +633,11 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
       if (user == null) {
         if (mounted) {
           displaySnackBar(context, "User not logged in. Please log in again.");
-          setState(() => _isBooking = false);
+          if (setSheetState != null) {
+            setSheetState(() => _isBooking = false);
+          } else {
+            setState(() => _isBooking = false);
+          }
         }
         return;
       }
@@ -743,7 +760,11 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
       }
     } finally {
       if (mounted) {
-        setState(() => _isBooking = false);
+        if (setSheetState != null) {
+          setSheetState(() => _isBooking = false);
+        } else {
+          setState(() => _isBooking = false);
+        }
       }
     }
   }
@@ -826,7 +847,7 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                                         ? 'confirmMultiStop'.tr
                                         : 'confirmRide'.tr),
                               style: TextStyle(
-                                fontSize: 18,
+                                fontSize: _getAdaptiveFontSize(18),
                                 fontWeight: FontWeight.bold,
                                 color: textColor,
                               ),
@@ -857,7 +878,10 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                               ? "${widget.rentalVehicleType} • ${widget.rentalPackage!.displayName}"
                               : (widget.selectedVehicle?.type ??
                                     "Multi-Stop Ride"),
-                          style: TextStyle(fontSize: 15, color: subTextColor),
+                          style: TextStyle(
+                            fontSize: _getAdaptiveFontSize(15),
+                            color: subTextColor,
+                          ),
                         ),
                       // **NEW:** Show convenience fee if applied
                       if (_currentConvenienceFee > 0)
@@ -866,7 +890,7 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                           child: Text(
                             "+ ₹${_currentConvenienceFee.toStringAsFixed(0)} ${'convenienceFee'.tr}",
                             style: TextStyle(
-                              fontSize: 12,
+                              fontSize: _getAdaptiveFontSize(12),
                               color: AppColors.primary,
                             ),
                           ),
@@ -878,7 +902,10 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                       const SizedBox(height: 16),
                       Text(
                         '${'addATip'.tr}: ₹${_tipValue.round()}',
-                        style: TextStyle(fontSize: 16, color: textColor),
+                        style: TextStyle(
+                          fontSize: _getAdaptiveFontSize(16),
+                          color: textColor,
+                        ),
                       ),
                       Slider(
                         value: _tipValue,
@@ -905,11 +932,17 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                           contentPadding: EdgeInsets.zero,
                           title: Text(
                             "useWalletBalance".tr,
-                            style: TextStyle(fontSize: 16, color: textColor),
+                            style: TextStyle(
+                              fontSize: _getAdaptiveFontSize(16),
+                              color: textColor,
+                            ),
                           ),
                           subtitle: Text(
                             "${"available".tr}: ₹${widget.walletBalance!.toStringAsFixed(0)}",
-                            style: TextStyle(fontSize: 12, color: subTextColor),
+                            style: TextStyle(
+                              fontSize: _getAdaptiveFontSize(12),
+                              color: subTextColor,
+                            ),
                           ),
                           value: _useWalletBalance,
                           activeThumbColor: AppColors.primary,
@@ -977,10 +1010,11 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                             ? "${'bookNow'.tr} (${'cash'.tr}: ₹${max(0, (totalFare - (widget.walletBalance ?? 0))).toStringAsFixed(0)})"
                             : "${'bookNow'.tr} (${'total'.tr}: ₹${totalFare.toStringAsFixed(0)})",
                         isLoading: _isBooking || isRefreshing,
+                        fontSize: _getAdaptiveFontSize(18),
                         // backgroundColor: Colors.blueAccent, // Use default gradient
                         onPressed: (_isBooking || isRefreshing)
                             ? null
-                            : _confirmRide,
+                            : () => _confirmRide(setSheetState: setSheetState),
                       ),
                       const SizedBox(height: 20),
                     ],
@@ -1149,7 +1183,7 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                             child: Text(
                               "selectPickupPoint".tr,
                               style: TextStyle(
-                                fontSize: 18,
+                                fontSize: _getAdaptiveFontSize(18),
                                 fontWeight: FontWeight.bold,
                                 color: Theme.of(
                                   context,

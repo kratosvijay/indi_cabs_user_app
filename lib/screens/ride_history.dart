@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,7 +8,6 @@ import 'package:project_taxi_with_ai/screens/ride_detail.dart';
 import 'package:project_taxi_with_ai/screens/ride_in_progress.dart';
 import 'package:project_taxi_with_ai/widgets/data_models.dart';
 import 'package:project_taxi_with_ai/widgets/pro_library.dart';
-import '../widgets/snackbar.dart';
 
 class RideHistoryScreen extends StatefulWidget {
   final User user;
@@ -29,104 +29,74 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
 
   /// Fetches the user's ride history from Firestore as a Stream.
   Stream<List<Ride>> _fetchRideHistoryStream() {
-    try {
-      Stream<QuerySnapshot> dailyRides = FirebaseFirestore.instance
-          .collection('ride_requests')
-          .where('userId', isEqualTo: widget.user.uid)
-          // Only show completed or cancelled rides in history
-          .where(
-            'status',
-            whereIn: [
-              'accepted',
-              'arrived',
-              'started',
-              'completed',
-              'cancelled',
-              'cancelled_by_driver',
-              'cancelled_by_user',
-            ],
-          )
-          .orderBy('createdAt', descending: true)
-          .limit(25)
-          .snapshots();
+    final controller = StreamController<List<Ride>>();
+    final List<String> statusFilter = [
+      'searching',
+      'scheduled',
+      'accepted',
+      'arrived',
+      'started',
+      'completed',
+      'cancelled',
+      'cancelled_by_driver',
+      'cancelled_by_user',
+    ];
 
-      Stream<QuerySnapshot> rentalRides = FirebaseFirestore.instance
-          .collection('rental_requests')
-          .where('userId', isEqualTo: widget.user.uid)
-          .where(
-            'status',
-            whereIn: [
-              'accepted',
-              'arrived',
-              'started',
-              'completed',
-              'cancelled',
-              'cancelled_by_driver',
-              'cancelled_by_user',
-            ],
-          )
-          .orderBy('createdAt', descending: true)
-          .limit(25)
-          .snapshots();
+    List<Ride> dailyRides = [];
+    List<Ride> rentalRides = [];
 
-      // Combine the two streams
-      // This is a simple (but not perfectly real-time) way to merge
-      // A better way uses the rxdart package's CombineLatestStream.
-      return Stream<List<QuerySnapshot>>.periodic(
-            const Duration(seconds: 2),
-            (i) => [],
-          )
-          .asyncMap((_) async {
-            // Fetch the latest data from both streams
-            final dailySnapshot = await dailyRides.first;
-            final rentalSnapshot = await rentalRides.first;
-            return [dailySnapshot, rentalSnapshot];
-          })
-          .map((snapshots) {
-            final dailyDocs = snapshots[0].docs;
-            final rentalDocs = snapshots[1].docs;
-
-            final allDocs = [...dailyDocs, ...rentalDocs];
-
-            // **FIXED:** Sort the combined list in Dart
-            allDocs.sort((a, b) {
-              Timestamp? aTimestamp =
-                  (a.data() as Map<String, dynamic>)['createdAt'];
-              Timestamp? bTimestamp =
-                  (b.data() as Map<String, dynamic>)['createdAt'];
-              return (bTimestamp ?? Timestamp.now()).compareTo(
-                aTimestamp ?? Timestamp.now(),
-              );
-            });
-
-            return allDocs
-                .map((doc) {
-                  try {
-                    return Ride.fromFirestore(doc);
-                  } catch (e) {
-                    debugPrint(
-                      "Error parsing ride document: ${doc.id}, Error: $e",
-                    );
-                    return null;
-                  }
-                })
-                .whereType<Ride>()
-                .toList();
-          })
-          .handleError((error) {
-            debugPrint("Error fetching ride history stream: $error");
-            if (mounted) {
-              displaySnackBar(context, '${'errorLoadingHistory'.tr}: $error');
-            }
-            return <Ride>[]; // Return empty list on error
-          });
-    } catch (e) {
-      debugPrint("Error setting up ride history stream: $e");
-      if (mounted) {
-        displaySnackBar(context, '${'errorLoadingHistory'.tr}: $e');
-      }
-      return Stream.value([]); // Return an empty stream on initial error
+    void emitMerged() {
+      if (controller.isClosed) return;
+      final combined = [...dailyRides, ...rentalRides];
+      combined.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      controller.add(combined);
     }
+
+    final dailySub = FirebaseFirestore.instance
+        .collection('ride_requests')
+        .where('userId', isEqualTo: widget.user.uid)
+        .where('status', whereIn: statusFilter)
+        .orderBy('createdAt', descending: true)
+        .limit(30)
+        .snapshots()
+        .listen((snapshot) {
+      dailyRides = snapshot.docs.map((doc) {
+        try {
+          return Ride.fromFirestore(doc);
+        } catch (e) {
+          debugPrint("Error parsing daily ride ${doc.id}: $e");
+          return null;
+        }
+      }).whereType<Ride>().toList();
+      emitMerged();
+    }, onError: (error) => debugPrint("Daily rides error: $error"));
+
+    final rentalSub = FirebaseFirestore.instance
+        .collection('rental_requests')
+        .where('userId', isEqualTo: widget.user.uid)
+        .where('status', whereIn: statusFilter)
+        .orderBy('createdAt', descending: true)
+        .limit(30)
+        .snapshots()
+        .listen((snapshot) {
+      rentalRides = snapshot.docs.map((doc) {
+        try {
+          return Ride.fromFirestore(doc);
+        } catch (e) {
+          debugPrint("Error parsing rental ride ${doc.id}: $e");
+          return null;
+        }
+      }).whereType<Ride>().toList();
+      emitMerged();
+    }, onError: (error) => debugPrint("Rental rides error: $error"));
+
+    controller.onCancel = () {
+      dailySub.cancel();
+      rentalSub.cancel();
+      controller.close();
+    };
+
+    return controller.stream;
   }
 
   @override

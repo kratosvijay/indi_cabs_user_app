@@ -125,7 +125,12 @@ class _RideConfirmationBottomSheetState
       if (widget.rideType == RideType.acting) {
         return option.type == 'ActingDriver' && isAvailable;
       }
-      
+
+      // **NEW:** Exclude Auto from MultiStop rides
+      if (widget.rideType == RideType.multiStop && option.type == 'Auto') {
+        return false;
+      }
+
       // For Daily and MultiStop, show all *except* ActingDriver
       return option.type != 'ActingDriver' && isAvailable;
     }).toList();

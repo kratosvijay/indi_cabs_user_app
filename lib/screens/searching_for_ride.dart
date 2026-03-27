@@ -89,6 +89,8 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
   Timer? _tipTimer;
   String? _resolvedRideRequestId; // To store the ID once resolved
   bool _isCancelling = false; // **NEW**
+  bool _canCancel = false; // **NEW:** Tap guard for accidental cancellation
+  Timer? _cancelTapGuardTimer; // **NEW:** Timer for tap guard
   bool _isDriverFound =
       false; // Track if driver is found for immediate UI feedback
 
@@ -146,6 +148,12 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
   @override
   void initState() {
     super.initState();
+
+    // **NEW:** Accidental Cancellation Guard (1 second)
+    _cancelTapGuardTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted) setState(() => _canCancel = true);
+    });
+
     // Initialize services (Assuming API Key is handled inside LocationService or passed globally)
     // For now we just instantiate it, the key is mainly for geocoding
     _locationService = LocationService(apiKey: "");
@@ -606,6 +614,7 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
     _rideStatusSubscription?.cancel();
     _locationSubscription?.cancel(); // **NEW:** Cancel location stream
     _tipTimer?.cancel();
+    _cancelTapGuardTimer?.cancel(); // **NEW**
     try {
       // map controller disposal logic if any
     } catch (e) {
@@ -774,9 +783,9 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
                       padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
                       child: ProButton(
                         text: "cancelRide".tr,
-                        onPressed: _isCancelling
+                        onPressed: (_isCancelling || !_canCancel)
                             ? null
-                            : _cancelRide, // Disable if cancelling
+                            : _cancelRide, // Disable if cancelling or guard active
                         isLoading: _isCancelling, // Show loading
                         backgroundColor: Colors.redAccent.shade400,
                         icon: const Icon(Icons.close, color: Colors.white),

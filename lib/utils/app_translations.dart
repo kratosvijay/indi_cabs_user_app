@@ -237,7 +237,14 @@ class AppTranslations extends Translations {
           'popularDestinations': 'Popular Destinations',
           'shoppingEntertainment': 'Shopping & Entertainment',
           'enterDropOff': 'Enter drop-off location',
-          'selectServiceType': 'Select service type below',
+          'selectDropOff': 'Select drop-off point',
+          'scheduleYourRide': 'Schedule Your Ride',
+          'selectPickupDateTime': 'Select a pickup date and time:',
+          'date': 'Date',
+          'time': 'Time',
+          'saveSchedule': 'Save Schedule',
+          'scheduledTimeMinimum':
+              'Scheduled time must be at least 30 minutes from now.',
         },
         'ta': {
           'language': 'மொழி',
@@ -475,6 +482,13 @@ class AppTranslations extends Translations {
           'enterDropOff': 'இறங்கும் இடத்தை உள்ளிடவும்',
           'selectServiceType': 'கீழே சேவை வகையைத் தேர்ந்தெடுக்கவும்',
           'enterPickupDrop': 'பிக்கப் மற்றும் டிராப் இடத்தைச் சேர்க்கவும்',
+          'scheduleYourRide': 'உங்கள் சவாரியைத் திட்டமிடுங்கள்',
+          'selectPickupDateTime': 'பிக்கப் தேதி மற்றும் நேரத்தைத் தேர்ந்தெடுக்கவும்:',
+          'date': 'தேதி',
+          'time': 'நேரம்',
+          'saveSchedule': 'திட்டத்தைச் சேமிக்கவும்',
+          'scheduledTimeMinimum':
+              'திட்டமிடப்பட்ட நேரம் இப்போது இருந்து குறைந்தது 30 நிமிடங்கள் இருக்க வேண்டும்.',
         },
         'hi': {
           'language': 'भाषा',
@@ -711,6 +725,13 @@ class AppTranslations extends Translations {
           'shoppingEntertainment': 'शॉपिंग और मनोरंजन',
           'enterDropOff': 'ड्रॉप-ऑफ स्थान दर्ज करें',
           'selectServiceType': 'नीचे सेवा प्रकार चुनें',
+          'scheduleYourRide': 'अपनी सवारी निर्धारित करें',
+          'selectPickupDateTime': 'पिकअप की तारीख और समय चुनें:',
+          'date': 'तारीख',
+          'time': 'समय',
+          'saveSchedule': 'शेड्यूल सहेजें',
+          'scheduledTimeMinimum':
+              'निर्धारित समय अब ​​से कम से कम 30 मिनट बाद का होना चाहिए।',
         },
         'te': {
           'language': 'భాష',
@@ -948,6 +969,13 @@ class AppTranslations extends Translations {
           'enterDropOff': 'డ్రాప్-ఆఫ్ స్థలాన్ని నమోదు చేయండి',
           'selectServiceType': 'క్రింద సేవా రకాన్ని ఎంచుకోండి',
           'enterPickupDrop': 'పికప్ మరియు డ్రాప్ స్థలాన్ని నమోదు చేయండి',
+          'scheduleYourRide': 'మీ రైడ్ షెడ్యూల్ చేయండి',
+          'selectPickupDateTime': 'పికప్ తేదీ మరియు సమయాన్ని ఎంచుకోండి:',
+          'date': 'తేదీ',
+          'time': 'సమయం',
+          'saveSchedule': 'షెడ్యూల్‌ను సేవ్ చేయండి',
+          'scheduledTimeMinimum':
+              'షెడ్యూల్ చేసిన సమయం ఇప్పటి నుండి కనీసం 30 నిమిషాలు ఉండాలి.',
         },
         'kn': {
           'language': 'ಭಾಷೆ',
@@ -1185,6 +1213,13 @@ class AppTranslations extends Translations {
           'enterDropOff': 'ಡ್ರಾಪ್-ಆಫ್ ಸ್ಥಳವನ್ನು ನಮೂದಿಸಿ',
           'selectServiceType': 'ಕೆಳಗೆ ಸೇವಾ ಪ್ರಕಾರವನ್ನು ಆರಿಸಿ',
           'enterPickupDrop': 'ಪಿಕ್ಅಪ್ ಮತ್ತು ಡ್ರಾಪ್ ಸ್ಥಳವನ್ನು ನಮೂದಿಸಿ',
+          'scheduleYourRide': 'ನಿಮ್ಮ ಸವಾರಿಯನ್ನು ನಿಗದಿಪಡಿಸಿ',
+          'selectPickupDateTime': 'ಪಿಕಪ್ ದಿನಾಂಕ ಮತ್ತು ಸಮಯವನ್ನು ಆರಿಸಿ:',
+          'date': 'ದಿನಾಂಕ',
+          'time': 'ಸಮಯ',
+          'saveSchedule': 'ಶೆಡ್ಯೂಲ್ ಉಳಿಸಿ',
+          'scheduledTimeMinimum':
+              'ನಿಗದಿತ ಸಮಯವು ಈಗಿನಿಂದ ಕనీಷ್ಠ 30 ನಿಮಿಷಗಳಿರಬೇಕು.',
         },
         'ml': {
           'language': 'ഭാഷ',
@@ -1420,6 +1455,13 @@ class AppTranslations extends Translations {
           'shoppingEntertainment': 'ഷോപ്പിംഗ് & വിനോദം',
           'enterDropOff': 'ഡ്രോപ്പ്-ഓഫ് സ്ഥലം നൽകുക',
           'selectServiceType': 'താഴെ സേവന രീതി തിരഞ്ഞെടുക്കുക',
+          'scheduleYourRide': 'നിങ്ങളുടെ യാത്ര ഷെഡ്യൂൾ ചെയ്യുക',
+          'selectPickupDateTime': 'പിക്കപ്പ് തീയതിയും സമയവും തിരഞ്ഞെടുക്കുക:',
+          'date': 'തീയതി',
+          'time': 'സമയം',
+          'saveSchedule': 'ഷെഡ്യൂൾ സേവ് ചെയ്യുക',
+          'scheduledTimeMinimum':
+              'ഷെഡ്യൂൾ ചെയ്ത സമയം ഇപ്പോൾ മുതൽ കുറഞ്ഞത് 30 മിനിറ്റ് ആയിരിക്കണം.',
         },
         'gu': {
           'language': 'ભાષા',
@@ -1598,6 +1640,13 @@ class AppTranslations extends Translations {
           'totalDistance': 'કુલ અંતર',
           'timeToTravel': 'મુસાફરી સમય',
           'couldNotCalculateFares': 'ભાડાની ગણતરી કરી શકાઈ નથી.',
+          'scheduleYourRide': 'તમારી રાઇડ શેડ્યૂલ કરો',
+          'selectPickupDateTime': 'પિકઅપ તારીખ અને સમય પસંદ કરો:',
+          'date': 'તારીખ',
+          'time': 'સમય',
+          'saveSchedule': 'શેડ્યૂલ સાચવો',
+          'scheduledTimeMinimum':
+              'નિર્ધારિત સમય હવેથી ઓછામાં ઓછી 30 મિનિટ પછીનો હોવો જોઈએ.',
           'noVehiclesAvailable': 'વાહનો ઉપલબ્ધ નથી.',
           'driverEta': 'ડ્રાઇવર આગમન સમય',
           'viewFareDetails': 'ભાડાની વિગતો જુઓ',

@@ -78,8 +78,8 @@ class AuthController extends GetxController {
             debugPrint("DEBUG: User ID: ${user.uid}");
             debugPrint("DEBUG: Firestore Phone Number: '$phoneNumber'");
 
-            // Add delay to ensure Google Sign-In fully completes before loading Google Maps
-            await Future.delayed(const Duration(milliseconds: 1000));
+            // Reduced delay as RideController.initialize() now handles location more efficiently
+            await Future.delayed(const Duration(milliseconds: 300));
 
             if (phoneNumber != null && phoneNumber.isNotEmpty) {
               debugPrint("DEBUG: Phone number found. Navigating to HomePage.");
@@ -98,7 +98,7 @@ class AuthController extends GetxController {
             }
           } else {
             // Add delay for new users too
-            await Future.delayed(const Duration(milliseconds: 500));
+            await Future.delayed(const Duration(milliseconds: 100));
 
             debugPrint("DEBUG: User document does not exist. Navigating to PhoneAuthScreen.");
             if (isPhoneLoginAttempt) {

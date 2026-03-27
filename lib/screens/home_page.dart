@@ -107,6 +107,7 @@ class _HomePageState extends State<HomePage> {
   RideType _selectedServiceType = RideType.daily;
   bool _isMapReadyToRender = false; // **NEW:** Delay map rendering
   bool _isVehicleSheetOpen = false; // Track if vehicle sheet is visible
+  bool _isProcessingSelection = false; // **NEW:** Prevent multiple rapid selections
   final DraggableScrollableController _sheetController = DraggableScrollableController();
   final ValueNotifier<double> _sheetExtent = ValueNotifier<double>(0.4);
 
@@ -505,17 +506,26 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _handlePredictionTap(String placeId) async {
-    if (!mounted) return;
-    final placeDetails = await _rideController.placesService.getPlaceDetails(
-      placeId,
-    );
-    if (!mounted) return;
+    if (_isProcessingSelection) return;
+    setState(() => _isProcessingSelection = true);
 
-    if (placeDetails == null) {
-      displaySnackBar(context, "Could not get location details.");
-      return;
+    try {
+      if (!mounted) return;
+      final placeDetails = await _rideController.placesService.getPlaceDetails(
+        placeId,
+      );
+      if (!mounted) return;
+
+      if (placeDetails == null) {
+        displaySnackBar(context, "Could not get location details.");
+        return;
+      }
+      _handlePlaceSelection(placeDetails);
+    } catch (e) {
+      debugPrint("Error in _handlePredictionTap: $e");
+    } finally {
+      if (mounted) setState(() => _isProcessingSelection = false);
     }
-    _handlePlaceSelection(placeDetails);
   }
 
   void _handleHistoryTap(SearchHistoryItem item) {
@@ -603,90 +613,101 @@ class _HomePageState extends State<HomePage> {
     PlaceDetails placeDetails, {
     String? displayOverrideName,
   }) async {
-    if (!mounted) return;
+    if (_isProcessingSelection) return;
+    setState(() => _isProcessingSelection = true);
 
-    // **NEW:** Check Wallet Balance Before Proceeding
-    if (_rideController.walletBalance.value < -50) {
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text("Low Wallet Balance"),
-          content: const Text(
-            "Your wallet balance is in negative. You cannot book a ride until you make it positive. Please recharge your wallet to book a ride.",
+    try {
+      if (!mounted) return;
+
+      // **NEW:** Check Wallet Balance Before Proceeding
+      if (_rideController.walletBalance.value < -50) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text("Low Wallet Balance"),
+            content: const Text(
+              "Your wallet balance is in negative. You cannot book a ride until you make it positive. Please recharge your wallet to book a ride.",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Get.back(),
+                child: const Text("Cancel"),
+              ),
+              TextButton(
+                onPressed: () {
+                  Get.back(); // Close dialog
+                  Get.to(() => WalletScreen(user: widget.user));
+                },
+                child: const Text("Recharge"),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Get.back(),
-              child: const Text("Cancel"),
-            ),
-            TextButton(
-              onPressed: () {
-                Get.back(); // Close dialog
-                Get.to(() => WalletScreen(user: widget.user));
-              },
-              child: const Text("Recharge"),
-            ),
-          ],
-        ),
+        );
+        return;
+      }
+
+      FocusScope.of(context).unfocus();
+      // Explicitly hide keyboard to be sure
+      await SystemChannels.textInput.invokeMethod('TextInput.hide');
+
+      if (!mounted) return; // **FIX:** Check mounted after async gap
+
+      // **OPTIMIZATION:** Only wait if keyboard was likely open
+      if (MediaQuery.of(context).viewInsets.bottom > 0) {
+        await Future.delayed(const Duration(milliseconds: 300));
+      }
+
+      if (!mounted) return;
+
+      _isDropoffInServiceArea = _rideController.locationService
+          .isPointInServiceArea(placeDetails.location);
+
+      if (placeDetails.placeId.isNotEmpty) {
+        _addSearchToHistory(
+          description: displayOverrideName ?? placeDetails.address,
+          placeId: placeDetails.placeId,
+          mainText: placeDetails.name,
+          secondaryText: placeDetails.address,
+        );
+      }
+
+      setState(() {
+        _destinationPosition = placeDetails.location;
+        _destinationController.text = displayOverrideName ?? placeDetails.address;
+        _rideController.predictions.clear();
+        _rideController.isCalculatingFares.value = true;
+      });
+
+      _rideController.updateMapElements(
+        pickupAddress: _pickupController.text,
+        destinationAddress: _destinationController.text,
       );
-      return;
-    }
 
-    FocusScope.of(context).unfocus();
-    // Explicitly hide keyboard to be sure
-    await SystemChannels.textInput.invokeMethod('TextInput.hide');
+      // **MODIFIED:** Create a dummy "all available" map to bypass the check
+      final Map<String, bool> availability = {
+        'Auto': true,
+        'Hatchback': true,
+        'Sedan': true,
+        'SUV': true,
+        'ActingDriver': true,
+      };
 
-    if (!mounted) return; // **FIX:** Check mounted after async gap
-
-    // **OPTIMIZATION:** Only wait if keyboard was likely open
-    if (MediaQuery.of(context).viewInsets.bottom > 0) {
-      await Future.delayed(const Duration(milliseconds: 300));
-    }
-
-    _isDropoffInServiceArea = _rideController.locationService
-        .isPointInServiceArea(placeDetails.location);
-
-    if (placeDetails.placeId.isNotEmpty) {
-      _addSearchToHistory(
-        description: displayOverrideName ?? placeDetails.address,
-        placeId: placeDetails.placeId,
-        mainText: placeDetails.name,
-        secondaryText: placeDetails.address,
+      // Show loading sheet immediately with ValueListenableBuilder
+      _showRideConfirmationSheet(
+        _isDropoffInServiceArea,
+        // isLoadingFares: true, // Removed
+        walletBalance: _rideController.walletBalance.value,
+        rideType: _selectedServiceType,
+        availability: availability,
       );
+
+      // --- Start background calculation ---
+      _calculateFaresAndRoute();
+    } catch (e) {
+      debugPrint("Error in _handlePlaceSelection: $e");
+    } finally {
+      if (mounted) setState(() => _isProcessingSelection = false);
     }
-
-    setState(() {
-      _destinationPosition = placeDetails.location;
-      _destinationController.text = displayOverrideName ?? placeDetails.address;
-      _rideController.predictions.clear();
-      _rideController.isCalculatingFares.value = true;
-    });
-
-    _rideController.updateMapElements(
-      pickupAddress: _pickupController.text,
-      destinationAddress: _destinationController.text,
-    );
-
-    // **MODIFIED:** Create a dummy "all available" map to bypass the check
-    final Map<String, bool> availability = {
-      'Auto': true,
-      'Hatchback': true,
-      'Sedan': true,
-      'SUV': true,
-      'ActingDriver': true,
-    };
-
-    // Show loading sheet immediately with ValueListenableBuilder
-    _showRideConfirmationSheet(
-      _isDropoffInServiceArea,
-      // isLoadingFares: true, // Removed
-      walletBalance: _rideController.walletBalance.value,
-      rideType: _selectedServiceType,
-      availability: availability,
-    );
-
-    // --- Start background calculation ---
-    _calculateFaresAndRoute();
   }
 
   // **NEW:** Separated logic for calculation
@@ -919,38 +940,56 @@ class _HomePageState extends State<HomePage> {
   */
 
   Future<void> _handlePredefinedTap(PredefinedDestination destination) async {
-    if (!mounted) return;
+    if (_isProcessingSelection) return;
+    setState(() => _isProcessingSelection = true);
 
-    // Check for active rides before allowing destination selection
-    final shouldProceed = await _checkAndShowActiveRideDialog();
-    if (!shouldProceed || !mounted) return;
+    try {
+      if (!mounted) return;
 
-    _handlePlaceSelection(
-      PlaceDetails(
-        placeId: '',
-        name: destination.name,
-        address: destination.name,
-        location: destination.location,
-      ),
-    );
+      // Check for active rides before allowing destination selection
+      final shouldProceed = await _checkAndShowActiveRideDialog();
+      if (!shouldProceed || !mounted) return;
+
+      _handlePlaceSelection(
+        PlaceDetails(
+          placeId: '',
+          name: destination.name,
+          address: destination.name,
+          location: destination.location,
+        ),
+      );
+    } catch (e) {
+      debugPrint("Error in _handlePredefinedTap: $e");
+    } finally {
+      if (mounted) setState(() => _isProcessingSelection = false);
+    }
   }
 
   Future<void> _handleFavoriteTap(FavoritePlace favorite) async {
-    if (!mounted) return;
+    if (_isProcessingSelection) return;
+    setState(() => _isProcessingSelection = true);
 
-    // Check for active rides before allowing destination selection
-    final shouldProceed = await _checkAndShowActiveRideDialog();
-    if (!shouldProceed || !mounted) return;
+    try {
+      if (!mounted) return;
 
-    _handlePlaceSelection(
-      PlaceDetails(
-        placeId: '',
-        name: favorite.name,
-        address: favorite.address,
-        location: favorite.location,
-      ),
-      displayOverrideName: favorite.name,
-    );
+      // Check for active rides before allowing destination selection
+      final shouldProceed = await _checkAndShowActiveRideDialog();
+      if (!shouldProceed || !mounted) return;
+
+      _handlePlaceSelection(
+        PlaceDetails(
+          placeId: '',
+          name: favorite.name,
+          address: favorite.address,
+          location: favorite.location,
+        ),
+        displayOverrideName: favorite.name,
+      );
+    } catch (e) {
+      debugPrint("Error in _handleFavoriteTap: $e");
+    } finally {
+      if (mounted) setState(() => _isProcessingSelection = false);
+    }
   }
 
   Future<void> _handleHistoryFavoriteToggle(
@@ -1133,7 +1172,7 @@ class _HomePageState extends State<HomePage> {
     // Open the inline vehicle sheet — map will shrink via AnimatedPositioned
     setState(() {
       _isVehicleSheetOpen = true;
-      _sheetExtent.value = 0.72; // Final increase to 72% for absolute visibility
+      _sheetExtent.value = 0.4; // Reverted from 0.72
     });
 
     // After map shrink animation completes, re-animate camera to fit route
@@ -1802,7 +1841,7 @@ class _HomePageState extends State<HomePage> {
                                         showcaseKey: _rideLaterShowcaseKey,
                                         showScheduleTour: true, // Only triggers if not already seen in BottomSheet initState logic
                                         availability: const {
-                                          'Auto': true, 'Hatchback': true, 'Sedan': true, 'SUV': true, 'ActingDriver': true,
+                                          'Auto': true, 'Hatchback': true, 'Sedan': true, 'SUV': true, 'ActingDriver': false,
                                         },
                                         scrollController: scrollController,
                                         onEditPickup: () => _handleEditLocation(_rideController.currentPosition.value!, isPickup: true),

@@ -69,3 +69,7 @@ android {
         }
     }
 }
+dependencies {
+    implementation("androidx.activity:activity-ktx:1.9.0")
+    implementation("com.google.android.play:integrity:1.6.0") // Play Integrity API
+}

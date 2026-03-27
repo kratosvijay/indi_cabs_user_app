@@ -587,7 +587,7 @@ class _MultiStopScreenState extends State<MultiStopScreen>
       });
     }
     final Map<String, bool> availability = {
-      'Auto': true,
+      'Auto': false, // **MODIFIED:** Exclude Auto from multi-stop rides
       'Hatchback': true,
       'Sedan': true,
       'SUV': true,

@@ -130,7 +130,7 @@ class _SchedulePickerScreenState extends State<SchedulePickerScreen> {
     if (_selectedDateTime.isBefore(now)) {
       displaySnackBar(
         context,
-        "Scheduled time must be at least 30 minutes from now.",
+        "scheduledTimeMinimum".tr,
       );
       return;
     }
@@ -145,7 +145,7 @@ class _SchedulePickerScreenState extends State<SchedulePickerScreen> {
     final textColor = isDark ? Colors.white : Colors.black87;
 
     return Scaffold(
-      appBar: const ProAppBar(titleText: "Schedule Your Ride"),
+      appBar: ProAppBar(titleText: "scheduleYourRide".tr),
       body: FadeInSlide(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
@@ -153,7 +153,7 @@ class _SchedulePickerScreenState extends State<SchedulePickerScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                "Select a pickup date and time:",
+                "selectPickupDateTime".tr,
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: textColor,
@@ -166,7 +166,7 @@ class _SchedulePickerScreenState extends State<SchedulePickerScreen> {
               _buildSelectionCard(
                 context,
                 icon: Icons.calendar_today,
-                title: "Date",
+                title: "date".tr,
                 value: DateFormat('EEEE, dd MMMM yyyy').format(_selectedDate),
                 onTap: _pickDate,
                 isDark: isDark,
@@ -179,7 +179,7 @@ class _SchedulePickerScreenState extends State<SchedulePickerScreen> {
               _buildSelectionCard(
                 context,
                 icon: Icons.access_time,
-                title: "Time",
+                title: "time".tr,
                 value: _selectedTime.format(context),
                 onTap: _pickTime,
                 isDark: isDark,
@@ -191,7 +191,7 @@ class _SchedulePickerScreenState extends State<SchedulePickerScreen> {
 
               // --- Save Button ---
               ProButton(
-                text: "Save Schedule",
+                text: "saveSchedule".tr,
                 onPressed: _saveSchedule,
                 icon: const Icon(
                   Icons.check_circle_outline,

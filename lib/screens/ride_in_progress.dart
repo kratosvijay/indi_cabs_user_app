@@ -25,6 +25,7 @@ import 'package:project_taxi_with_ai/widgets/slide_to_cancel.dart';
 import 'edit_location.dart';
 import 'package:project_taxi_with_ai/widgets/liftable_banner_ad.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:geolocator/geolocator.dart';
 
 class RideInProgressScreen extends StatefulWidget {
   final User user;
@@ -87,6 +88,8 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
 
   Timer? _driverMoveTimer;
   late final String _apiKey;
+  LatLng? _previousDriverLocation;
+  double _currentDriverBearing = 0.0;
   List<LatLng> _routePointsToPickup = [];
   List<LatLng> _routePointsToDestination = [];
   bool _driverHasArrived = false;
@@ -280,6 +283,41 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
 
   void _updateDriverMarker(Driver driver) {
     if (!mounted) return;
+    
+    if (_previousDriverLocation != null && _previousDriverLocation != driver.currentLocation) {
+      _currentDriverBearing = Geolocator.bearingBetween(
+        _previousDriverLocation!.latitude,
+        _previousDriverLocation!.longitude,
+        driver.currentLocation.latitude,
+        driver.currentLocation.longitude,
+      );
+    }
+    _previousDriverLocation = driver.currentLocation;
+
+    List<LatLng> currentRoutePoints = _isRideStarted ? _routePointsToDestination : _routePointsToPickup;
+    String activePolylineId = _isRideStarted ? 'ride_route' : 'driver_route';
+
+    if (currentRoutePoints.isNotEmpty) {
+      double minDistance = double.infinity;
+      int closestIndex = 0;
+      int searchLimit = currentRoutePoints.length > 20 ? 20 : currentRoutePoints.length;
+      for (int i = 0; i < searchLimit; i++) {
+        double distance = Geolocator.distanceBetween(
+          driver.currentLocation.latitude,
+          driver.currentLocation.longitude,
+          currentRoutePoints[i].latitude,
+          currentRoutePoints[i].longitude,
+        );
+        if (distance <= minDistance) {
+          minDistance = distance;
+          closestIndex = i;
+        }
+      }
+      if (closestIndex > 0) {
+        currentRoutePoints.removeRange(0, closestIndex);
+      }
+    }
+
     setState(() {
       _markers.removeWhere((m) => m.markerId.value == 'driver');
       _markers.add(
@@ -287,15 +325,26 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
           markerId: const MarkerId('driver'),
           position: driver.currentLocation,
           icon: _rideController.getVehicleIcon(driver.vehicleType),
-          rotation: driver.bearing,
+          rotation: _currentDriverBearing,
           anchor: const Offset(0.5, 0.5),
           flat: true,
           infoWindow: const InfoWindow(title: "Your Driver"),
         ),
       );
+
+      if (currentRoutePoints.isNotEmpty) {
+        _polylines.removeWhere((p) => p.polylineId.value == activePolylineId);
+        _polylines.add(
+          Polyline(
+            polylineId: PolylineId(activePolylineId),
+            points: currentRoutePoints,
+            color: Colors.blue,
+            width: 5,
+          ),
+        );
+      }
     });
-    // Animate camera to include relevant points (Driver + Pickup/Destination)
-    // Only if camera is locked
+
     if ((_isRideStarted || _driverHasArrived || _driver != null) &&
         _isCameraLocked) {
       _animateCameraToBounds();
@@ -393,7 +442,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     );
     if (mounted && routeDetails != null) {
       setState(() {
-        _routePointsToPickup = routeDetails.polylinePoints;
+        _routePointsToPickup = List.from(routeDetails.polylinePoints);
         _polylines.removeWhere((p) => p.polylineId.value == 'driver_route');
         _polylines.add(
           Polyline(
@@ -441,7 +490,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
 
     if (mounted && routeDetails != null) {
       setState(() {
-        _routePointsToDestination = routeDetails.polylinePoints;
+        _routePointsToDestination = List.from(routeDetails.polylinePoints);
         _polylines.removeWhere((p) => p.polylineId.value == 'ride_route');
         _polylines.add(
           Polyline(
@@ -755,7 +804,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
 
     if (mounted && routeDetails != null) {
       setState(() {
-        _routePointsToDestination = routeDetails.polylinePoints;
+        _routePointsToDestination = List.from(routeDetails.polylinePoints);
         // Clear pickup route
         _polylines.removeWhere((p) => p.polylineId.value == 'driver_route');
         // Update ride route
@@ -1301,10 +1350,12 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                                 onPressed: () async {
                                   final Uri launchUri = Uri(
                                     scheme: 'tel',
-                                    path: _driver!.phoneNumber,
+                                    path: '04446972845',
                                   );
                                   if (await canLaunchUrl(launchUri)) {
                                     await launchUrl(launchUri);
+                                  } else {
+                                    if (mounted) displaySnackBar(context, "Could not launch dialer.");
                                   }
                                 },
                               ),
@@ -1975,6 +2026,22 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     }
   }
 
+  String _extractTitle(String address) {
+    if (address.isEmpty) return 'Unknown';
+    final parts = address.split(',');
+    if (parts.isEmpty) return address;
+    return parts[0].trim();
+  }
+
+  String _extractSubtitle(String address) {
+    if (address.isEmpty) return '';
+    final parts = address.split(',');
+    if (parts.length > 1) {
+      return parts.sublist(1).join(',').trim();
+    }
+    return '';
+  }
+
   Widget _buildLocationRow(
     IconData icon,
     String label,
@@ -1984,6 +2051,9 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final Color textColor = isDark ? Colors.white : Colors.black;
     final Color subTextColor = isDark ? Colors.grey[400]! : Colors.grey[600]!;
+
+    final title = _extractTitle(location);
+    final subtitle = _extractSubtitle(location);
 
     return Row(
       children: [
@@ -2003,11 +2073,25 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
               ),
               const SizedBox(height: 2),
               Text(
-                location,
+                title,
                 overflow: TextOverflow.ellipsis,
                 maxLines: 1,
-                style: TextStyle(fontSize: 14, color: textColor),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: textColor,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
+              if (subtitle.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    subtitle,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    style: TextStyle(fontSize: 12, color: subTextColor),
+                  ),
+                ),
             ],
           ),
         ),
@@ -2241,7 +2325,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
           }
 
           setState(() {
-            _routePointsToDestination = routeDetails.polylinePoints;
+            _routePointsToDestination = List.from(routeDetails.polylinePoints);
             _polylines.removeWhere((p) => p.polylineId.value == 'ride_route');
             _polylines.add(
               Polyline(

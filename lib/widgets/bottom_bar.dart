@@ -141,9 +141,18 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
                         _buildServiceTypeCard(
                           context: context,
                           icon: Icons.person_pin_outlined,
-                          label: "actingDriver".tr,
-                          isSelected: widget.selectedServiceType == RideType.acting,
-                          onTap: () => widget.onServiceTypeSelected(RideType.acting),
+                          label: "comingSoon".tr,
+                          isSelected:
+                              widget.selectedServiceType == RideType.acting,
+                          onTap: () {
+                            Get.snackbar(
+                              "comingSoon".tr,
+                              "Feature coming soon!",
+                              snackPosition: SnackPosition.BOTTOM,
+                              backgroundColor: isDark ? Colors.grey[900] : Colors.white,
+                              colorText: isDark ? Colors.white : Colors.black,
+                            );
+                          },
                           isDark: isDark,
                         ),
                       ],

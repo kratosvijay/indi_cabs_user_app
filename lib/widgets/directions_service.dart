@@ -45,7 +45,6 @@ class DirectionsService {
       "travelMode": "DRIVE",
       "routingPreference": "TRAFFIC_AWARE",
       "computeAlternativeRoutes": true,
-      "extraComputations": ["TOLLS"],
       "routeModifiers": {
         "avoidTolls": false,
         "avoidHighways": false,
@@ -117,21 +116,8 @@ class DirectionsService {
           int totalDistance = route['distanceMeters'] as int? ?? 0;
           int totalDuration = minDurationSeconds;
 
-          // Extract Tolls
+          // Hardcode Tolls to 0 since we backend-calculate it from geofences
           num totalTollCost = 0;
-          final travelAdvisory = route['travelAdvisory'];
-          if (travelAdvisory != null) {
-            final tollInfo = travelAdvisory['tollInfo'];
-            if (tollInfo != null && tollInfo['estimatedPrice'] != null) {
-              final prices = tollInfo['estimatedPrice'] as List;
-              if (prices.isNotEmpty) {
-                // Google Maps Route API might return multiple prices (e.g. for different payment methods).
-                // We only take the first explicit unit price instead of summing them all up.
-                totalTollCost = num.tryParse(prices.first['units'] ?? "0") ?? 0;
-                debugPrint("Detected Single Toll Cost Option: ₹$totalTollCost");
-              }
-            }
-          }
 
           final String encodedPolyline =
               route['polyline']?['encodedPolyline'] ?? "";

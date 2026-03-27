@@ -210,11 +210,11 @@ class RideController extends GetxController {
         'assets/images/marker_pickup.png',
         width: 64,
       );
-      */
       destinationIcon = await _getBitmapFromAsset(
         'assets/images/marker_destination.png',
         width: 64,
       );
+      */
 
       iconsLoaded.value = true;
       // Refresh drivers if already listening
@@ -255,7 +255,6 @@ class RideController extends GetxController {
       if (!serviceEnabled) {
         debugPrint("Location services are disabled");
         if (showLoader) isLoadingLocation.value = false;
-        // Only show snackbar if Get context is ready
         Future.delayed(const Duration(milliseconds: 100), () {
           if (Get.context != null) {
             Get.snackbar("Error", "Location services are disabled.");
@@ -270,11 +269,6 @@ class RideController extends GetxController {
         if (permission == LocationPermission.denied) {
           debugPrint("Location permissions are denied");
           if (showLoader) isLoadingLocation.value = false;
-          Future.delayed(const Duration(milliseconds: 100), () {
-            if (Get.context != null) {
-              Get.snackbar("Error", "Location permissions are denied");
-            }
-          });
           return;
         }
       }
@@ -282,20 +276,25 @@ class RideController extends GetxController {
       if (permission == LocationPermission.deniedForever) {
         debugPrint("Location permissions are permanently denied");
         if (showLoader) isLoadingLocation.value = false;
-        Future.delayed(const Duration(milliseconds: 100), () {
-          if (Get.context != null) {
-            Get.snackbar(
-              "Error",
-              "Location permissions are permanently denied",
-            );
-          }
-        });
         return;
       }
 
+      // **NEW:** Try last known position first for instant map loading
+      Position? lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null) {
+        debugPrint("RideController: Using last known location for initial view");
+        currentPosition.value = LatLng(lastKnown.latitude, lastKnown.longitude);
+        updateCurrentPosition(currentPosition.value!, animateMap: true);
+        _listenForNearbyDrivers();
+        // If we have any location, hide the big spinner so user sees the map
+        if (showLoader) isLoadingLocation.value = false;
+      }
+
+      // **NEW:** Get current position with a timeout to prevent infinite spinning
       Position position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15), // Don't wait forever
         ),
       );
 
@@ -303,12 +302,11 @@ class RideController extends GetxController {
       updateCurrentPosition(currentPosition.value!, animateMap: true);
       _listenForNearbyDrivers();
     } catch (e) {
-      debugPrint("Failed to get location: $e");
-      Future.delayed(const Duration(milliseconds: 100), () {
-        if (Get.context != null) {
-          Get.snackbar("Error", "Failed to get location: $e");
-        }
-      });
+      debugPrint("RideController: Failed to get precise location: $e");
+      // If we couldn't get a precise fix but have a last known, we're still okay
+      if (currentPosition.value == null && showLoader) {
+        Get.snackbar("Location Error", "Could not get current location. Please check GPS.");
+      }
     } finally {
       if (showLoader) {
         isLoadingLocation.value = false;
@@ -585,7 +583,7 @@ class RideController extends GetxController {
         return null;
       }
 
-      // 2. Call Cloud Function with distance
+      // 2. Call Cloud Function with distance and polyline for geofence toll calculation
       final result = await _calculateFaresCallable.call<Map<dynamic, dynamic>>({
         'distanceMeters': routeDetails.distanceMeters,
         'durationSeconds': routeDetails.durationSeconds,
@@ -594,6 +592,9 @@ class RideController extends GetxController {
           'latitude': pickup.latitude,
           'longitude': pickup.longitude,
         },
+        'routePolyline': routeDetails.polylinePoints
+            .map((p) => {'latitude': p.latitude, 'longitude': p.longitude})
+            .toList(),
       });
 
       final data = result.data;
@@ -742,11 +743,14 @@ class RideController extends GetxController {
   }
 
   Future<void> _loadRentalPackages() async {
+    isLoadingRentals.value = true;
     try {
       final packages = await firestoreService.getRentalPackages();
       rentalPackages.assignAll(packages);
     } catch (e) {
       debugPrint("Error loading rental packages: $e");
+    } finally {
+      isLoadingRentals.value = false;
     }
   }
 
