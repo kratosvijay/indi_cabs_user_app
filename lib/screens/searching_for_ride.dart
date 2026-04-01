@@ -93,6 +93,7 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
   Timer? _cancelTapGuardTimer; // **NEW:** Timer for tap guard
   bool _isDriverFound =
       false; // Track if driver is found for immediate UI feedback
+  bool _isRidePosted = false; // **NEW:** Track if ride was created in Firestore
 
   // **NEW:** Location Service for live tracking
   StreamSubscription<Position>? _locationSubscription;
@@ -161,8 +162,9 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
     debugPrint("SearchingForRideScreen: initState started");
     _currentTip = widget.tip;
     _resolvedRideRequestId = widget.rideRequestId; // Initialize if available
+    _isRidePosted = _resolvedRideRequestId != null; // **NEW**
     debugPrint(
-      "SearchingForRideScreen: _resolvedRideRequestId at start: $_resolvedRideRequestId",
+      "SearchingForRideScreen: _resolvedRideRequestId at start: $_resolvedRideRequestId, posted: $_isRidePosted",
     );
 
     // **NEW:** Start live location updates if allowed
@@ -218,6 +220,7 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
       if (mounted) {
         setState(() {
           _resolvedRideRequestId = id;
+          _isRidePosted = true; // **NEW**
         });
         _listenForDriverAssignment();
       } else {
@@ -628,11 +631,16 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
     debugPrint("SearchingForRideScreen: build called");
     // **NEW:** Dynamic UI based on scheduled time
     final bool isScheduled = widget.scheduledTime != null;
-    final String title = isScheduled
+    String title = isScheduled
         ? "rideScheduled".tr
         : _isDriverFound
         ? "driverFound".tr
         : "searchingForRide".tr;
+
+    // **NEW:** Enhanced feedback if ride is posted but still searching
+    if (!isScheduled && !_isDriverFound && _isRidePosted) {
+        title = "Ride Posted! \nSearching for Driver...";
+    }
 
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
 

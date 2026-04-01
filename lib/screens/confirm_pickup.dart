@@ -100,6 +100,8 @@ class ConfirmPickupScreen extends StatefulWidget {
   final String? guestName;
   final String? guestPhone;
   final bool useWallet; // **NEW**
+  final String? pickupPlaceName; // **NEW**
+  final String? destinationPlaceName; // **NEW**
 
   const ConfirmPickupScreen({
     super.key,
@@ -120,6 +122,8 @@ class ConfirmPickupScreen extends StatefulWidget {
     this.guestName,
     this.guestPhone,
     this.useWallet = false, // **NEW**
+    this.pickupPlaceName, // **NEW**
+    this.destinationPlaceName, // **NEW**
   }) : assert(
          (selectedVehicle != null && calculatedFare != null) ||
              (rentalPackage != null &&
@@ -140,6 +144,8 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
   final Completer<GoogleMapController> _mapController = Completer();
   late LatLng _adjustablePickupLocation;
   late String _pickupAddress;
+  late String? _pickupPlaceName; // **NEW**
+  late String? _destinationPlaceName; // **NEW**
   final Set<Marker> _markers = {};
   late Set<Polyline> _polylines;
   final Set<Polygon> _polygons = {};
@@ -198,6 +204,8 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
     _currentRouteDetails = widget.isRental ? null : widget.routeDetails;
     _currentScheduledTime = widget.scheduledTime; // **NEW**
     _addressSheetController = TextEditingController(text: _pickupAddress);
+    _pickupPlaceName = widget.pickupPlaceName; // **NEW**
+    _destinationPlaceName = widget.destinationPlaceName; // **NEW**
 
     _apiKey = dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
     if (_apiKey.isEmpty) {
@@ -673,6 +681,7 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
           userPhone: user.phoneNumber,
           pickupLocation: _adjustablePickupLocation,
           pickupAddress: finalPickupAddress,
+          pickupPlaceName: _pickupPlaceName, // **NEW**
           rentalPackage: widget.rentalPackage!,
           rentalVehicleType: widget.rentalVehicleType!,
           rentalPrice: finalFare,
@@ -706,9 +715,11 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
           userPhone: user.phoneNumber,
           pickupLocation: _adjustablePickupLocation,
           pickupAddress: finalPickupAddress,
+          pickupPlaceName: _pickupPlaceName, // **NEW**
           destinationLocation: widget.destinationPosition,
           destinationAddress:
               destinationAddressString, // Use non-null asserted string
+          destinationPlaceName: _destinationPlaceName, // **NEW**
           vehicleType: widget.selectedVehicle?.type ?? "Multi-Stop",
           fare: finalFare,
           tip: _tipValue,

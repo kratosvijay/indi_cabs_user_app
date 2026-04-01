@@ -19,6 +19,7 @@ class RentalBottomSheet extends StatefulWidget {
   final bool isActingDriver;
   final PricingRules? pricingRules;
   final num walletBalance; // **NEW**
+  final String? pickupPlaceName; // **NEW**
 
   const RentalBottomSheet({
     super.key,
@@ -30,6 +31,7 @@ class RentalBottomSheet extends StatefulWidget {
     this.isActingDriver = false,
     this.pricingRules,
     required this.walletBalance, // **NEW**
+    this.pickupPlaceName, // **NEW**
   });
 
   @override
@@ -615,6 +617,7 @@ class _RentalBottomSheetState extends State<RentalBottomSheet> {
                         scheduledTime: _scheduledTime,
                         convenienceFee: _convenienceFee,
                         walletBalance: widget.walletBalance,
+                        pickupPlaceName: widget.pickupPlaceName, // **NEW**
                       );
                     }
                   : null,

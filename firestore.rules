@@ -19,6 +19,10 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, write: if isOwner(userId);
       allow read: if isDriver(); // Drivers can see user details for active rides
+      
+      match /favorites/{favoriteId} {
+        allow read, write: if isOwner(userId);
+      }
       match /payment_history/{paymentId} {
         allow read: if isOwner(userId);
         allow write: if false; // Only Cloud Functions should update this
@@ -92,6 +96,13 @@ service cloud.firestore {
     match /counters/{counterId} {
       allow read: if isSignedIn();
       allow write: if false; // Only Cloud Functions
+    }
+
+    // --- Metro Bookings ---
+    match /metro_bookings/{bookingId} {
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow update, delete: if false; // For now, only creation and reading by owner
     }
   }
 }

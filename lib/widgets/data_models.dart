@@ -6,7 +6,7 @@ import 'package:intl/intl.dart'; // Import for formatting
 // --- Enums ---
 
 // Enum to define the type of ride service
-enum RideType { daily, rental, acting, multiStop, bookForOther }
+enum RideType { daily, rental, acting, multiStop, bookForOther, metro }
 
 // --- Models ---
 
@@ -535,7 +535,10 @@ class Ride {
   final String rideId;
   final String userId;
   final String? driverId;
-  final String rideType; // e.g., "Sedan", "Auto", "Rental Hatchback"
+  final String? qrCodeData; // **NEW** (For Metro)
+  final String? transactionId; // **NEW** (For Metro)
+  final String? orderId; // **NEW** (For Metro)
+  final String? rideType; // e.g., "Sedan", "Auto", "Rental Hatchback", "Metro"
   final String status; // "completed", "cancelled"
   final DateTime timestamp;
   final DateTime? startTime; // **NEW**
@@ -584,6 +587,9 @@ class Ride {
     this.actualDropoffAddress,
     this.actualDistance,
     this.actualDuration,
+    this.qrCodeData, // **NEW**
+    this.transactionId, // **NEW**
+    this.orderId, // **NEW**
   });
 
   // Helper for display
@@ -606,7 +612,10 @@ class Ride {
         const GeoPoint(0, 0); // Use pickup if dest is null (e.g., rental)
 
     // Determine ride type string
-    String type = data['vehicleType'] ?? data['vehicleClass'] ?? 'Ride';
+    String type = data['vehicleType'] ?? data['vehicleClass'] ?? data['rideType'] ?? 'Ride';
+    if (data['rideType'] == 'metro' || doc.reference.path.contains('metro_bookings')) {
+      type = 'Metro';
+    }
     bool isRental = false; // **NEW**
     if (data['rideType'] == 'rental') {
       type = data['packageName'] ?? 'Rental';
@@ -638,6 +647,9 @@ class Ride {
       rideId: doc.id,
       userId: data['userId'] ?? '',
       driverId: data['driverId'], // Can be null
+      qrCodeData: data['qrCodeData'], // **NEW**
+      transactionId: data['transactionId'], // **NEW**
+      orderId: data['orderId'], // **NEW**
       rideType: type,
       status: data['status'] ?? 'unknown',
       timestamp: (data['createdAt'] as Timestamp? ?? Timestamp.now()).toDate(),

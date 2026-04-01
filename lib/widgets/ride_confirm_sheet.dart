@@ -44,6 +44,8 @@ class RideConfirmationBottomSheet extends StatefulWidget {
   final Map<String, bool> availability; // **NEW:** Accept availability
   final GlobalKey? showcaseKey; // **NEW:** Key for showcase tour
   final bool showScheduleTour; // **NEW:** Whether to show the tour
+  final String? pickupPlaceName; // **NEW**
+  final String? destinationPlaceName; // **NEW**
 
   const RideConfirmationBottomSheet({
     super.key,
@@ -70,6 +72,8 @@ class RideConfirmationBottomSheet extends StatefulWidget {
     required this.availability, // **NEW:** Add to constructor
     this.showcaseKey, // **NEW:** Key for showcase tour
     this.showScheduleTour = false, // **NEW:** Whether to show the tour
+    this.pickupPlaceName, // **NEW**
+    this.destinationPlaceName, // **NEW**
     this.guestName,
     this.guestPhone,
     this.scrollController, // **NEW:** Support for DraggableScrollableSheet
@@ -935,22 +939,24 @@ class _RideConfirmationBottomSheetState
                               widget.calculatedFares![_selectedVehicle!.type]!;
                           final num selectedFare = baseFare + _convenienceFee;
 
-                          _firestoreService.navigateToConfirmPickup(
-                            context,
-                            currentUser: widget.currentUser,
-                            currentPosition: widget.currentPosition,
-                            destinationPosition: widget.destinationPosition,
-                            selectedVehicle: _selectedVehicle!,
-                            polylines: widget.polylines,
-                            calculatedFare: selectedFare,
-                            routeDetails: widget.routeDetails,
-                            intermediateStops: widget.intermediateStops,
-                            walletBalance: widget.walletBalance,
-                            scheduledTime: _scheduledTime, // **NEW**
-                            convenienceFee: _convenienceFee, // **NEW**
-                            guestName: widget.guestName,
-                            guestPhone: widget.guestPhone,
-                          );
+                            _firestoreService.navigateToConfirmPickup(
+                              context,
+                              currentUser: widget.currentUser,
+                              currentPosition: widget.currentPosition,
+                              pickupPlaceName: widget.pickupPlaceName, // **NEW**
+                              destinationPosition: widget.destinationPosition,
+                              destinationPlaceName: widget.destinationPlaceName, // **NEW**
+                              selectedVehicle: _selectedVehicle!,
+                              polylines: widget.polylines,
+                              calculatedFare: selectedFare,
+                              routeDetails: widget.routeDetails,
+                              intermediateStops: widget.intermediateStops,
+                              walletBalance: widget.walletBalance,
+                              scheduledTime: _scheduledTime, // **NEW**
+                              convenienceFee: _convenienceFee, // **NEW**
+                              guestName: widget.guestName,
+                              guestPhone: widget.guestPhone,
+                            );
                         },
                 ),
                 const SizedBox(height: 8),

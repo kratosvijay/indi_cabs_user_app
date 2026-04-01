@@ -9,6 +9,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:project_taxi_with_ai/widgets/data_models.dart';
 import 'package:project_taxi_with_ai/widgets/directions_service.dart';
 import 'package:project_taxi_with_ai/widgets/map_service.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 class RideDetailScreen extends StatefulWidget {
   final Ride ride;
@@ -283,6 +284,13 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
             ),
 
             const SizedBox(height: 16),
+
+            // **NEW:** Metro Ticket QR Code
+            if (widget.ride.rideType == 'Metro' && widget.ride.qrCodeData != null)
+              _buildMetroTicket(cardColor, textColor, subTextColor),
+
+            if (widget.ride.rideType == 'Metro' && widget.ride.qrCodeData != null)
+              const SizedBox(height: 24),
 
             // Stats Row (Distance & Duration)
             if (_rideDistance != null && _rideDuration != null)
@@ -725,6 +733,85 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
             ),
             Text(label, style: TextStyle(fontSize: 12, color: subTextColor)),
           ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMetroTicket(Color? cardColor, Color textColor, Color? subTextColor) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.blueAccent.withAlpha(50)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.blueAccent.withAlpha(10),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          const Icon(Icons.train, color: Colors.blueAccent, size: 40),
+          const SizedBox(height: 12),
+          Text(
+            "Metro E-Ticket",
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: textColor,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: QrImageView(
+              data: widget.ride.qrCodeData!,
+              version: QrVersions.auto,
+              size: 200.0,
+              backgroundColor: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            "Scan this at the entry/exit gate",
+            style: TextStyle(fontSize: 14, color: subTextColor),
+          ),
+          const SizedBox(height: 12),
+          const Divider(),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildTicketInfo("ORDER ID", widget.ride.orderId ?? "N/A", subTextColor, textColor),
+              _buildTicketInfo("TXN ID", widget.ride.transactionId ?? "N/A", subTextColor, textColor),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTicketInfo(String label, String value, Color? subTextColor, Color textColor) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(fontSize: 10, color: subTextColor, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value.length > 15 ? "${value.substring(0, 12)}..." : value,
+          style: TextStyle(fontSize: 12, color: textColor, fontWeight: FontWeight.w500),
         ),
       ],
     );

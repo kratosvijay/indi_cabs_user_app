@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:project_taxi_with_ai/widgets/data_models.dart';
+import 'package:project_taxi_with_ai/screens/metro/metro_search_screen.dart';
 
 // Callbacks
 typedef ServiceTypeSelectedCallback = void Function(RideType rideType);
@@ -27,8 +28,6 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
   final ScrollController _scrollController = ScrollController();
   bool _isAtBottom = false;
 
-  @override
-  
   @override
   void initState() {
     super.initState();
@@ -109,6 +108,16 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
                           label: "dailyRides".tr,
                           isSelected: widget.selectedServiceType == RideType.daily,
                           onTap: () => widget.onServiceTypeSelected(RideType.daily),
+                          isDark: isDark,
+                        ),
+                        _buildServiceTypeCard(
+                          context: context,
+                          icon: Icons.subway_rounded,
+                          label: "metroTicket".tr,
+                          isSelected: widget.selectedServiceType == RideType.metro,
+                          onTap: () {
+                            Get.to(() => const MetroSearchScreen());
+                          },
                           isDark: isDark,
                         ),
                         _buildServiceTypeCard(

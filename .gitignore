@@ -27,3 +27,12 @@ GoogleService-Info.plist
 *.keystore
 key.properties
 
+# Node
+node_modules/
+package-lock.json
+
+# DS_Store
+.DS_Store
+
+# Gradle generated files
+.kotlin/

@@ -44,10 +44,11 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
 
     List<Ride> dailyRides = [];
     List<Ride> rentalRides = [];
+    List<Ride> metroRides = [];
 
     void emitMerged() {
       if (controller.isClosed) return;
-      final combined = [...dailyRides, ...rentalRides];
+      final combined = [...dailyRides, ...rentalRides, ...metroRides];
       combined.sort((a, b) => b.timestamp.compareTo(a.timestamp));
       controller.add(combined);
     }
@@ -90,9 +91,29 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
       emitMerged();
     }, onError: (error) => debugPrint("Rental rides error: $error"));
 
+    final metroSub = FirebaseFirestore.instance
+        .collection('metro_bookings')
+        .where('userId', isEqualTo: widget.user.uid)
+        // REMOVED orderBy('createdAt') to avoid requiring a composite index for a new collection.
+        // We sort in-memory in emitMerged() anyway.
+        .limit(30)
+        .snapshots()
+        .listen((snapshot) {
+      metroRides = snapshot.docs.map((doc) {
+        try {
+          return Ride.fromFirestore(doc);
+        } catch (e) {
+          debugPrint("Error parsing metro ride ${doc.id}: $e");
+          return null;
+        }
+      }).whereType<Ride>().toList();
+      emitMerged();
+    }, onError: (error) => debugPrint("Metro rides error: $error"));
+
     controller.onCancel = () {
       dailySub.cancel();
       rentalSub.cancel();
+      metroSub.cancel();
       controller.close();
     };
 
@@ -172,6 +193,8 @@ class _RideHistoryCard extends StatelessWidget {
       case 'accepted':
       case 'arrived':
       case 'started':
+      case 'confirmed':
+      case 'confirmed_by_bpp':
         return Colors.blue;
       case 'completed':
         return Colors.green;
@@ -190,6 +213,9 @@ class _RideHistoryCard extends StatelessWidget {
       case 'arrived':
       case 'started':
         return Icons.directions_car;
+      case 'confirmed':
+      case 'confirmed_by_bpp':
+        return Icons.check_circle_outline;
       case 'completed':
         return Icons.check_circle;
       case 'cancelled':
@@ -215,7 +241,7 @@ class _RideHistoryCard extends StatelessWidget {
       clipBehavior:
           Clip.antiAlias, // Ensures the InkWell ripple respects the border
       child: InkWell(
-        onTap: () {
+            onTap: () {
           if (['accepted', 'arrived', 'started'].contains(ride.status)) {
             // Resume active ride
             Get.to(
@@ -223,7 +249,7 @@ class _RideHistoryCard extends StatelessWidget {
                 user: FirebaseAuth.instance.currentUser!,
                 pickupLocation: ride.pickupLocation,
                 destinationPosition: ride.dropoffLocation,
-                selectedVehicleType: ride.rideType,
+                selectedVehicleType: ride.rideType ?? 'Ride',
                 isRental: ride.isRental,
                 rideRequestId: ride.rideId,
                 driverId: ride.driverId ?? '',
@@ -246,7 +272,7 @@ class _RideHistoryCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    ride.rideType, // e.g., "Sedan", "Auto"
+                    ride.rideType ?? 'Ride', // e.g., "Sedan", "Auto", "Metro"
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -279,13 +305,13 @@ class _RideHistoryCard extends StatelessWidget {
 
               // Location Info
               _buildLocationRow(
-                icon: Icons.my_location,
+                icon: ride.rideType == 'Metro' ? Icons.train : Icons.my_location,
                 color: Colors.green,
                 text: ride.pickupAddress,
               ),
               const SizedBox(height: 8),
               _buildLocationRow(
-                icon: Icons.location_on,
+                icon: ride.rideType == 'Metro' ? Icons.train : Icons.location_on,
                 color: Colors.red,
                 text: ride.dropoffAddress,
               ),
@@ -296,7 +322,7 @@ class _RideHistoryCard extends StatelessWidget {
                 alignment: Alignment.bottomRight,
                 child: Chip(
                   avatar: Icon(
-                    _getStatusIcon(ride.status),
+                    ride.rideType == 'Metro' ? Icons.train : _getStatusIcon(ride.status),
                     color: _getStatusColor(ride.status),
                     size: 18,
                   ),
@@ -307,6 +333,7 @@ class _RideHistoryCard extends StatelessWidget {
                     style: TextStyle(
                       color: _getStatusColor(ride.status),
                       fontWeight: FontWeight.bold,
+                      fontSize: 12,
                     ),
                   ),
                   backgroundColor: _getStatusColor(ride.status).withAlpha(10),

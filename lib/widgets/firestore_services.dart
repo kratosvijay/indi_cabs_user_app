@@ -148,8 +148,10 @@ class FirestoreService {
     String? userPhone,
     required LatLng pickupLocation,
     required String pickupAddress,
+    String? pickupPlaceName, // **NEW**
     required LatLng destinationLocation,
     required String destinationAddress,
+    String? destinationPlaceName, // **NEW**
     required String vehicleType,
     required num fare,
     required double tip,
@@ -190,11 +192,13 @@ class FirestoreService {
           'longitude': pickupLocation.longitude,
         },
         'pickupAddress': pickupAddress,
+        'pickupPlaceName': pickupPlaceName ?? (pickupAddress.contains(',') ? pickupAddress.split(',')[0] : pickupAddress), // **NEW**
         'destinationLocation': {
           'latitude': destinationLocation.latitude,
           'longitude': destinationLocation.longitude,
         },
         'destinationAddress': destinationAddress,
+        'destinationPlaceName': destinationPlaceName ?? (destinationAddress.contains(',') ? destinationAddress.split(',')[0] : destinationAddress), // **NEW**
         'vehicleClass': vehicleType, // Using vehicleType arg as vehicleClass
         'fare': fare,
         'tip': tip,
@@ -237,6 +241,7 @@ class FirestoreService {
     String? userPhone,
     required LatLng pickupLocation,
     required String pickupAddress,
+    String? pickupPlaceName, // **NEW**
     required RentalPackage rentalPackage,
     required String rentalVehicleType,
     required num rentalPrice,
@@ -259,6 +264,7 @@ class FirestoreService {
           'longitude': pickupLocation.longitude,
         },
         'pickupAddress': pickupAddress,
+        'pickupPlaceName': pickupPlaceName ?? (pickupAddress.contains(',') ? pickupAddress.split(',')[0] : pickupAddress), // **NEW**
         'packageId': rentalPackage.id,
         'packageName': rentalPackage.displayName,
         'durationHours': rentalPackage.durationHours,
@@ -302,6 +308,8 @@ class FirestoreService {
     required User currentUser,
     required LatLng currentPosition,
     required LatLng destinationPosition,
+    String? pickupPlaceName, // **NEW**
+    String? destinationPlaceName, // **NEW**
     required VehicleOption selectedVehicle,
     required Set<Polyline> polylines,
     num? calculatedFare,
@@ -318,6 +326,8 @@ class FirestoreService {
         user: currentUser,
         currentPosition: currentPosition,
         destinationPosition: destinationPosition,
+        pickupPlaceName: pickupPlaceName, // **NEW**
+        destinationPlaceName: destinationPlaceName, // **NEW**
         selectedVehicle: selectedVehicle,
         polylines: polylines,
         calculatedFare: calculatedFare,
@@ -344,11 +354,13 @@ class FirestoreService {
     num? convenienceFee,
     num? walletBalance, // **NEW**
     bool useWallet = false, // **NEW**
+    String? pickupPlaceName, // **NEW**
   }) {
     Get.to(
       () => ConfirmPickupScreen(
         user: currentUser,
         currentPosition: currentPosition,
+        pickupPlaceName: pickupPlaceName, // **NEW**
         destinationPosition: currentPosition,
         polylines: const {},
         selectedVehicle: null,
@@ -407,5 +419,51 @@ class FirestoreService {
         isBookForOther: isBookForOther, // **NEW**
       ),
     );
+  }
+
+  // --- Metro Bookings ---
+  // **NEW:** Save metro ticket to ride history using Cloud Function for synced IDs
+  Future<String> createSyncedMetroBooking({
+    required String userId,
+    required String orderId,
+    required String transactionId,
+    required String status,
+    required String sourceStation,
+    required LatLng sourceLocation,
+    required String destStation,
+    required LatLng destLocation,
+    required double totalFare,
+    required String qrCodeData,
+    required String ticketType,
+  }) async {
+    try {
+      final callable = _functions.httpsCallable('createMetroBooking');
+      final result = await callable.call({
+        'userId': userId,
+        'orderId': orderId,
+        'transactionId': transactionId,
+        'status': status,
+        'sourceStation': sourceStation,
+        'sourceLocation': {
+          'latitude': sourceLocation.latitude,
+          'longitude': sourceLocation.longitude,
+        },
+        'destStation': destStation,
+        'destLocation': {
+          'latitude': destLocation.latitude,
+          'longitude': destLocation.longitude,
+        },
+        'totalFare': totalFare,
+        'qrCodeData': qrCodeData,
+        'ticketType': ticketType,
+      });
+
+      final rideId = result.data['rideId'] as String;
+      debugPrint("Metro booking synced with ride history: $rideId");
+      return rideId;
+    } catch (e) {
+      debugPrint("Error syncing metro booking: $e");
+      rethrow;
+    }
   }
 }

@@ -4,7 +4,7 @@ import 'package:project_taxi_with_ai/controllers/auth_controller.dart';
 import 'package:project_taxi_with_ai/screens/signup_screen.dart';
 import 'package:project_taxi_with_ai/widgets/pro_library.dart';
 import 'package:project_taxi_with_ai/widgets/form_validator.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:project_taxi_with_ai/screens/otp_verification_screen.dart';
 
 class SignInScreen extends StatefulWidget {
   const SignInScreen({super.key});
@@ -15,114 +15,28 @@ class SignInScreen extends StatefulWidget {
 
 class _SignInScreenState extends State<SignInScreen> {
   final _phoneController = TextEditingController();
-  final _otpController = TextEditingController();
-  bool _isLoading = false;
-  bool _otpSent = false;
-  String? _verificationId;
-  int? _resendToken;
+  final bool _isLoading = false;
 
   @override
   void dispose() {
     _phoneController.dispose();
-    _otpController.dispose();
     super.dispose();
   }
 
-  Future<void> _sendOtp() async {
+  void _navigateToOtp() {
     final phoneNumber = "+91${_phoneController.text.trim()}";
     if (!FormValidator.isValidPhoneNumber(_phoneController.text.trim())) {
       Get.snackbar(
         "error".tr,
         "invalidPhone".tr,
         snackPosition: SnackPosition.TOP,
+        backgroundColor: Colors.red.withValues(alpha: 0.1),
       );
       return;
     }
 
-    setState(() => _isLoading = true);
-
-    await FirebaseAuth.instance.verifyPhoneNumber(
-      phoneNumber: phoneNumber,
-      forceResendingToken: _resendToken,
-      verificationCompleted: (PhoneAuthCredential credential) async {
-        await _verifyOtp(credential);
-      },
-      verificationFailed: (FirebaseAuthException e) {
-        if (mounted) {
-          Get.snackbar(
-            "error".tr,
-            e.message ?? "Failed to send OTP",
-            snackPosition: SnackPosition.TOP,
-          );
-          setState(() => _isLoading = false);
-        }
-      },
-      codeSent: (String verificationId, int? resendToken) {
-        if (mounted) {
-          setState(() {
-            _verificationId = verificationId;
-            _resendToken = resendToken;
-            _otpSent = true;
-            _isLoading = false;
-          });
-          Get.snackbar(
-            "success".tr,
-            "otpSentSuccess".tr,
-            snackPosition: SnackPosition.TOP,
-          );
-        }
-      },
-      codeAutoRetrievalTimeout: (String verificationId) {
-        if (mounted) {
-          debugPrint("OTP auto-retrieval timed out.");
-          setState(() {
-            _verificationId = verificationId;
-            _otpSent = true;
-            _isLoading = false;
-          });
-        }
-      },
-    );
-  }
-
-  Future<void> _verifyOtp([PhoneAuthCredential? credential]) async {
-    setState(() => _isLoading = true);
-
-    try {
-      final otpCredential =
-          credential ??
-          PhoneAuthProvider.credential(
-            verificationId: _verificationId!,
-            smsCode: _otpController.text.trim(),
-          );
-
-      // Flag this as a phone login attempt so AuthController handles no user doc correctly
-      AuthController.instance.isPhoneLoginAttempt = true;
-
-      await FirebaseAuth.instance.signInWithCredential(otpCredential);
-      
-      // authStateChanges will trigger AuthController._setInitialScreen which handles navigation.
-    } on FirebaseAuthException catch (e) {
-      if (mounted) {
-        Get.snackbar(
-          "error".tr,
-          e.message ?? "Invalid OTP or verification failed.",
-          snackPosition: SnackPosition.TOP,
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        Get.snackbar(
-          "error".tr,
-          "An unexpected error occurred: $e",
-          snackPosition: SnackPosition.TOP,
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
+    // Instant Navigation
+    Get.to(() => OtpVerificationScreen(phoneNumber: phoneNumber));
   }
 
   @override
@@ -132,26 +46,11 @@ class _SignInScreenState extends State<SignInScreen> {
     return Scaffold(
       appBar: ProAppBar(
         titleText: 'signIn'.tr,
-        leading: _otpSent
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () {
-                  setState(() {
-                    _otpSent = false;
-                  });
-                },
-              )
-            : null,
       ),
       body: PopScope(
-        canPop: !_otpSent,
+        canPop: true,
         onPopInvokedWithResult: (didPop, result) {
           if (didPop) return;
-          if (_otpSent) {
-            setState(() {
-              _otpSent = false;
-            });
-          }
         },
         child: FadeInSlide(
           child: Padding(
@@ -164,7 +63,7 @@ class _SignInScreenState extends State<SignInScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      _otpSent ? 'verifyOtp'.tr : 'welcomeBack'.tr,
+                      'welcomeBack'.tr,
                       style: const TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.bold,
@@ -173,7 +72,7 @@ class _SignInScreenState extends State<SignInScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      _otpSent ? 'enterCode'.tr : 'signInToContinue'.tr,
+                      'signInToContinue'.tr,
                       style: TextStyle(
                         fontSize: 16,
                         color: Theme.of(
@@ -184,44 +83,19 @@ class _SignInScreenState extends State<SignInScreen> {
                     ),
                     const SizedBox(height: 40),
                     
-                    if (!_otpSent)
-                      ProTextField(
-                        controller: _phoneController,
-                        hintText: 'mobileHint'.tr,
-                        icon: Icons.phone,
-                        keyboardType: TextInputType.phone,
-                      )
-                    else
-                      ProTextField(
-                        controller: _otpController,
-                        hintText: 'otpHint'.tr,
-                        icon: Icons.password,
-                        keyboardType: TextInputType.number,
-                      ),
-                      
+                    ProTextField(
+                      controller: _phoneController,
+                      hintText: 'mobileHint'.tr,
+                      icon: Icons.phone,
+                      keyboardType: TextInputType.phone,
+                    ),
                     const SizedBox(height: 30),
                     ProButton(
-                      text: _otpSent ? "verifyAndSignIn".tr : "requestOtp".tr,
+                      text: "requestOtp".tr,
                       isLoading: _isLoading || controller.isLoading.value,
-                      onPressed: _isLoading
-                          ? null
-                          : (_otpSent ? () => _verifyOtp() : _sendOtp),
+                      onPressed: _isLoading ? null : _navigateToOtp,
                     ),
                     
-                    if (_otpSent) ...[
-                      const SizedBox(height: 16),
-                      TextButton(
-                        onPressed: _isLoading ? null : _sendOtp,
-                        child: Text(
-                          'resendOtp'.tr,
-                          style: TextStyle(
-                            color: Theme.of(context).primaryColor,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
 
                     const SizedBox(height: 20),
                     Wrap(
@@ -253,52 +127,50 @@ class _SignInScreenState extends State<SignInScreen> {
                       ],
                     ),
                     
-                    if (!_otpSent) ...[
-                      const SizedBox(height: 20),
-                      // --- OR Divider ---
-                      Row(
-                        children: [
-                          const Expanded(child: Divider(thickness: 1)),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                            child: Text('or'.tr),
-                          ),
-                          const Expanded(child: Divider(thickness: 1)),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-                      // --- Social Login Buttons ---
-                      ProButton(
-                        text: 'continueWithGoogle'.tr,
-                        backgroundColor: Colors.white,
-                        textColor: Colors.black87,
-                        icon: Image.asset(
-                          'assets/logos/google_logo.png',
-                          height: 24,
-                          width: 24,
+                    const SizedBox(height: 20),
+                    // --- OR Divider ---
+                    Row(
+                      children: [
+                        const Expanded(child: Divider(thickness: 1)),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                          child: Text('or'.tr),
                         ),
-                        onPressed: controller.isLoading.value
-                            ? null
-                            : controller.signInWithGoogle,
+                        const Expanded(child: Divider(thickness: 1)),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    // --- Social Login Buttons ---
+                    ProButton(
+                      text: 'continueWithGoogle'.tr,
+                      backgroundColor: Colors.white,
+                      textColor: Colors.black87,
+                      icon: Image.asset(
+                        'assets/logos/google_logo.png',
+                        height: 24,
+                        width: 24,
                       ),
-                      const SizedBox(height: 15),
-                      // --- Apple Sign In ---
-                      ProButton(
-                        text: 'continueWithApple'.tr,
-                        backgroundColor: Colors.black,
-                        textColor: Colors.white,
-                        icon: Image.asset(
-                          'assets/logos/apple_logo.png',
-                          height: 24,
-                          width: 24,
-                          color: Colors
-                              .white, // Ensure logo is white on black button
-                        ),
-                        onPressed: controller.isLoading.value
-                            ? null
-                            : controller.signInWithApple,
+                      onPressed: controller.isLoading.value
+                          ? null
+                          : controller.signInWithGoogle,
+                    ),
+                    const SizedBox(height: 15),
+                    // --- Apple Sign In ---
+                    ProButton(
+                      text: 'continueWithApple'.tr,
+                      backgroundColor: Colors.black,
+                      textColor: Colors.white,
+                      icon: Image.asset(
+                        'assets/logos/apple_logo.png',
+                        height: 24,
+                        width: 24,
+                        color: Colors
+                            .white, // Ensure logo is white on black button
                       ),
-                    ],
+                      onPressed: controller.isLoading.value
+                          ? null
+                          : controller.signInWithApple,
+                    ),
                     const SizedBox(height: 15),
                   ],
                 ),

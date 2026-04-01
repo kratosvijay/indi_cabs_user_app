@@ -506,9 +506,6 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _handlePredictionTap(String placeId) async {
-    if (_isProcessingSelection) return;
-    setState(() => _isProcessingSelection = true);
-
     try {
       if (!mounted) return;
       final placeDetails = await _rideController.placesService.getPlaceDetails(
@@ -520,11 +517,9 @@ class _HomePageState extends State<HomePage> {
         displaySnackBar(context, "Could not get location details.");
         return;
       }
-      _handlePlaceSelection(placeDetails);
+      await _handlePlaceSelection(placeDetails);
     } catch (e) {
       debugPrint("Error in _handlePredictionTap: $e");
-    } finally {
-      if (mounted) setState(() => _isProcessingSelection = false);
     }
   }
 
@@ -680,7 +675,9 @@ class _HomePageState extends State<HomePage> {
 
       _rideController.updateMapElements(
         pickupAddress: _pickupController.text,
+        pickupPlaceName: _rideController.pickupPlaceName.value, // **NEW**
         destinationAddress: _destinationController.text,
+        destinationPlaceName: placeDetails.name, // **NEW**
       );
 
       // **MODIFIED:** Create a dummy "all available" map to bypass the check
@@ -778,7 +775,9 @@ class _HomePageState extends State<HomePage> {
       // Update Map
       _rideController.updateMapElements(
         pickupAddress: _pickupController.text,
+        pickupPlaceName: _rideController.pickupPlaceName.value,
         destinationAddress: _destinationController.text,
+        destinationPlaceName: _rideController.destinationPlaceName.value,
         routePoints: routeDetails.polylinePoints,
       );
       _rideController.mapService.animateCameraToBounds(
@@ -940,9 +939,6 @@ class _HomePageState extends State<HomePage> {
   */
 
   Future<void> _handlePredefinedTap(PredefinedDestination destination) async {
-    if (_isProcessingSelection) return;
-    setState(() => _isProcessingSelection = true);
-
     try {
       if (!mounted) return;
 
@@ -950,7 +946,7 @@ class _HomePageState extends State<HomePage> {
       final shouldProceed = await _checkAndShowActiveRideDialog();
       if (!shouldProceed || !mounted) return;
 
-      _handlePlaceSelection(
+      await _handlePlaceSelection(
         PlaceDetails(
           placeId: '',
           name: destination.name,
@@ -960,15 +956,10 @@ class _HomePageState extends State<HomePage> {
       );
     } catch (e) {
       debugPrint("Error in _handlePredefinedTap: $e");
-    } finally {
-      if (mounted) setState(() => _isProcessingSelection = false);
     }
   }
 
   Future<void> _handleFavoriteTap(FavoritePlace favorite) async {
-    if (_isProcessingSelection) return;
-    setState(() => _isProcessingSelection = true);
-
     try {
       if (!mounted) return;
 
@@ -976,7 +967,7 @@ class _HomePageState extends State<HomePage> {
       final shouldProceed = await _checkAndShowActiveRideDialog();
       if (!shouldProceed || !mounted) return;
 
-      _handlePlaceSelection(
+      await _handlePlaceSelection(
         PlaceDetails(
           placeId: '',
           name: favorite.name,
@@ -987,8 +978,6 @@ class _HomePageState extends State<HomePage> {
       );
     } catch (e) {
       debugPrint("Error in _handleFavoriteTap: $e");
-    } finally {
-      if (mounted) setState(() => _isProcessingSelection = false);
     }
   }
 
@@ -1035,7 +1024,14 @@ class _HomePageState extends State<HomePage> {
 
   // --- Service Type Selection ---
   Future<void> _handleServiceTypeSelected(RideType rideType) async {
-    if (!mounted || rideType == _selectedServiceType) return;
+    if (!mounted) return;
+
+    if (rideType == _selectedServiceType) {
+      if (rideType == RideType.daily && !_destinationFocusNode.hasFocus) {
+         _destinationFocusNode.requestFocus();
+      }
+      return;
+    }
 
     setState(() {
       _selectedServiceType = rideType;
@@ -1221,16 +1217,17 @@ class _HomePageState extends State<HomePage> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => RentalBottomSheet(
+      builder: (_) => Obx(() => RentalBottomSheet(
         rentalPackages: _rideController.rentalPackages,
         isLoadingRentals: _rideController.isLoadingRentals.value,
-        rentalVehicleOptions: VehicleOption.defaultOptions,
+        rentalVehicleOptions: VehicleOption.rentalOptions,
         currentUser: _currentUser,
         currentPosition: currentPos,
         isActingDriver: isActingDriver,
         pricingRules: _rideController.pricingRules.value,
-        walletBalance: _rideController.walletBalance.value, // **NEW**
-      ),
+        walletBalance: _rideController.walletBalance.value,
+        pickupPlaceName: _rideController.pickupPlaceName.value,
+      )),
     );
   }
 
@@ -1270,7 +1267,9 @@ class _HomePageState extends State<HomePage> {
         });
         _rideController.updateMapElements(
           pickupAddress: _pickupController.text,
+          pickupPlaceName: _rideController.pickupPlaceName.value,
           destinationAddress: _destinationController.text,
+          destinationPlaceName: _rideController.destinationPlaceName.value,
         );
         if (_rideController.currentPosition.value != null) {
           _rideController.mapService.animateCameraToBounds(
@@ -1303,7 +1302,7 @@ class _HomePageState extends State<HomePage> {
       // **MODIFIED:** If destination is already set, recalculate instead of reset
       if (_destinationPosition != null) {
         // Trigger recalculation with existing destination
-        _handlePlaceSelection(
+        await _handlePlaceSelection(
           PlaceDetails(
             placeId: '', // Not needed for recalculation
             name: _destinationController.text,
@@ -1843,6 +1842,8 @@ class _HomePageState extends State<HomePage> {
                                         availability: const {
                                           'Auto': true, 'Hatchback': true, 'Sedan': true, 'SUV': true, 'ActingDriver': false,
                                         },
+                                        pickupPlaceName: _rideController.pickupPlaceName.value,
+                                        destinationPlaceName: _rideController.destinationPlaceName.value,
                                         scrollController: scrollController,
                                         onEditPickup: () => _handleEditLocation(_rideController.currentPosition.value!, isPickup: true),
                                         onEditDropoff: () => _handleEditLocation(_destinationPosition!, isPickup: false),

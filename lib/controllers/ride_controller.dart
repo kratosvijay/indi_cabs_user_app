@@ -43,7 +43,9 @@ class RideController extends GetxController {
 
   // Addresses
   final RxString pickupAddress = ''.obs;
+  final RxString pickupPlaceName = ''.obs;
   final RxString destinationAddress = ''.obs;
+  final RxString destinationPlaceName = ''.obs;
   final Rx<LatLng?> destinationLocation = Rx<LatLng?>(null);
 
   // Ride State
@@ -147,7 +149,9 @@ class RideController extends GetxController {
     markers.clear();
     polylines.clear();
     pickupAddress.value = '';
+    pickupPlaceName.value = '';
     destinationAddress.value = '';
+    destinationPlaceName.value = '';
     destinationLocation.value = null;
     currentRideId.value = '';
     rideStatus.value = '';
@@ -359,7 +363,13 @@ class RideController extends GetxController {
     }
 
     // Reverse geocoding
-    pickupAddress.value = await locationService.getAddressFromLatLng(position);
+    final address = await locationService.getAddressFromLatLng(position);
+    pickupAddress.value = address;
+    
+    // Fallback: extract a place name if possible, or use the first part of address
+    if (address.isNotEmpty) {
+      pickupPlaceName.value = address.split(',')[0];
+    }
   }
 
   DateTime? _lastDriverUpdateTime;
@@ -493,8 +503,13 @@ class RideController extends GetxController {
   void updateMapElements({
     List<LatLng>? routePoints,
     required String pickupAddress,
+    String? pickupPlaceName,
     required String destinationAddress,
+    String? destinationPlaceName,
   }) {
+    if (pickupPlaceName != null) this.pickupPlaceName.value = pickupPlaceName;
+    if (destinationPlaceName != null) this.destinationPlaceName.value = destinationPlaceName;
+
     markers.assignAll(
       mapService.createMarkers(
         pickupLocation: currentPosition.value,
@@ -746,9 +761,13 @@ class RideController extends GetxController {
     isLoadingRentals.value = true;
     try {
       final packages = await firestoreService.getRentalPackages();
+      debugPrint("RideController: Loaded ${packages.length} rental packages");
+      if (packages.isEmpty) {
+        debugPrint("RideController: WARNING - No rental packages found in Firestore!");
+      }
       rentalPackages.assignAll(packages);
     } catch (e) {
-      debugPrint("Error loading rental packages: $e");
+      debugPrint("RideController: Error loading rental packages: $e");
     } finally {
       isLoadingRentals.value = false;
     }

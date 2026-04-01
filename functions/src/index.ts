@@ -421,17 +421,34 @@ export const createRideRequest = onCall(async (
         const counterDoc = await transaction.get(counterRef);
         let newCount = 1;
         if (counterDoc.exists) {
-          newCount = (counterDoc.data()?.current_id || 0) + 1;
+          const data = counterDoc.data();
+          newCount = (data?.current_id || 0) + 1;
+        } else {
+          logger.info("ride_counter document missing, initializing with 1");
         }
+
         newRideIdString = "ID" + newCount.toString().padStart(15, "0");
-        // **FIXED:** Create doc ref inside transaction
+
+        // Ensure newRideIdString was actually generated
+        if (!newRideIdString || newRideIdString === "ID000000000000000") {
+          throw new Error("Failed to generate a valid sequential Ride ID.");
+        }
+
         const newRideDocRef = db.collection(collectionPath)
           .doc(newRideIdString);
+
+        // Final security/sanity check before write
         if (rideData.userId !== userId) {
-          throw new Error("User ID mismatch.");
+          logger.error(`Security Mismatch: App userId (${rideData.userId}) ` +
+            `!= Auth userId (${userId})`);
+          throw new Error("User ID mismatch security violation.");
         }
+
         transaction.set(newRideDocRef, firestoreData);
         transaction.set(counterRef, {current_id: newCount}, {merge: true});
+
+        logger.info(`Transaction success: Created ride ${newRideIdString} ` +
+          `for user ${userId}`);
       });
   } catch (error) {
     logger.error(`Error creating ride doc for user ${userId}:`, error);
@@ -453,13 +470,27 @@ export const createRideRequest = onCall(async (
 
     if (rideData.vehicleClass === "ActingDriver") {
       driversQuery = driversQuery.where("isActingDriver", "==", true);
-    } else if (!isRental) { // For Daily or Multi-Stop
-      // **MODIFIED:** Filter by 'vehicleClass'
+    } else {
+      // **FIXED:** Filter by 'vehicleClass' for both Daily and Rental
       driversQuery = driversQuery.where(
         "vehicleClass", "==", rideData.vehicleClass
       );
     }
+
     const availableDrivers = await driversQuery.limit(5).get();
+    logger.info(`DriverSearch: Found ${availableDrivers.size} ` +
+      "online/available drivers matching vehicleClass " +
+      rideData.vehicleClass);
+
+    // If no specific vehicle match, check why (Diagnostic Log)
+    if (availableDrivers.empty) {
+      const allOnline = await db.collection("drivers")
+        .where("isOnline", "==", true)
+        .where("isAvailable", "==", true)
+        .limit(1).get();
+      logger.warn(`DriverSearch: No match for ${rideData.vehicleClass}. ` +
+        `General online drivers available: ${!allOnline.empty}`);
+    }
 
     // 3. If a driver is found, assign them.
     if (!availableDrivers.empty) {
@@ -1111,5 +1142,67 @@ export const bridgeCall = onCall(async (
     logger.error("Error initiating masked call:", error);
     if (error instanceof HttpsError) throw error;
     throw new HttpsError("internal", "Failed to initiate call.");
+  }
+});
+
+/**
+ * Creates a synced metro booking in ride history using the shared counter.
+ * @param {CallableRequest<any>} request The request object.
+ * @return {Promise<{rideId: string}>}
+ */
+export const createMetroBooking = onCall(async (
+  request: CallableRequest<Record<string, unknown>>
+) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Must be authenticated.");
+  }
+  const userId = request.auth.uid;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = request.data as any;
+
+  const counterRef = db.collection("counters").doc("ride_counter");
+  let newRideIdString = "";
+
+  try {
+    await db.runTransaction(async (transaction) => {
+      const counterDoc = await transaction.get(counterRef);
+      let newCount = 1;
+      if (counterDoc.exists) {
+        newCount = (counterDoc.data()?.current_id || 0) + 1;
+      }
+      newRideIdString = "ID" + newCount.toString().padStart(15, "0");
+
+      const metroDocRef = db.collection("metro_bookings").doc(newRideIdString);
+
+      const firestoreData = {
+        userId: userId,
+        orderId: data.orderId,
+        transactionId: data.transactionId,
+        status: data.status || "confirmed",
+        pickupAddress: data.sourceStation,
+        pickupLocation: new admin.firestore.GeoPoint(
+          data.sourceLocation.latitude,
+          data.sourceLocation.longitude
+        ),
+        destinationAddress: data.destStation,
+        destinationLocation: new admin.firestore.GeoPoint(
+          data.destLocation.latitude,
+          data.destLocation.longitude
+        ),
+        totalFare: data.totalFare,
+        qrCodeData: data.qrCodeData,
+        rideType: "Metro",
+        ticketType: data.ticketType,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      };
+
+      transaction.set(metroDocRef, firestoreData);
+      transaction.set(counterRef, {current_id: newCount}, {merge: true});
+    });
+
+    return {rideId: newRideIdString};
+  } catch (error) {
+    logger.error("Error creating synced metro booking:", error);
+    throw new HttpsError("internal", "Failed to save metro booking.");
   }
 });

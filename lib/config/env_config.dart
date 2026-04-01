@@ -5,12 +5,24 @@ class EnvConfig {
   final String appName;
   final String googleMapsKey;
   final String serverClientId;
+  final String ondcSubscriberId;
+  final String ondcSigningPublicKey;
+  final String ondcEncryptionPublicKey;
+  final String ondcUniqueKeyId;
+  final String ondcDomain;
+  final String ondcCityCode;
 
   EnvConfig({
     required this.environment,
     required this.appName,
     required this.googleMapsKey,
     required this.serverClientId,
+    required this.ondcSubscriberId,
+    required this.ondcSigningPublicKey,
+    required this.ondcEncryptionPublicKey,
+    required this.ondcUniqueKeyId,
+    required this.ondcDomain,
+    required this.ondcCityCode,
   });
 
   static EnvConfig? _instance;
