@@ -100,6 +100,65 @@ class _PermissionsScreenState extends State<PermissionsScreen>
     _checkPermissions();
   }
 
+  Future<void> _handleLocationRequest() async {
+    // 1. Show Prominent Disclosure before requesting
+    final bool? accepted = await _showLocationDisclosure();
+    if (accepted == true) {
+      await _requestPermission(Permission.location);
+    }
+  }
+
+  Future<bool?> _showLocationDisclosure() async {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.location_on, color: Colors.blue),
+            SizedBox(width: 10),
+            Text("Location Disclosure"),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Indi Cabs collects location data to enable:",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 12),
+            Text("• Finding nearby drivers for your pickup."),
+            Text("• Real-time tracking of your ride progress."),
+            Text("• Safety monitoring during your trip."),
+            SizedBox(height: 12),
+            Text(
+              "This data is collected even when the app is closed or not in use, "
+              "to ensure your ride tracking is never interrupted and for your safety.",
+              style: TextStyle(fontStyle: FontStyle.italic, color: Colors.redAccent),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Deny"),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text("Accept & Continue"),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _requestAll() async {
     await [
       Permission.locationWhenInUse,
@@ -167,9 +226,9 @@ class _PermissionsScreenState extends State<PermissionsScreen>
               _buildPermissionTile(
                 icon: Icons.location_on_outlined,
                 title: "Location",
-                description: "To find rides near you and track your trip.",
+                description: "To find rides near you and track your trip (even when app is closed).",
                 isGranted: _locationGranted,
-                onTap: () => _requestPermission(Permission.location),
+                onTap: _handleLocationRequest,
                 isDark: isDark,
               ),
               const SizedBox(height: 16),

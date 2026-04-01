@@ -74,39 +74,45 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
 
   Future<void> _pickContact() async {
     try {
-      final status = await Permission.contacts.status;
-
-      if (status.isDenied) {
-        if (mounted) {
-          final bool? shouldRequest = await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text("Contacts Permission"),
-              content: const Text(
-                "To book a ride for a guest, we need access to your contacts to quickly select their phone number.",
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text("Cancel"),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text("Allow"),
-                ),
-              ],
+      // 1. Prominent Disclosure for Contacts
+      final bool? proceed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.contacts, color: Colors.orange),
+              SizedBox(width: 10),
+              Text("Contacts Access"),
+            ],
+          ),
+          content: const Text(
+            "Indi Cabs needs access to your contacts to let you quickly find and select "
+            "friends or family members you are booking for. Their name and phone number "
+            "will be used only to create the ride request.",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("Not Now"),
             ),
-          );
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text("I Understand"),
+            ),
+          ],
+        ),
+      );
 
-          if (shouldRequest != true) {
-            return;
-          }
-        }
-      }
+      if (proceed != true) return;
 
-      final requestedStatus = await Permission.contacts.request();
+      final status = await Permission.contacts.request();
 
-      if (requestedStatus.isPermanentlyDenied) {
+      if (status.isPermanentlyDenied) {
         if (mounted) {
           showDialog(
             context: context,
@@ -134,7 +140,7 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
         return;
       }
 
-      if (requestedStatus.isGranted) {
+      if (status.isGranted) {
         final contactId = await FlutterContacts.native.showPicker();
         if (contactId != null) {
           final contact = await FlutterContacts.get(
@@ -220,6 +226,7 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
     try {
       final result = await _calculateFaresCallable.call<Map<dynamic, dynamic>>({
         'distanceMeters': routeDetails.distanceMeters,
+        'durationSeconds': routeDetails.durationSeconds,
         'tollCost': routeDetails.tollCost,
         'pickupLocation': {
           'latitude': _pickupLocation!.latitude,
@@ -233,20 +240,28 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
             .map((p) => {'latitude': p.latitude, 'longitude': p.longitude})
             .toList(),
       });
-      final fares = result.data['fares'] as Map<dynamic, dynamic>?;
-      final appliedSurcharge = result.data['appliedSurcharge'] as num? ?? 0;
-      final appliedToll = result.data['appliedToll'] as num? ?? 0;
+      
+      final data = result.data;
+      if (data['fares'] == null) {
+        throw Exception("Invalid response from fare calculation.");
+      }
+
+      final fares = data['fares'] as Map<dynamic, dynamic>? ?? {};
+      final appliedSurcharge = data['appliedSurcharge'] as num? ?? 0;
+      final appliedToll = data['appliedToll'] as num? ?? 0;
       final totalExtras = appliedSurcharge + appliedToll;
 
-      final typedFares = fares?.map(
+      final typedFares = fares.map(
         (key, value) => MapEntry(key.toString(), value as num),
       );
 
-      return (fares: typedFares ?? {}, appliedSurcharge: totalExtras);
+      return (fares: typedFares, appliedSurcharge: totalExtras);
     } catch (e) {
       debugPrint("Error calculating fares: $e");
       _bookingState.value = _bookingState.value.copyWith(isLoading: false);
-      if (mounted) displaySnackBar(context, "Could not calculate fares.");
+      if (mounted) {
+        displaySnackBar(context, "Could not calculate fares: ${e.toString()}");
+      }
       return null;
     }
   }
