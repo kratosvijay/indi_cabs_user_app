@@ -12,6 +12,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:showcaseview/showcaseview.dart';
 
 import 'package:flutter/foundation.dart'; // For defaultTargetPlatform
 import 'package:flutter/gestures.dart'; // For gestureRecognizers
@@ -51,7 +52,6 @@ import 'package:project_taxi_with_ai/widgets/ride_confirm_sheet.dart';
 import 'package:project_taxi_with_ai/widgets/search_bar.dart';
 import 'package:project_taxi_with_ai/widgets/review_dialog.dart'; // **NEW IMPORT**
 import 'package:project_taxi_with_ai/widgets/custom_showcase.dart';
-import 'package:showcaseview/showcaseview.dart';
 
 import '../widgets/snackbar.dart';
 
@@ -1863,7 +1863,7 @@ class _HomePageState extends State<HomePage> {
             }),
           ),
         ),
-    );
+      );
   }
 
   // --- Helper Methods ---

@@ -180,14 +180,15 @@ class AuthController extends GetxController {
           .signInWithCredential(credential);
 
       // 4. Update display name if available (Apple only provides this on first sign in)
-      if (userCredential.user != null &&
+      final user = userCredential.user;
+      if (user != null &&
           (appleCredential.givenName != null ||
               appleCredential.familyName != null)) {
         final String name =
             "${appleCredential.givenName ?? ''} ${appleCredential.familyName ?? ''}"
                 .trim();
         if (name.isNotEmpty) {
-          await userCredential.user!.updateDisplayName(name);
+          await user.updateDisplayName(name);
         }
       }
     } catch (e) {

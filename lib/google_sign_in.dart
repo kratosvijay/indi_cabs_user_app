@@ -1,13 +1,20 @@
 // ignore_for_file: unnecessary_nullable_for_final_variable_declarations
 
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
+import 'package:google_sign_in/google_sign_in.dart' as gsi;
 import 'package:flutter/foundation.dart'
     show kDebugMode; // For printing errors in debug mode
 
 class GoogleSignInService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
-  static final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
+  static final gsi.GoogleSignIn _googleSignIn = gsi.GoogleSignIn.instance;
+  
+  /// Initializes Google Sign-In with configuration.
+  static Future<void> initialize({required String serverClientId}) async {
+    // Note: The specific version of GoogleSignIn in this project 
+    // uses a custom .instance and .initialize() method.
+    await _googleSignIn.initialize(serverClientId: serverClientId);
+  }
 
   /// Attempts to sign in the user with Google.
   /// Returns a [UserCredential] if successful, otherwise returns `null`.
@@ -17,8 +24,7 @@ class GoogleSignInService {
     try {
       // 1. Trigger the Google Authentication flow
       // **FIXED:** Changed 'signIn()' to 'authenticate()'
-      final GoogleSignInAccount? googleUser = await _googleSignIn
-          .authenticate();
+      final gsi.GoogleSignInAccount? googleUser = await _googleSignIn.authenticate();
 
       // If the user cancelled the sign-in, return null
       if (googleUser == null) {
@@ -27,7 +33,7 @@ class GoogleSignInService {
       }
 
       // 2. Obtain the auth details from the request
-      final GoogleSignInAuthentication googleAuth = googleUser.authentication;
+      final gsi.GoogleSignInAuthentication googleAuth = googleUser.authentication;
 
       // 3. Create a new Firebase credential
       final AuthCredential credential = GoogleAuthProvider.credential(

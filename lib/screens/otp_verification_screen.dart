@@ -139,6 +139,10 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> with Code
     setState(() => _isLoading = true);
 
     try {
+      if (_verificationId == null) {
+        throw Exception("Verification ID is null. Please resend OTP.");
+      }
+      
       final otpCredential = credential ??
           PhoneAuthProvider.credential(
             verificationId: _verificationId!,

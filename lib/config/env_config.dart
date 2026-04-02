@@ -11,6 +11,7 @@ class EnvConfig {
   final String ondcUniqueKeyId;
   final String ondcDomain;
   final String ondcCityCode;
+  final String trackingUrl;
 
   EnvConfig({
     required this.environment,
@@ -23,6 +24,7 @@ class EnvConfig {
     required this.ondcUniqueKeyId,
     required this.ondcDomain,
     required this.ondcCityCode,
+    required this.trackingUrl,
   });
 
   static EnvConfig? _instance;

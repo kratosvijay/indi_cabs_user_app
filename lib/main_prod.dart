@@ -14,6 +14,7 @@ void main() {
       ondcUniqueKeyId: '0b35d6b4-ed03-478f-9ad3-a8b3528026ef',
       ondcDomain: 'ONDC:TRV11',
       ondcCityCode: '*', // All Cities
+      trackingUrl: 'https://indicabs-prod.web.app/track',
     ),
   );
   

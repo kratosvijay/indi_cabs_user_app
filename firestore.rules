@@ -18,7 +18,7 @@ service cloud.firestore {
     // --- Users Collection ---
     match /users/{userId} {
       allow read, write: if isOwner(userId);
-      allow read: if isDriver(); // Drivers can see user details for active rides
+      allow read, update: if isDriver(); // Drivers can see and update user details for active rides
       
       match /favorites/{favoriteId} {
         allow read, write: if isOwner(userId);
@@ -35,14 +35,15 @@ service cloud.firestore {
     // --- Drivers Collection ---
     match /drivers/{driverId} {
       allow read, write: if isOwner(driverId);
-      allow read: if isSignedIn(); // Users can see driver details
+      allow read, update: if isUser(); // Passengers can see and update driver ratings
+      allow read: if true; // Allow public tracking
     }
 
     // --- Ride Requests ---
     match /ride_requests/{rideId} {
       allow create: if isUser();
-      allow read: if isOwner(resource.data.userId) || isOwner(resource.data.driverId) || (isSignedIn() && resource.data.status == 'searching');
-      allow update: if isOwner(resource.data.userId) || isOwner(resource.data.driverId) || (isDriver() && (resource.data.status == 'searching' || resource.data.driverId == request.auth.uid));
+      allow read: if true; // Allow public tracking
+      allow update: if isOwner(resource.data.userId) || isOwner(resource.data.driverId) || (isDriver() && resource.data.driverId == request.auth.uid) || (isDriver() && resource.data.status == 'searching');
       
       match /messages/{messageId} {
         allow read, write: if isSignedIn() && (isOwner(get(/databases/$(database)/documents/ride_requests/$(rideId)).data.userId) || isOwner(get(/databases/$(database)/documents/ride_requests/$(rideId)).data.driverId));
@@ -52,8 +53,8 @@ service cloud.firestore {
     // --- Rental Requests ---
     match /rental_requests/{rideId} {
       allow create: if isUser();
-      allow read: if isOwner(resource.data.userId) || isOwner(resource.data.driverId) || (isSignedIn() && resource.data.status == 'searching');
-      allow update: if isOwner(resource.data.userId) || isOwner(resource.data.driverId) || (isDriver() && (resource.data.status == 'searching' || resource.data.driverId == request.auth.uid));
+      allow read: if true; // Allow public tracking
+      allow update: if isOwner(resource.data.userId) || isOwner(resource.data.driverId) || (isDriver() && resource.data.driverId == request.auth.uid) || (isDriver() && resource.data.status == 'searching');
 
       match /messages/{messageId} {
         allow read, write: if isSignedIn() && (isOwner(get(/databases/$(database)/documents/rental_requests/$(rideId)).data.userId) || isOwner(get(/databases/$(database)/documents/rental_requests/$(rideId)).data.driverId));
@@ -77,7 +78,7 @@ service cloud.firestore {
 
     match /reviews/{reviewId} {
       allow read: if isSignedIn();
-      allow create: if isUser();
+      allow create: if isUser() || isDriver();
       allow update, delete: if false;
     }
 
@@ -89,7 +90,8 @@ service cloud.firestore {
     // --- Earnings ---
     match /earnings/{earningId} {
       allow read: if isSignedIn() && resource.data.driverId == request.auth.uid;
-      allow write: if false; // Only Cloud Functions
+      allow create: if isDriver(); // Allow driver to post earnings
+      allow update, delete: if false;
     }
 
     // --- Counters ---

@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:flutter/material.dart' hide Route;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:project_taxi_with_ai/config/env_config.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -829,7 +830,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         "Status: ${_currentRideStatus.toUpperCase()}\n"
         "Pickup: $_pickupAddress\n"
         "Dropoff: $_destinationAddress\n\n"
-        "Track Live: https://projecttaxi-df0d2.web.app/track?id=${widget.rideRequestId}${widget.isRental ? '&type=rental' : ''}";
+        "Track Live: ${EnvConfig.instance.trackingUrl}?id=${widget.rideRequestId}${widget.isRental ? '&type=rental' : ''}";
 
     // ignore: deprecated_member_use
     await Share.share(message, subject: 'My Ride Details - IndiCabs');
