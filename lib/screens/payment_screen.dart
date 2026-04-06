@@ -19,7 +19,10 @@ class PaymentScreen extends StatefulWidget {
     required this.currentPaymentMethod,
     this.currentBalance = 0,
     this.totalFare = 0,
+    this.initialUseWallet = false,
   });
+
+  final bool initialUseWallet;
 
   @override
   State<PaymentScreen> createState() => _PaymentScreenState();
@@ -27,6 +30,7 @@ class PaymentScreen extends StatefulWidget {
 
 class _PaymentScreenState extends State<PaymentScreen> {
   late String _selectedPaymentMethod;
+  late bool _useWalletBalance;
 
   final currencyFormatter = NumberFormat.currency(
     locale: 'en_IN',
@@ -65,6 +69,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   void initState() {
     super.initState();
     _selectedPaymentMethod = widget.currentPaymentMethod;
+    _useWalletBalance = widget.initialUseWallet;
   }
 
   void _selectMethod(String key) {
@@ -73,10 +78,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
     });
 
     // pop with result (if this screen was opened via Navigator)
-    Get.back(result: _selectedPaymentMethod);
+    Get.back(result: {
+      'method': _selectedPaymentMethod,
+      'useWallet': _useWalletBalance,
+    });
   }
 
-  bool _canUseWallet() => widget.currentBalance >= widget.totalFare;
+  bool _canUseWallet() => widget.currentBalance > 0;
 
   @override
   Widget build(BuildContext context) {
@@ -97,12 +105,52 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
                 const SizedBox(height: 16),
 
+                // Wallet toggle
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _sectionHeader('useWalletBalance'.tr),
+                    SwitchListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                      title: Text(
+                        "useWalletBalance".tr,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: widget.currentBalance > 0 ? null : Colors.grey,
+                        ),
+                      ),
+                      subtitle: Text(
+                        "${'available'.tr}: ${currencyFormatter.format(widget.currentBalance)}",
+                        style: TextStyle(
+                          color: widget.currentBalance > 0 ? null : Colors.grey,
+                        ),
+                      ),
+                      value: (widget.currentBalance > 0) && 
+                             (_selectedPaymentMethod == 'Wallet' ? true : _useWalletBalance),
+                      onChanged: (widget.currentBalance <= 0)
+                          ? null
+                          : (val) {
+                              setState(() {
+                                _useWalletBalance = val;
+                                if (!val && _selectedPaymentMethod == 'Wallet') {
+                                  _selectedPaymentMethod = 'Cash';
+                                }
+                              });
+                            },
+                    ),
+                    const Divider(),
+                  ],
+                ),
+
                 // Wallet section
                 _sectionHeader('myWallet'.tr),
                 _buildPaymentTile(
                   option: _options.firstWhere((o) => o.key == 'Wallet'),
-                  subtitle:
-                      '${'balance'.tr}: ${currencyFormatter.format(widget.currentBalance)}',
+                  subtitle: _canUseWallet()
+                      ? widget.currentBalance < widget.totalFare
+                          ? '${'balance'.tr}: ${currencyFormatter.format(widget.currentBalance)} (${'partialPaymentNote'.tr})'
+                          : '${'balance'.tr}: ${currencyFormatter.format(widget.currentBalance)}'
+                      : '${'balance'.tr}: ${currencyFormatter.format(widget.currentBalance)}',
                   isEnabled: _canUseWallet(),
                   disabledMessage: _canUseWallet()
                       ? null
@@ -409,8 +457,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
           '${'confirmPayment'.tr} — ${_selectedPaymentMethod.isEmpty ? '' : _selectedPaymentMethod}',
       onPressed: canConfirm
           ? () {
-              // Return the chosen method
-              Get.back(result: _selectedPaymentMethod);
+              // Return the chosen method and toggle
+              Get.back(result: {
+                'method': _selectedPaymentMethod,
+                'useWallet': _useWalletBalance,
+              });
             }
           : null,
     );

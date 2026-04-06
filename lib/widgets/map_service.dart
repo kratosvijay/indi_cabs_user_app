@@ -151,7 +151,7 @@ class MapService {
           ),
           icon:
               destinationIcon ??
-              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
           anchor: const Offset(0.5, 1.0), // Anchor at bottom center
         ),
       );

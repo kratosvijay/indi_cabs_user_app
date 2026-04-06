@@ -8,6 +8,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:project_taxi_with_ai/screens/home_page.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:pin_code_fields/pin_code_fields.dart';
+import 'package:sms_autofill/sms_autofill.dart';
 import 'login_screen.dart';
 
 class SignUpScreen extends StatefulWidget {
@@ -17,7 +19,7 @@ class SignUpScreen extends StatefulWidget {
   State<SignUpScreen> createState() => _SignUpScreenState();
 }
 
-class _SignUpScreenState extends State<SignUpScreen> {
+class _SignUpScreenState extends State<SignUpScreen> with CodeAutoFill {
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -32,12 +34,29 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
 
   @override
+  void initState() {
+    super.initState();
+    listenForCode();
+  }
+
+  @override
+  void codeUpdated() {
+    setState(() {
+      _otpController.text = code ?? "";
+    });
+    if (code != null && code!.length == 6) {
+      _verifyOtp();
+    }
+  }
+
+  @override
   void dispose() {
     _firstNameController.dispose();
     _lastNameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
     _otpController.dispose();
+    unregisterListener();
     super.dispose();
   }
 
@@ -188,6 +207,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       appBar: ProAppBar(
         titleText: 'signUp'.tr,
@@ -243,11 +263,32 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       keyboardType: TextInputType.phone,
                     ),
                   ] else ...[
-                    ProTextField(
+                    PinCodeTextField(
+                      appContext: context,
+                      length: 6,
                       controller: _otpController,
-                      hintText: 'otpHint'.tr,
-                      icon: Icons.password,
                       keyboardType: TextInputType.number,
+                      animationType: AnimationType.fade,
+                      pinTheme: PinTheme(
+                        shape: PinCodeFieldShape.box,
+                        borderRadius: BorderRadius.circular(12),
+                        fieldHeight: 50,
+                        fieldWidth: 45,
+                        activeFillColor: isDark ? Colors.grey[900] : Colors.grey[100],
+                        inactiveFillColor: isDark ? Colors.grey[900] : Colors.grey[100],
+                        selectedFillColor: isDark ? Colors.grey[800] : Colors.white,
+                        activeColor: Theme.of(context).primaryColor,
+                        inactiveColor: Colors.grey.withValues(alpha: 0.3),
+                        selectedColor: Theme.of(context).primaryColor,
+                      ),
+                      cursorColor: Theme.of(context).primaryColor,
+                      animationDuration: const Duration(milliseconds: 300),
+                      enableActiveFill: true,
+                      onCompleted: (v) => _verifyOtp(),
+                      onChanged: (value) {
+                        setState(() {}); // To update button state
+                      },
+                      beforeTextPaste: (text) => true,
                     ),
                   ],
 

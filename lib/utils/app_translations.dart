@@ -246,6 +246,7 @@ class AppTranslations extends Translations {
           'saveSchedule': 'Save Schedule',
           'scheduledTimeMinimum':
               'Scheduled time must be at least 30 minutes from now.',
+          'partialPaymentNote': 'Partial payment will be applied',
         },
         'ta': {
           'language': 'மொழி',
@@ -491,6 +492,7 @@ class AppTranslations extends Translations {
           'saveSchedule': 'திட்டத்தைச் சேமிக்கவும்',
           'scheduledTimeMinimum':
               'திட்டமிடப்பட்ட நேரம் இப்போது இருந்து குறைந்தது 30 நிமிடங்கள் இருக்க வேண்டும்.',
+          'partialPaymentNote': 'பகுதி பணம் கழிக்கப்படும்',
         },
         'hi': {
           'language': 'भाषा',
@@ -735,6 +737,7 @@ class AppTranslations extends Translations {
           'saveSchedule': 'शेड्यूल सहेजें',
           'scheduledTimeMinimum':
               'निर्धारित समय अब ​​से कम से कम 30 मिनट बाद का होना चाहिए।',
+          'partialPaymentNote': 'आंशिक भुगतान लागू होगा',
         },
         'te': {
           'language': 'భాష',
@@ -980,6 +983,7 @@ class AppTranslations extends Translations {
           'saveSchedule': 'షెడ్యూల్‌ను సేవ్ చేయండి',
           'scheduledTimeMinimum':
               'షెడ్యూల్ చేసిన సమయం ఇప్పటి నుండి కనీసం 30 నిమిషాలు ఉండాలి.',
+          'partialPaymentNote': 'పాక్షిక చెల్లింపు వర్తించబడుతుంది',
         },
         'kn': {
           'language': 'ಭಾಷೆ',

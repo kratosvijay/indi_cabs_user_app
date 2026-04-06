@@ -8,6 +8,8 @@ import 'home_page.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:project_taxi_with_ai/controllers/auth_controller.dart';
+import 'package:pin_code_fields/pin_code_fields.dart';
+import 'package:sms_autofill/sms_autofill.dart';
 import 'login_screen.dart';
 
 class PhoneAuthScreen extends StatefulWidget {
@@ -26,7 +28,7 @@ class PhoneAuthScreen extends StatefulWidget {
   State<PhoneAuthScreen> createState() => _PhoneAuthScreenState();
 }
 
-class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
+class _PhoneAuthScreenState extends State<PhoneAuthScreen> with CodeAutoFill {
   final _phoneController = TextEditingController();
   final _otpController = TextEditingController();
   bool _isLoading = false;
@@ -37,9 +39,26 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
 
   @override
+  void initState() {
+    super.initState();
+    listenForCode();
+  }
+
+  @override
+  void codeUpdated() {
+    setState(() {
+      _otpController.text = code ?? "";
+    });
+    if (code != null && code!.length == 6) {
+      _verifyOtp();
+    }
+  }
+
+  @override
   void dispose() {
     _phoneController.dispose();
     _otpController.dispose();
+    unregisterListener();
     super.dispose();
   }
 
@@ -237,6 +256,7 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       appBar: ProAppBar(
         titleText: 'Verify Mobile Number',
@@ -273,11 +293,32 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
                   keyboardType: TextInputType.phone,
                 )
               else
-                ProTextField(
+                PinCodeTextField(
+                  appContext: context,
+                  length: 6,
                   controller: _otpController,
-                  hintText: 'Enter 6-digit code',
-                  icon: Icons.password,
                   keyboardType: TextInputType.number,
+                  animationType: AnimationType.fade,
+                  pinTheme: PinTheme(
+                    shape: PinCodeFieldShape.box,
+                    borderRadius: BorderRadius.circular(12),
+                    fieldHeight: 50,
+                    fieldWidth: 45,
+                    activeFillColor: isDark ? Colors.grey[900] : Colors.grey[100],
+                    inactiveFillColor: isDark ? Colors.grey[900] : Colors.grey[100],
+                    selectedFillColor: isDark ? Colors.grey[800] : Colors.white,
+                    activeColor: Theme.of(context).primaryColor,
+                    inactiveColor: Colors.grey.withValues(alpha: 0.3),
+                    selectedColor: Theme.of(context).primaryColor,
+                  ),
+                  cursorColor: Theme.of(context).primaryColor,
+                  animationDuration: const Duration(milliseconds: 300),
+                  enableActiveFill: true,
+                  onCompleted: (v) => _verifyOtp(),
+                  onChanged: (value) {
+                    setState(() {});
+                  },
+                  beforeTextPaste: (text) => true,
                 ),
               const SizedBox(height: 30),
               ProButton(

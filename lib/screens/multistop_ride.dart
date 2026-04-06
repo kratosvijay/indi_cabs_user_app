@@ -13,6 +13,54 @@ import 'package:project_taxi_with_ai/widgets/ride_confirm_sheet.dart';
 import '../widgets/snackbar.dart';
 import 'package:project_taxi_with_ai/widgets/pro_library.dart';
 import 'package:project_taxi_with_ai/screens/edit_location.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:project_taxi_with_ai/widgets/location_service.dart';
+
+// GeofenceZone model for toll calculation
+class GeofenceZone {
+  final String id;
+  final String type;
+  final List<LatLng> boundary;
+  final num surchargeAmount;
+  final List<Map<String, dynamic>> pickupPoints;
+
+  GeofenceZone({
+    required this.id,
+    required this.type,
+    required this.boundary,
+    this.surchargeAmount = 0,
+    this.pickupPoints = const [],
+  });
+  factory GeofenceZone.fromFirestore(DocumentSnapshot doc) {
+    Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+    List<LatLng> boundary = [];
+    (data['boundary'] as List<dynamic>?)?.forEach((point) {
+      if (point is GeoPoint) {
+        boundary.add(LatLng(point.latitude, point.longitude));
+      }
+    });
+
+    List<Map<String, dynamic>> pickups = [];
+    (data['pickup_points'] as List<dynamic>?)?.forEach((point) {
+      if (point is Map<String, dynamic> &&
+          point['name'] is String &&
+          point['location'] is GeoPoint) {
+        pickups.add({
+          'name': point['name'],
+          'location': point['location'],
+        });
+      }
+    });
+
+    return GeofenceZone(
+      id: doc.id,
+      type: data['type'] ?? '',
+      boundary: boundary,
+      pickupPoints: pickups,
+      surchargeAmount: data['surcharge_amount'] ?? 0,
+    );
+  }
+}
 
 class MultiStopScreen extends StatefulWidget {
   final User user;
@@ -41,6 +89,9 @@ class _MultiStopScreenState extends State<MultiStopScreen>
     region: 'asia-south1',
   ).httpsCallable('calculateFares');
 
+  final LocationService _locationService = LocationService(apiKey: "");
+  List<GeofenceZone> _geofenceZones = [];
+
   // Animation
   late AnimationController _animationController;
   late Animation<Offset> _slideAnimation;
@@ -68,6 +119,9 @@ class _MultiStopScreenState extends State<MultiStopScreen>
     // _placesService removed
     _directionsService = DirectionsService(apiKey: apiKey);
     _mapService = MapService();
+
+    // Load geofence zones for toll calculation
+    _loadGeofenceZones();
 
     // Initialize Pickup
     _locations[-1] = widget.currentPosition;
@@ -106,6 +160,59 @@ class _MultiStopScreenState extends State<MultiStopScreen>
     // _placesService.cancelDebounce(); // No longer needed
     _animationController.dispose();
     super.dispose();
+  }
+
+  // **NEW:** Load toll zones from Firestore
+  Future<void> _loadGeofenceZones() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('geofenced_zones')
+          .get();
+
+      final List<GeofenceZone> fetchedZones = [];
+      for (var doc in snapshot.docs) {
+        fetchedZones.add(GeofenceZone.fromFirestore(doc));
+      }
+
+      if (mounted) {
+        setState(() {
+          _geofenceZones = fetchedZones;
+        });
+        debugPrint(
+          "MultiStopRide: Loaded ${_geofenceZones.length} geofence zones from 'geofenced_zones'",
+        );
+      }
+    } catch (e) {
+      debugPrint("Error loading geofence zones: $e");
+    }
+  }
+
+  // **NEW:** Calculate tolls based on Firestore geofence zones
+  num _calculateTollsForRoute(List<LatLng> polyline) {
+    if (polyline.isEmpty) return 0;
+    num totalToll = 0;
+
+    // Filter zones that have a surcharge > 0
+    final tollZones =
+        _geofenceZones.where((z) => z.surchargeAmount > 0).toList();
+
+    for (var zone in tollZones) {
+      // Sum all distinct zones that are intersected by the polyline
+      bool crossed = false;
+      for (var point in polyline) {
+        if (_locationService.isPointInPolygon(point, zone.boundary)) {
+          crossed = true;
+          break;
+        }
+      }
+      if (crossed) {
+        totalToll += zone.surchargeAmount;
+        debugPrint(
+          "Multi-Stop Toll Crossed: ${zone.id} | Amount: ${zone.surchargeAmount}",
+        );
+      }
+    }
+    return totalToll;
   }
 
   Future<void> _getAddressForPickup() async {
@@ -565,12 +672,18 @@ class _MultiStopScreenState extends State<MultiStopScreen>
     final faresResult = calculationResult.fares;
     final appliedSurcharge = calculationResult.appliedSurcharge;
 
-    // Update route details with the newly calculated surcharge/toll
-    routeDetails = routeDetails.copyWith(tollCost: appliedSurcharge);
+    // **NEW:** Calculate summed tolls (e.g. 60+30=90)
+    final num customTollSum = _calculateTollsForRoute(routeDetails.polylinePoints);
+    routeDetails = routeDetails.copyWith(tollCost: customTollSum);
+
+    // Subtract function's extras from fares to get base, then use our summed toll
+    final baseFares = faresResult.map(
+      (key, value) => MapEntry(key, value - appliedSurcharge),
+    );
 
     // 4. Add multi-stop surcharge (₹30 per stop, *not* including final drop)
     final multiStopFee = intermediateLatLngs.length * 30;
-    final finalFares = faresResult.map(
+    final finalFares = baseFares.map(
       (key, value) => MapEntry(key, value + multiStopFee),
     );
 

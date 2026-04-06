@@ -105,6 +105,7 @@ class _RideConfirmationBottomSheetState
 
   // **NEW:** Key for the schedule button
   final GlobalKey _scheduleButtonKey = GlobalKey();
+  bool _useWalletBalance = false; // **NEW**
 
   @override
   void initState() {
@@ -120,6 +121,8 @@ class _RideConfirmationBottomSheetState
         }
       });
     }
+
+    _useWalletBalance = widget.walletBalance > 0;
 
     // **MODIFIED:** Filter by type AND availability
     _filteredVehicleOptions = widget.vehicleOptions.where((option) {
@@ -194,8 +197,8 @@ class _RideConfirmationBottomSheetState
   ) {
     // Find the specific pricing rules for this vehicle
     final vehicleRules = widget.pricingRules?.vehiclePricing[vehicle.type];
-    // **NEW:** Get the toll cost from the route details
-    final num tollCost = widget.routeDetails?.tollCost ?? 0;
+    // **NEW:** Get the toll cost from the route details, but exclude for Auto
+    final num tollCost = (vehicle.type == 'Auto') ? 0 : (widget.routeDetails?.tollCost ?? 0);
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
 
     showModalBottomSheet(
@@ -318,7 +321,7 @@ class _RideConfirmationBottomSheetState
                   "waitingChargeValue".tr,
                   isDark,
                 ),
-                _buildFareInfoRow("nightCharge".tr, "+ ₹50", isDark),
+                _buildFareInfoRow("nightCharge".tr, "+ ₹30", isDark),
 
                 const Divider(height: 20),
                 // **NEW:** Explicitly show the final calculated total so users know toll is included
@@ -500,7 +503,11 @@ class _RideConfirmationBottomSheetState
       }
     }
 
-    return Container(
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.7,
+      ),
+      child: Container(
       decoration: BoxDecoration(
         color: isDark ? Colors.grey[900] : Colors.white,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
@@ -651,7 +658,7 @@ class _RideConfirmationBottomSheetState
 
                 const SizedBox(height: 16),
 
-                // Vehicle Options List
+                 // Vehicle Options List
                 (widget.calculatedFares == null && !widget.isLoadingFares)
                     ? Center(
                         child: Padding(
@@ -839,6 +846,7 @@ class _RideConfirmationBottomSheetState
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                const SizedBox(height: 8),
                 CustomShowcase(
                   showcaseKey: widget.showcaseKey ?? GlobalKey(),
                   title: "Ride Later",
@@ -879,7 +887,9 @@ class _RideConfirmationBottomSheetState
                     ),
                   ),
                 ),
-                const SizedBox(height: 8),
+                 const SizedBox(height: 8),
+
+                 // Confirmation Button
 
                 // Confirmation Button
                 ProButton(
@@ -956,6 +966,7 @@ class _RideConfirmationBottomSheetState
                               convenienceFee: _convenienceFee, // **NEW**
                               guestName: widget.guestName,
                               guestPhone: widget.guestPhone,
+                              useWallet: _useWalletBalance, // **NEW**
                             );
                         },
                 ),
@@ -965,7 +976,7 @@ class _RideConfirmationBottomSheetState
           ),
         ],
       ),
-    );
+    ));
   }
 
   String _formatDuration(int seconds) {

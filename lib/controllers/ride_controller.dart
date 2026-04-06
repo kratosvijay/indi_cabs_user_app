@@ -506,15 +506,17 @@ class RideController extends GetxController {
     String? pickupPlaceName,
     required String destinationAddress,
     String? destinationPlaceName,
+    LatLng? destinationLocation, // **NEW**
   }) {
     if (pickupPlaceName != null) this.pickupPlaceName.value = pickupPlaceName;
     if (destinationPlaceName != null) this.destinationPlaceName.value = destinationPlaceName;
+    if (destinationLocation != null) this.destinationLocation.value = destinationLocation;
 
     markers.assignAll(
       mapService.createMarkers(
         pickupLocation: currentPosition.value,
         pickupAddress: pickupAddress,
-        destinationLocation: destinationLocation.value,
+        destinationLocation: destinationLocation ?? this.destinationLocation.value,
         destinationAddress: destinationAddress,
         pickupIcon: pickupIcon,
         destinationIcon: destinationIcon,
@@ -757,17 +759,32 @@ class RideController extends GetxController {
     }
   }
 
+  Future<void> refreshRentalPackages() async {
+    debugPrint("RideController: Manual refresh of rental packages requested.");
+    await _loadRentalPackages();
+  }
+
   Future<void> _loadRentalPackages() async {
+    if (isLoadingRentals.value) return;
     isLoadingRentals.value = true;
     try {
       final packages = await firestoreService.getRentalPackages();
-      debugPrint("RideController: Loaded ${packages.length} rental packages");
-      if (packages.isEmpty) {
-        debugPrint("RideController: WARNING - No rental packages found in Firestore!");
+      debugPrint("RideController: Loaded ${packages.length} rental packages from Firestore.");
+      
+      for (var pkg in packages) {
+        debugPrint(" - Package: ${pkg.displayName} (${pkg.id}) | Min Price: ₹${pkg.getMinPrice()}");
+        pkg.vehiclePrices.forEach((type, price) {
+          if (price > 0) debugPrint("   > $type: ₹$price");
+        });
       }
+
+      if (packages.isEmpty) {
+        debugPrint("RideController: WARNING - No rental packages found in Firestore collection 'rental_packages'!");
+      }
+      
       rentalPackages.assignAll(packages);
     } catch (e) {
-      debugPrint("RideController: Error loading rental packages: $e");
+      debugPrint("RideController: CRITICAL Error loading rental packages: $e");
     } finally {
       isLoadingRentals.value = false;
     }

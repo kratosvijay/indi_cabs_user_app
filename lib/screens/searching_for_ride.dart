@@ -4,9 +4,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'dart:math';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:volume_controller/volume_controller.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart'; // Import Firestore
@@ -46,6 +44,14 @@ class SearchingForRideScreen extends StatefulWidget {
   final List<Map<String, dynamic>>? intermediateStops;
   final DateTime? scheduledTime; // For scheduled rides
   final bool isBookForOther; // **NEW:** Flag to skip live tracking
+  final String? pickupAddress; // **NEW**
+  final String? pickupPlaceName;
+  final String? destinationPlaceName;
+  final String? paymentMethod;
+  final num? convenienceFee;
+  final num? walletAmountUsed;
+  final num? cashAmount;
+  final RouteDetails? routeDetails; // **NEW**
 
   const SearchingForRideScreen({
     super.key,
@@ -65,7 +71,15 @@ class SearchingForRideScreen extends StatefulWidget {
     this.rentalVehicleType,
     this.intermediateStops,
     this.scheduledTime,
-    this.isBookForOther = false, // **NEW** Default false
+    this.isBookForOther = false,
+    this.pickupAddress,
+    this.pickupPlaceName,
+    this.destinationPlaceName,
+    this.paymentMethod,
+    this.convenienceFee,
+    this.walletAmountUsed,
+    this.cashAmount,
+    this.routeDetails,
   }) : assert(
          isRental
              ? (rentalPackage != null && rentalVehicleType != null)
@@ -97,54 +111,12 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
 
   // **NEW:** Location Service for live tracking
   StreamSubscription<Position>? _locationSubscription;
+  Timer? _searchTimeoutTimer; // **NEW:** 5-minute timeout
   late final LocationService _locationService;
   final FirestoreService _firestoreService = FirestoreService(); // Instance
 
+  // Add Audio/Tts
   final FlutterTts _flutterTts = FlutterTts();
-  bool _audioPlayed = false;
-
-  void _playBookingSuccessAudio() async {
-    if (_audioPlayed) return;
-    _audioPlayed = true;
-
-    final List<String> messages = [
-      "Whoo whoo! A cab has been booked. Please wait while the driver is on the way.",
-      "Great news! Your cab is confirmed. The driver is heading your way.",
-      "Success! We've found a driver for you. They will be arriving shortly.",
-      "Buckle up! Your cab is booked and the driver is en route.",
-      "Ride booked successfully! Please hold on while your driver arrives.",
-    ];
-
-    final random = Random();
-    String messageToPlay = messages[random.nextInt(messages.length)];
-
-    await _flutterTts.setLanguage("en-US");
-    await _flutterTts.setPitch(1.0);
-    await _flutterTts.setVolume(1.0);
-
-    // Override iOS silent mode and set audio session to playback
-    await _flutterTts
-        .setIosAudioCategory(IosTextToSpeechAudioCategory.playback, [
-          IosTextToSpeechAudioCategoryOptions.allowBluetooth,
-          IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
-          IosTextToSpeechAudioCategoryOptions.mixWithOthers,
-          IosTextToSpeechAudioCategoryOptions.defaultToSpeaker,
-        ], IosTextToSpeechAudioMode.defaultMode);
-
-    // Save current volume
-    double currentVolume = await VolumeController.instance.getVolume();
-
-    // Set volume to max silently (without showing system UI)
-    VolumeController.instance.showSystemUI = false;
-    VolumeController.instance.setVolume(1.0);
-
-    // Await the TTS completion to restore volume
-    _flutterTts.setCompletionHandler(() {
-      VolumeController.instance.setVolume(currentVolume);
-    });
-
-    await _flutterTts.speak(messageToPlay);
-  }
 
   @override
   void initState() {
@@ -155,19 +127,15 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
       if (mounted) setState(() => _canCancel = true);
     });
 
-    // Initialize services (Assuming API Key is handled inside LocationService or passed globally)
-    // For now we just instantiate it, the key is mainly for geocoding
+    // Initialize services
     _locationService = LocationService(apiKey: "");
 
     debugPrint("SearchingForRideScreen: initState started");
     _currentTip = widget.tip;
-    _resolvedRideRequestId = widget.rideRequestId; // Initialize if available
-    _isRidePosted = _resolvedRideRequestId != null; // **NEW**
-    debugPrint(
-      "SearchingForRideScreen: _resolvedRideRequestId at start: $_resolvedRideRequestId, posted: $_isRidePosted",
-    );
+    _resolvedRideRequestId = widget.rideRequestId;
+    _isRidePosted = _resolvedRideRequestId != null;
 
-    // **NEW:** Start live location updates if allowed
+    // Start live location updates if allowed
     if (!widget.isBookForOther && !widget.isRental) {
       _startLocationUpdates();
     }
@@ -179,59 +147,43 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
       debugPrint("SearchingForRideScreen: Error in _buildMarkersAndBounds: $e");
     }
 
-    // **MODIFIED:** Check if the ride is scheduled or "book now"
+    // Check if the ride is scheduled or "book now"
     if (widget.scheduledTime == null) {
-      // --- BOOK NOW LOGIC ---
       if (_resolvedRideRequestId != null) {
-        debugPrint(
-          "SearchingForRideScreen: Listening for driver assignment with existing ID",
-        );
         _listenForDriverAssignment();
       } else if (widget.rideRequestIdFuture != null) {
-        debugPrint(
-          "SearchingForRideScreen: Waiting for ride request ID future",
-        );
         _waitForRideRequestId();
-      } else {
-        debugPrint("SearchingForRideScreen: No ID and no Future provided!");
       }
 
       _tipTimer = Timer(const Duration(seconds: 10), () {
         if (mounted &&
             (_rideStatusSubscription != null ||
                 widget.rideRequestIdFuture != null)) {
-          // Show tip card even if still waiting for ID, as long as we haven't failed
           setState(() => _showTipCard = true);
         }
       });
+
+      // **NEW:** Start the 5-minute timeout timer
+      _startSearchTimeoutTimer();
     } else {
-      // --- SCHEDULED RIDE LOGIC ---
-      debugPrint("SearchingForRideScreen: Scheduled ride logic");
       _showScheduledMessage();
     }
     debugPrint("SearchingForRideScreen: initState completed");
   }
 
   Future<void> _waitForRideRequestId() async {
-    debugPrint("SearchingForRideScreen: _waitForRideRequestId started");
     try {
       final id = await widget.rideRequestIdFuture!;
-      debugPrint("SearchingForRideScreen: Ride request ID resolved: $id");
       if (mounted) {
         setState(() {
           _resolvedRideRequestId = id;
-          _isRidePosted = true; // **NEW**
+          _isRidePosted = true;
         });
         _listenForDriverAssignment();
-      } else {
-        debugPrint(
-          "SearchingForRideScreen: Widget unmounted after ID resolution",
-        );
       }
     } catch (e) {
       debugPrint("Error resolving ride request ID: $e");
       if (mounted) {
-        // Show error dialog instead of immediately navigating
         showDialog(
           context: context,
           barrierDismissible: false,
@@ -252,16 +204,10 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
     }
   }
 
-  // **NEW:** Handles the "Scheduled" UI flow
   void _showScheduledMessage() {
-    // Wait 3 seconds and pop back to home
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) {
-        // Find the HomePage and pop until it
         Get.offAll(() => HomePage(user: widget.user));
-
-        // Show a confirmation snackbar *after* the navigation
-        // Show a confirmation snackbar *after* the navigation
         WidgetsBinding.instance.addPostFrameCallback((_) {
           displaySnackBar(
             context,
@@ -274,11 +220,9 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
   }
 
   void _buildMarkersAndBounds() {
-    debugPrint("SearchingForRideScreen: _buildMarkersAndBounds started");
     final Set<Marker> markers = {};
     final List<LatLng> allPoints = [];
 
-    // 1. Add Pickup
     markers.add(
       Marker(
         markerId: const MarkerId('pickup'),
@@ -289,7 +233,6 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
     );
     allPoints.add(widget.pickupLocation);
 
-    // 2. Add Intermediate Stops
     if (widget.intermediateStops != null) {
       int stopNumber = 1;
       for (var stopData in widget.intermediateStops!) {
@@ -320,14 +263,13 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
       }
     }
 
-    // 3. Add Final Destination
     if (widget.destinationPosition != widget.pickupLocation) {
       markers.add(
         Marker(
           markerId: const MarkerId('destination'),
           position: widget.destinationPosition,
           icon: BitmapDescriptor.defaultMarkerWithHue(
-            BitmapDescriptor.hueAzure,
+            BitmapDescriptor.hueRed,
           ),
           infoWindow: const InfoWindow(title: "Drop-off"),
         ),
@@ -335,18 +277,12 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
     }
     allPoints.add(widget.destinationPosition);
 
-    // **NEW:** Add Polyline points to bounds
-    debugPrint(
-      "SearchingForRideScreen: Polyline count: ${widget.polylines.length}",
-    );
     for (var polyline in widget.polylines) {
       allPoints.addAll(polyline.points);
     }
 
-    // 4. Calculate Bounds
     LatLngBounds bounds;
     if (allPoints.isEmpty) {
-      // Fallback if absolutely no points
       bounds = LatLngBounds(
         southwest: widget.pickupLocation,
         northeast: widget.pickupLocation,
@@ -376,78 +312,42 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
       _markers = markers;
       _routeBounds = bounds;
     });
-    debugPrint(
-      "SearchingForRideScreen: Markers and bounds built. Marker count: ${_markers.length}, Points count: ${allPoints.length}",
-    );
   }
 
-  // --- Listen for Firestore changes ---
   void _listenForDriverAssignment() {
-    debugPrint("SearchingForRideScreen: _listenForDriverAssignment started");
-    if (_resolvedRideRequestId == null) {
-      debugPrint(
-        "SearchingForRideScreen: _resolvedRideRequestId is null in _listenForDriverAssignment",
-      );
-      return; // Safety check
-    }
+    if (_resolvedRideRequestId == null) return;
 
-    String collectionPath;
-    if (widget.isRental) {
-      collectionPath = 'rental_requests';
-    } else {
-      collectionPath = 'ride_requests';
-    }
-    debugPrint(
-      "SearchingForRideScreen: Listening to collection: $collectionPath, doc: $_resolvedRideRequestId",
-    );
-
+    String collectionPath = widget.isRental ? 'rental_requests' : 'ride_requests';
     DocumentReference rideRef = FirebaseFirestore.instance
         .collection(collectionPath)
         .doc(_resolvedRideRequestId!);
 
     _rideStatusSubscription = rideRef.snapshots().listen(
       (snapshot) {
-        if (!mounted) {
-          debugPrint(
-            "SearchingForRideScreen: Widget unmounted during snapshot listen",
-          );
-          return;
-        }
+        if (!mounted) return;
 
         if (snapshot.exists) {
           final data = snapshot.data() as Map<String, dynamic>;
           final status = data['status'] as String?;
           final driverId = data['driverId'] as String?;
-          debugPrint(
-            "SearchingForRideScreen: Snapshot received. Status: $status, DriverId: $driverId",
-          );
 
           if (status == 'accepted') {
-            // **NEW:** Immediate UI Feedback
             if (!_isDriverFound) {
               setState(() => _isDriverFound = true);
-              // Also stop the tip timer as we don't need to boost anymore
               _tipTimer?.cancel();
               _showTipCard = false;
+              _searchTimeoutTimer?.cancel();
 
               if (mounted) {
-                displaySnackBar(
-                  context,
-                  "A cab has been booked!",
-                  isError: false,
-                );
+                displaySnackBar(context, "A cab has been booked!", isError: false);
               }
               _playBookingSuccessAudio();
             }
 
             if (driverId != null && driverId.isNotEmpty) {
-              debugPrint("Driver found! Navigating to RideInProgressScreen.");
               _rideStatusSubscription?.cancel();
               _rideStatusSubscription = null;
 
-              // **OPTIMIZATION:** Small delay to let the UI update show "Driver Found!" briefly
-              // unless it's critical to move instanly.
-              // But the user complained about delay, so we move instantly.
               Get.off(
                 () => RideInProgressScreen(
                   user: widget.user,
@@ -463,15 +363,11 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
                   intermediateStops: widget.intermediateStops,
                 ),
               );
-            } else {
-              debugPrint("Status accepted but DriverID is missing/empty!");
             }
           } else if (status == 'cancelled' || status == 'no_drivers_found') {
-            debugPrint(
-              "SearchingForRideScreen: Ride cancelled or no drivers found",
-            );
             _rideStatusSubscription?.cancel();
             _rideStatusSubscription = null;
+            _searchTimeoutTimer?.cancel();
             displaySnackBar(
               context,
               status == 'cancelled'
@@ -483,11 +379,9 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
             }
           }
         } else {
-          debugPrint("SearchingForRideScreen: Snapshot does not exist");
           _rideStatusSubscription?.cancel();
           _rideStatusSubscription = null;
-          // Only show snackbar if we are not already cancelling
-          if (mounted) {
+          if (mounted && !_isCancelling) {
             displaySnackBar(context, "Ride request not found.");
             Get.offAll(() => HomePage(user: widget.user));
           }
@@ -495,334 +389,263 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
       },
       onError: (error) {
         debugPrint("Error listening to ride status: $error");
-        if (mounted) {
-          displaySnackBar(context, "Error listening to ride status.");
-        }
         _rideStatusSubscription?.cancel();
         _rideStatusSubscription = null;
       },
     );
   }
 
-  // --- Cancel Ride ---
+  // **NEW:** Search Timeout logic
+  void _startSearchTimeoutTimer() {
+    _searchTimeoutTimer?.cancel();
+    _searchTimeoutTimer = Timer(const Duration(minutes: 5), () {
+      if (mounted && !_isDriverFound && !_isCancelling) {
+        _handleSearchTimeout();
+      }
+    });
+  }
+
+  Future<void> _handleSearchTimeout() async {
+    debugPrint("SearchingForRideScreen: Search timed out (5 mins)");
+
+    if (_resolvedRideRequestId != null) {
+      try {
+        String collectionPath =
+            widget.isRental ? 'rental_requests' : 'ride_requests';
+        await FirebaseFirestore.instance
+            .collection(collectionPath)
+            .doc(_resolvedRideRequestId!)
+            .update({'status': 'timeout'});
+      } catch (e) {
+        debugPrint("Error updating status to timeout: $e");
+      }
+    }
+
+    await _rideStatusSubscription?.cancel();
+    _rideStatusSubscription = null;
+
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Text("No Cabs Found"),
+          content: const Text(
+            "We couldn't find a cab for you at the moment. Would you like to try again?",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Get.back();
+                Get.offAll(() => HomePage(user: widget.user));
+              },
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Get.back();
+                _retrySearch();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text("Retry"),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  Future<void> _retrySearch() async {
+    if (mounted) {
+      setState(() {
+        _isCancelling = false;
+        _isRidePosted = false;
+        _resolvedRideRequestId = null;
+        _canCancel = false;
+        _showTipCard = false;
+      });
+    }
+
+    try {
+      if (widget.isRental) {
+        final String id = await _firestoreService.createRentalRideRequest(
+          userId: widget.user.uid,
+          userName: widget.user.displayName,
+          userPhone: widget.user.phoneNumber,
+          pickupLocation: widget.pickupLocation,
+          pickupAddress: widget.pickupAddress ?? "N/A",
+          pickupPlaceName: widget.pickupPlaceName,
+          rentalPackage: widget.rentalPackage!,
+          rentalVehicleType: widget.rentalVehicleType!,
+          rentalPrice: widget.fare,
+          tip: widget.tip,
+          paymentMethod: widget.paymentMethod ?? "Cash",
+          scheduledTime: widget.scheduledTime,
+          convenienceFee: widget.convenienceFee,
+          walletAmountUsed: widget.walletAmountUsed,
+          cashAmount: widget.cashAmount,
+        );
+        if (mounted) {
+          setState(() {
+            _resolvedRideRequestId = id;
+            _isRidePosted = true;
+            _canCancel = true;
+          });
+          _listenForDriverAssignment();
+          _startSearchTimeoutTimer();
+        }
+      } else {
+        final String id = await _firestoreService.createDailyRideRequest(
+          userId: widget.user.uid,
+          userName: widget.user.displayName,
+          userPhone: widget.user.phoneNumber,
+          pickupLocation: widget.pickupLocation,
+          pickupAddress: widget.pickupAddress ?? "N/A",
+          pickupPlaceName: widget.pickupPlaceName,
+          destinationLocation: widget.destinationPosition,
+          destinationAddress: widget.destinationAddress ?? "",
+          destinationPlaceName: widget.destinationPlaceName,
+          vehicleType: widget.selectedVehicle?.type ?? "Hatchback",
+          fare: widget.fare,
+          tip: widget.tip,
+          paymentMethod: widget.paymentMethod ?? "Cash",
+          routeDetails: widget.routeDetails,
+          intermediateStops: widget.intermediateStops,
+          scheduledTime: widget.scheduledTime,
+          convenienceFee: widget.convenienceFee,
+          walletAmountUsed: widget.walletAmountUsed,
+          cashAmount: widget.cashAmount,
+        );
+        if (mounted) {
+          setState(() {
+            _resolvedRideRequestId = id;
+            _isRidePosted = true;
+            _canCancel = true;
+          });
+          _listenForDriverAssignment();
+          _startSearchTimeoutTimer();
+        }
+      }
+    } catch (e) {
+      debugPrint("Error retrying search: $e");
+      if (mounted) displaySnackBar(context, "Error restarting search: $e");
+    }
+  }
+
   Future<void> _cancelRide() async {
-    if (_isCancelling) return; // Prevent double taps
+    if (_isCancelling) return;
     if (mounted) setState(() => _isCancelling = true);
 
-    debugPrint("SearchingForRideScreen: _cancelRide called");
+    _searchTimeoutTimer?.cancel();
     await _rideStatusSubscription?.cancel();
     _rideStatusSubscription = null;
 
     try {
       String? idToCancel = _resolvedRideRequestId;
       if (idToCancel == null && widget.rideRequestIdFuture != null) {
-        debugPrint(
-          "Waiting for ride request ID to resolve before cancelling...",
-        );
         idToCancel = await widget.rideRequestIdFuture;
       }
 
       if (idToCancel != null) {
-        String collectionPath = widget.isRental
-            ? 'rental_requests'
-            : 'ride_requests';
+        String collectionPath = widget.isRental ? 'rental_requests' : 'ride_requests';
         DocumentReference rideRef = FirebaseFirestore.instance
             .collection(collectionPath)
             .doc(idToCancel);
-        await rideRef.update({'status': 'cancelled_by_user'});
-        debugPrint(
-          "SearchingForRideScreen: Ride cancelled in Firestore ($idToCancel)",
-        );
-      } else {
-        debugPrint(
-          "SearchingForRideScreen: Cannot cancel, ride ID could not be resolved",
-        );
+
+        int attempts = 0;
+        const int maxAttempts = 3;
+        bool success = false;
+        while (attempts < maxAttempts && !success) {
+          try {
+            await rideRef.update({'status': 'cancelled_by_user'});
+            success = true;
+          } catch (e) {
+            attempts++;
+            if (attempts < maxAttempts) {
+              await Future.delayed(const Duration(milliseconds: 500));
+            } else {
+              rethrow;
+            }
+          }
+        }
       }
     } catch (e) {
       debugPrint("Error cancelling ride: $e");
-      // Don't show snackbar for "not found" errors as we are leaving anyway
       if (mounted && !e.toString().contains('not-found')) {
         displaySnackBar(context, "Error cancelling ride.");
       }
     } finally {
       if (mounted) {
-        // Use Get.offAll to ensure clean stack reset
         Get.offAll(() => HomePage(user: widget.user));
       } else {
-        // Even if unmounted, ensure we don't leave the flag hanging if the object somehow survives (rare)
         _isCancelling = false;
       }
     }
   }
 
-  // --- Update Tip ---
   Future<void> _updateTipInFirestore(double newTip) async {
-    if (_resolvedRideRequestId == null) return; // Guard against null ID
-
+    if (_resolvedRideRequestId == null) return;
     try {
-      String collectionPath = widget.isRental
-          ? 'rental_requests'
-          : 'ride_requests';
+      String collectionPath = widget.isRental ? 'rental_requests' : 'ride_requests';
       DocumentReference rideRef = FirebaseFirestore.instance
           .collection(collectionPath)
-          .doc(_resolvedRideRequestId);
+          .doc(_resolvedRideRequestId!);
       await rideRef.update({'tip': newTip, 'totalFare': widget.fare + newTip});
       if (mounted) {
-        displaySnackBar(
-          context,
-          "Tip updated to ₹${newTip.round()}!",
-          isError: false,
-        );
+        displaySnackBar(context, "Tip updated to ₹${newTip.round()}!", isError: false);
       }
     } catch (e) {
       debugPrint("Error updating tip: $e");
-      if (mounted) displaySnackBar(context, "Failed to update tip.");
     }
   }
 
-  // **NEW:** Start streaming location updates
   void _startLocationUpdates() {
-    debugPrint("SearchingForRideScreen: Starting location updates");
-    // Cancel any existing subscription first
     _locationSubscription?.cancel();
-
     try {
       _locationSubscription = _locationService.getPositionStream().listen(
         (Position position) {
-          if (!mounted) return;
-          if (_resolvedRideRequestId == null) {
-            return; // Don't write if no ID yet
-          }
-
-          // Update Firestore
-          // NOTE: We don't need to await this as it's a stream
+          if (!mounted || _resolvedRideRequestId == null) return;
           _firestoreService.updateUserLocation(
             widget.isRental ? 'rental_requests' : 'ride_requests',
             _resolvedRideRequestId!,
             LatLng(position.latitude, position.longitude),
           );
         },
-        onError: (e) {
-          debugPrint("SearchingForRideScreen: Location stream error: $e");
-        },
       );
     } catch (e) {
-      debugPrint("SearchingForRideScreen: Error starting location stream: $e");
+      debugPrint("Error starting location updates: $e");
+    }
+  }
+
+  void _playBookingSuccessAudio() async {
+    try {
+      await _flutterTts.setLanguage("en-US");
+      await _flutterTts.speak("Your cab has been booked successfully.");
+    } catch (e) {
+      debugPrint("Error playing audio: $e");
     }
   }
 
   @override
   void dispose() {
-    debugPrint("SearchingForRideScreen: dispose called");
+    _searchTimeoutTimer?.cancel();
     _rideStatusSubscription?.cancel();
-    _locationSubscription?.cancel(); // **NEW:** Cancel location stream
+    _locationSubscription?.cancel();
     _tipTimer?.cancel();
-    _cancelTapGuardTimer?.cancel(); // **NEW**
-    try {
-      // map controller disposal logic if any
-    } catch (e) {
-      debugPrint("Error disposing elements: $e");
-    }
+    _cancelTapGuardTimer?.cancel();
+    _flutterTts.stop();
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    debugPrint("SearchingForRideScreen: build called");
-    // **NEW:** Dynamic UI based on scheduled time
-    final bool isScheduled = widget.scheduledTime != null;
-    String title = isScheduled
-        ? "rideScheduled".tr
-        : _isDriverFound
-        ? "driverFound".tr
-        : "searchingForRide".tr;
-
-    // **NEW:** Enhanced feedback if ride is posted but still searching
-    if (!isScheduled && !_isDriverFound && _isRidePosted) {
-        title = "Ride Posted! \nSearching for Driver...";
-    }
-
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Scaffold(
-      extendBodyBehindAppBar: true, // Allow map to show behind status bar
-      body: PopScope(
-        canPop: false,
-        onPopInvokedWithResult: (didPop, result) {
-          if (didPop) return;
-          if (!isScheduled) {
-            // Only allow cancel if it's not a scheduled ride
-            _cancelRide();
-          }
-        },
-        child: Stack(
-          children: [
-            GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: widget.pickupLocation,
-                zoom: 14,
-              ),
-              polylines: widget.polylines,
-              markers: _markers,
-              myLocationEnabled: false,
-              mapType: MapType.normal, // Changed to normal for cleaner look
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-              scrollGesturesEnabled: false,
-              tiltGesturesEnabled: false,
-              rotateGesturesEnabled: false,
-              zoomGesturesEnabled: false,
-              onMapCreated: (GoogleMapController controller) {
-                try {
-                  debugPrint("SearchingForRideScreen: Map created");
-                  Future.delayed(const Duration(milliseconds: 100), () async {
-                    if (mounted && _routeBounds != null) {
-                      try {
-                        await controller.animateCamera(
-                          CameraUpdate.newLatLngBounds(_routeBounds!, 100.0),
-                        );
-                      } catch (e) {
-                        debugPrint(
-                          "Error animating bounds in Searching screen: $e",
-                        );
-                        if (mounted) {
-                          try {
-                            await controller.animateCamera(
-                              CameraUpdate.newLatLngZoom(
-                                widget.pickupLocation,
-                                15,
-                              ),
-                            );
-                          } catch (e2) {
-                            debugPrint("Error animating camera fallback: $e2");
-                          }
-                        }
-                      }
-                    }
-                  });
-                } catch (e) {
-                  debugPrint("Error in onMapCreated: $e");
-                }
-              },
-            ),
-            // Gradient overlay for better text visibility
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withValues(alpha: 0.7),
-                    Colors.transparent,
-                    Colors.black.withValues(alpha: 0.8),
-                  ],
-                  stops: const [0.0, 0.5, 0.8],
-                ),
-              ),
-            ),
-            SafeArea(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 10), // Reduced top spacing
-                  // **NEW:** Trip Details Top Card
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: _buildTripDetailsCard(isDark),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // **RESTORED:** Title Text
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                    child: Text(
-                      title,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                        letterSpacing: 1.2,
-                        shadows: [
-                          Shadow(
-                            blurRadius: 10.0,
-                            color: Colors.black45,
-                            offset: Offset(2.0, 2.0),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const Spacer(),
-
-                  // **NEW:** Show different icon/animation
-                  if (isScheduled)
-                    FadeInSlide(
-                      child: const Icon(
-                        Icons.check_circle_outline,
-                        color: Colors.greenAccent,
-                        size: 120,
-                      ),
-                    )
-                  else
-                    const Center(child: PulsingWaveAnimation()), // Animation
-
-                  const Spacer(),
-
-                  // **NEW:** Only show tip card if NOT scheduled
-                  AnimatedOpacity(
-                    duration: const Duration(milliseconds: 500),
-                    opacity: _showTipCard && !isScheduled ? 1.0 : 0.0,
-                    child: (_showTipCard && !isScheduled)
-                        ? Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20.0,
-                            ),
-                            child: _buildTipCard(isDark),
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-
-                  // **NEW:** Only show cancel button if NOT scheduled
-                  if (!isScheduled)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
-                      child: ProButton(
-                        text: "cancelRide".tr,
-                        onPressed: (_isCancelling || !_canCancel)
-                            ? null
-                            : _cancelRide, // Disable if cancelling or guard active
-                        isLoading: _isCancelling, // Show loading
-                        backgroundColor: Colors.redAccent.shade400,
-                        icon: const Icon(Icons.close, color: Colors.white),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: LiftableBannerAd(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // **NEW:** Trip Details Card Widget
   Widget _buildTripDetailsCard(bool isDark) {
-    if (widget.isRental) return const SizedBox.shrink(); // Hide for rentals
+    if (widget.isRental) return const SizedBox.shrink();
 
     return Container(
       decoration: BoxDecoration(
-        color: isDark
-            ? Colors.grey[900]!.withValues(alpha: 0.9)
-            : Colors.white.withValues(alpha: 0.95),
+        color: isDark ? Colors.grey[900]!.withValues(alpha: 0.9) : Colors.white.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -835,7 +658,6 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
       padding: const EdgeInsets.all(16.0),
       child: Column(
         children: [
-          // Destination Row
           Row(
             children: [
               const Icon(Icons.location_on, color: Colors.redAccent, size: 24),
@@ -856,11 +678,9 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
             padding: EdgeInsets.symmetric(vertical: 12.0),
             child: Divider(height: 1),
           ),
-          // ETA & Fare Row
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // ETA
               Row(
                 children: [
                   Icon(
@@ -879,12 +699,8 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
                   ),
                 ],
               ),
-              // Dynamic Fare
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: AppColors.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(20),
@@ -948,8 +764,9 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
                         color: isDark ? Colors.white : Colors.black87,
                       ),
                     ),
+                    const SizedBox(height: 4),
                     Text(
-                      "tipDesc".tr,
+                      "boostRequestDesc".tr,
                       style: TextStyle(
                         fontSize: 13,
                         color: isDark ? Colors.grey[400] : Colors.grey[600],
@@ -962,52 +779,191 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
           ),
           const SizedBox(height: 20),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                "tipAmount".tr,
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                  color: isDark ? Colors.grey[300] : Colors.grey[800],
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [10.0, 20.0, 50.0].map((tipValue) {
+              bool isSelected = _currentTip == tipValue;
+              return GestureDetector(
+                onTap: () {
+                  setState(() => _currentTip = tipValue);
+                  _updateTipInFirestore(tipValue);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: isSelected ? AppColors.primary : (isDark ? Colors.grey[800] : Colors.grey[100]),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isSelected ? AppColors.primary : Colors.transparent,
+                    ),
+                  ),
+                  child: Text(
+                    "+₹${tipValue.round()}",
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : (isDark ? Colors.white : Colors.black87),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
-              ),
-              Text(
-                "₹${_currentTip.round()}",
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blueAccent,
-                ),
-              ),
-            ],
-          ),
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              activeTrackColor: Colors.blueAccent,
-              inactiveTrackColor: Colors.blueAccent.withValues(alpha: 0.2),
-              thumbColor: Colors.blueAccent,
-              overlayColor: Colors.blueAccent.withValues(alpha: 0.2),
-              trackHeight: 4.0,
-            ),
-            child: Slider(
-              value: _currentTip,
-              min: 0,
-              max: 100,
-              divisions: 10,
-              label: '₹${_currentTip.round()}',
-              onChanged: (double value) => setState(() => _currentTip = value),
-              onChangeEnd: (double value) => _updateTipInFirestore(value),
-            ),
+              );
+            }).toList(),
           ),
         ],
       ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isScheduled = widget.scheduledTime != null;
+    String title = isScheduled
+        ? "rideScheduled".tr
+        : _isDriverFound
+            ? "driverFound".tr
+            : "searchingForRide".tr;
+
+    if (!isScheduled && !_isDriverFound && _isRidePosted) {
+      title = "Ride Posted! \nSearching for Driver...";
+    }
+
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      body: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) return;
+          if (!isScheduled) {
+            _cancelRide();
+          }
+        },
+        child: Stack(
+          children: [
+            GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: widget.pickupLocation,
+                zoom: 14,
+              ),
+              polylines: widget.polylines,
+              markers: _markers,
+              myLocationEnabled: false,
+              mapType: MapType.normal,
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: false,
+              scrollGesturesEnabled: false,
+              tiltGesturesEnabled: false,
+              rotateGesturesEnabled: false,
+              zoomGesturesEnabled: false,
+              onMapCreated: (GoogleMapController controller) {
+                if (_routeBounds != null) {
+                  controller.animateCamera(CameraUpdate.newLatLngBounds(_routeBounds!, 100.0));
+                }
+              },
+            ),
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.7),
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.8),
+                  ],
+                  stops: const [0.0, 0.5, 0.8],
+                ),
+              ),
+            ),
+            SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                      child: IntrinsicHeight(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const SizedBox(height: 10),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                              child: _buildTripDetailsCard(isDark),
+                            ),
+                            const SizedBox(height: 20),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                              child: Text(
+                                title,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                  letterSpacing: 1.2,
+                                  shadows: [
+                                    Shadow(
+                                      blurRadius: 10.0,
+                                      color: Colors.black45,
+                                      offset: Offset(2.0, 2.0),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const Spacer(),
+                            if (isScheduled)
+                              FadeInSlide(
+                                child: const Icon(
+                                  Icons.check_circle_outline,
+                                  color: Colors.greenAccent,
+                                  size: 120,
+                                ),
+                              )
+                            else
+                              const Center(child: PulsingWaveAnimation()),
+                            const Spacer(),
+                            AnimatedOpacity(
+                              duration: const Duration(milliseconds: 500),
+                              opacity: _showTipCard && !isScheduled ? 1.0 : 0.0,
+                              child: (_showTipCard && !isScheduled)
+                                  ? Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                                      child: _buildTipCard(isDark),
+                                    )
+                                  : const SizedBox.shrink(),
+                            ),
+                            if (!isScheduled)
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+                                child: ProButton(
+                                  text: "cancelRide".tr,
+                                  onPressed: (_isCancelling || !_canCancel) ? null : _cancelRide,
+                                  isLoading: _isCancelling,
+                                  backgroundColor: Colors.redAccent.shade400,
+                                  icon: const Icon(Icons.close, color: Colors.white),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: LiftableBannerAd(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-// --- Animated Pulsing Wave Widget ---
-// ... (PulsingWaveAnimation and PulsingWavePainter are unchanged) ...
 class PulsingWaveAnimation extends StatefulWidget {
   const PulsingWaveAnimation({super.key});
 
@@ -1036,33 +992,52 @@ class _PulsingWaveAnimationState extends State<PulsingWaveAnimation>
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: PulsingWavePainter(_controller),
-      size: const Size(200, 200),
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            _buildWave(1.0 + _controller.value),
+            _buildWave(1.5 + _controller.value),
+            _buildWave(2.0 + _controller.value),
+            Container(
+              width: 80,
+              height: 80,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 10,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: Icon(
+                Icons.local_taxi,
+                size: 40,
+                color: AppColors.primary,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
-}
 
-class PulsingWavePainter extends CustomPainter {
-  final Animation<double> animation;
-
-  PulsingWavePainter(this.animation) : super(repaint: animation);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final double value = animation.value;
-
-    final Paint paint = Paint()
-      ..color = Colors.blueAccent.withAlpha(10 + (200 * (1.0 - value)).toInt())
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4.0 * (1.0 - value);
-
-    canvas.drawCircle(center, value * size.width / 2, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant PulsingWavePainter oldDelegate) {
-    return true;
+  Widget _buildWave(double scale) {
+    return Transform.scale(
+      scale: scale,
+      child: Container(
+        width: 100,
+        height: 100,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white.withValues(alpha: (2.0 - scale).clamp(0.0, 1.0) * 0.3),
+        ),
+      ),
+    );
   }
 }

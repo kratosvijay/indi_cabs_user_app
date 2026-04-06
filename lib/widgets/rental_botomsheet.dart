@@ -9,6 +9,7 @@ import 'package:project_taxi_with_ai/widgets/firestore_services.dart';
 import 'package:project_taxi_with_ai/widgets/scheduler.dart';
 import 'package:project_taxi_with_ai/widgets/pro_library.dart';
 import 'package:project_taxi_with_ai/screens/wallet.dart'; // **NEW**
+import 'package:project_taxi_with_ai/controllers/ride_controller.dart'; // **NEW**
 
 class RentalBottomSheet extends StatefulWidget {
   final List<RentalPackage> rentalPackages;
@@ -45,6 +46,7 @@ class _RentalBottomSheetState extends State<RentalBottomSheet> {
 
   DateTime? _scheduledTime;
   num _convenienceFee = 0;
+  bool _useWalletBalance = false;
 
   // Services
   final FirestoreService _firestoreService = FirestoreService();
@@ -55,6 +57,8 @@ class _RentalBottomSheetState extends State<RentalBottomSheet> {
     if (widget.isActingDriver) {
       _selectedRentalVehicleType = 'ActingDriver';
     }
+    // **NEW:** Auto-enable if balance exists
+    _useWalletBalance = widget.walletBalance > 0;
   }
 
   // Helper to show the vehicle info bottom sheet
@@ -285,349 +289,367 @@ class _RentalBottomSheetState extends State<RentalBottomSheet> {
               .where((v) => v.type != 'ActingDriver')
               .toList();
 
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? Colors.grey[900] : Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.7,
       ),
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-        left: 16,
-        right: 16,
-        top: 8,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 5,
-              margin: const EdgeInsets.only(bottom: 10),
-              decoration: BoxDecoration(
-                color: isDark ? Colors.grey[700] : Colors.grey[300],
-                borderRadius: BorderRadius.circular(10),
+      child: Container(
+        decoration: BoxDecoration(
+          color: isDark ? Colors.grey[900] : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+          left: 16,
+          right: 16,
+          top: 8,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 5,
+                margin: const EdgeInsets.only(bottom: 10),
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.grey[700] : Colors.grey[300],
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
-          ),
 
-          // --- Step 1: Package Selection ---
-          if (_selectedRentalPackage == null) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
-              child: Text(
-                title,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : Colors.black87,
+            // --- Step 1: Package Selection ---
+            if (_selectedRentalPackage == null) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-                textAlign: TextAlign.center,
               ),
-            ),
-            if (widget.isLoadingRentals)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(20.0),
-                  child: CircularProgressIndicator(),
-                ),
-              )
-            else if (packages.isEmpty)
-              Center(
-                child: Padding(
+              if (widget.isLoadingRentals)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(20.0),
+                    child: CircularProgressIndicator(),
+                  ),
+                )
+              else if (packages.isEmpty)
+                Padding(
                   padding: const EdgeInsets.all(20.0),
-                  child: Text(
-                    "No packages available for this service.",
-                    style: TextStyle(
-                      color: isDark ? Colors.grey[400] : Colors.black54,
-                    ),
+                  child: Column(
+                    children: [
+                      Text(
+                        "No packages available for this service.",
+                        style: TextStyle(
+                          color: isDark ? Colors.grey[400] : Colors.black54,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        onPressed: () =>
+                            Get.find<RideController>().refreshRentalPackages(),
+                        icon: const Icon(Icons.refresh),
+                        label: const Text("Retry Loading"),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.4,
+                  ),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: packages.length,
+                    itemBuilder: (context, index) {
+                      final package = packages[index];
+                      final num displayPrice = widget.isActingDriver
+                          ? package.getPriceForVehicle('ActingDriver')
+                          : package.getMinPrice(excludeActingDriver: true);
+
+                      if (displayPrice <= 0) return const SizedBox.shrink();
+
+                      return Card(
+                        color: isDark ? Colors.grey[800] : Colors.white,
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        child: ListTile(
+                          title: Text(
+                            package.displayName,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w500,
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                          subtitle: Text(
+                            widget.isActingDriver
+                                ? "${package.durationHours} ${package.durationHours > 1 ? 'Hours' : 'Hour'} Duration"
+                                : "${package.durationHours} ${package.durationHours > 1 ? 'Hours' : 'Hour'} / ${package.kmLimit} km",
+                            style: TextStyle(
+                              color: isDark
+                                  ? Colors.grey[400]
+                                  : Colors.grey[600],
+                            ),
+                          ),
+                          trailing: Text(
+                            widget.isActingDriver
+                                ? "₹${displayPrice.toStringAsFixed(0)}"
+                                : "Starts ₹${displayPrice.toStringAsFixed(0)}",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                          onTap: () {
+                            setState(() {
+                              _selectedRentalPackage = package;
+                              if (widget.isActingDriver) {
+                                _selectedRentalVehicleType = 'ActingDriver';
+                                _selectedRentalPrice = displayPrice;
+                              } else {
+                                _selectedRentalVehicleType = null;
+                                _selectedRentalPrice = 0;
+                              }
+                            });
+                          },
+                        ),
+                      );
+                    },
                   ),
                 ),
-              )
-            else
+              const SizedBox(height: 16),
+            ]
+            // --- Step 2: Vehicle Selection ---
+            else ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Text(
+                  widget.isActingDriver
+                      ? "Confirm Booking Details"
+                      : "Select Vehicle for ${_selectedRentalPackage!.displayName}",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+
               ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.4,
+                  maxHeight: MediaQuery.of(context).size.height * 0.3,
                 ),
                 child: ListView.builder(
                   shrinkWrap: true,
-                  itemCount: packages.length,
+                  itemCount: vehicleOptions.length,
                   itemBuilder: (context, index) {
-                    final package = packages[index];
-                    final num displayPrice = package.getPriceForVehicle(
-                      widget.isActingDriver ? 'ActingDriver' : 'Hatchback',
-                    );
+                    final vehicle = vehicleOptions[index];
+                    final num rentalPrice = _selectedRentalPackage!
+                        .getPriceForVehicle(vehicle.type);
+                    final bool isSelected =
+                        _selectedRentalVehicleType == vehicle.type;
 
-                    if (displayPrice <= 0) return const SizedBox.shrink();
+                    if (rentalPrice <= 0) return const SizedBox.shrink();
 
-                    return Card(
-                      color: isDark ? Colors.grey[800] : Colors.white,
-                      margin: const EdgeInsets.symmetric(vertical: 4),
-                      child: ListTile(
-                        title: Text(
-                          package.displayName,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w500,
-                            color: isDark ? Colors.white : Colors.black87,
+                    return GestureDetector(
+                      onTap: () {
+                        if (widget.isActingDriver) {
+                          return; // Can't de-select acting driver
+                        }
+                        setState(() {
+                          _selectedRentalVehicleType = vehicle.type;
+                          _selectedRentalPrice = rentalPrice;
+                        });
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(vertical: 3.0),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 6.0,
+                          horizontal: 8.0,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? (isDark
+                                    ? Colors.blue.shade900.withValues(
+                                        alpha: 0.3,
+                                      )
+                                    : Colors.blue.shade50)
+                              : (isDark ? Colors.grey[800] : Colors.grey[50]),
+                          borderRadius: BorderRadius.circular(8.0),
+                          border: Border.all(
+                            color: isSelected
+                                ? Colors.blueAccent
+                                : (isDark
+                                      ? Colors.grey[700]!
+                                      : Colors.grey.shade300),
+                            width: isSelected ? 1.5 : 1.0,
                           ),
                         ),
-                        subtitle: Text(
-                          widget.isActingDriver
-                              ? "${package.durationHours} ${package.durationHours > 1 ? 'Hours' : 'Hour'} Duration"
-                              : "${package.durationHours} ${package.durationHours > 1 ? 'Hours' : 'Hour'} / ${package.kmLimit} km",
-                          style: TextStyle(
-                            color: isDark ? Colors.grey[400] : Colors.grey[600],
-                          ),
+                        child: Row(
+                          children: [
+                            Image.asset(
+                              vehicle.imagePath,
+                              width: 45,
+                              height: 45,
+                              errorBuilder: (c, o, s) => const Icon(
+                                Icons.error_outline,
+                                size: 30,
+                                color: Colors.redAccent,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                vehicle.type,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              "₹${rentalPrice.toStringAsFixed(0)}",
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                            IconButton(
+                              icon: Icon(
+                                Icons.info_outline,
+                                color: Colors.blueAccent.shade200,
+                              ),
+                              tooltip: "View package details",
+                              padding: const EdgeInsets.all(4.0),
+                              constraints: const BoxConstraints(),
+                              onPressed: () {
+                                _showRentalVehicleInfoSheet(
+                                  context,
+                                  vehicle,
+                                  _selectedRentalPackage!,
+                                  rentalPrice,
+                                );
+                              },
+                            ),
+                          ],
                         ),
-                        trailing: Text(
-                          widget.isActingDriver
-                              ? "₹${package.getPriceForVehicle('ActingDriver').toStringAsFixed(0)}"
-                              : "Starts ₹${displayPrice.toStringAsFixed(0)}",
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                            color: isDark ? Colors.white : Colors.black87,
-                          ),
-                        ),
-                        onTap: () {
-                          setState(() {
-                            _selectedRentalPackage = package;
-                            if (widget.isActingDriver) {
-                              _selectedRentalVehicleType = 'ActingDriver';
-                              _selectedRentalPrice = package.getPriceForVehicle(
-                                'ActingDriver',
-                              );
-                            } else {
-                              _selectedRentalVehicleType = null;
-                              _selectedRentalPrice = 0;
-                            }
-                          });
-                        },
                       ),
                     );
                   },
                 ),
               ),
-            const SizedBox(height: 16),
-          ]
-          // --- Step 2: Vehicle Selection ---
-          else ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
-              child: Text(
-                widget.isActingDriver
-                    ? "Confirm Booking Details"
-                    : "Select Vehicle for ${_selectedRentalPackage!.displayName}",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : Colors.black87,
+
+              const SizedBox(height: 16),
+
+              OutlinedButton.icon(
+                onPressed: _pickSchedule,
+                icon: Icon(
+                  Icons.calendar_today_outlined,
+                  size: 20,
+                  color: isDark ? Colors.white70 : Colors.black87,
                 ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.3,
-              ),
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: vehicleOptions.length,
-                itemBuilder: (context, index) {
-                  final vehicle = vehicleOptions[index];
-                  final num rentalPrice = _selectedRentalPackage!
-                      .getPriceForVehicle(vehicle.type);
-                  final bool isSelected =
-                      _selectedRentalVehicleType == vehicle.type;
-
-                  if (rentalPrice <= 0) return const SizedBox.shrink();
-
-                  return GestureDetector(
-                    onTap: () {
-                      if (widget.isActingDriver) {
-                        return; // Can't de-select acting driver
-                      }
-                      setState(() {
-                        _selectedRentalVehicleType = vehicle.type;
-                        _selectedRentalPrice = rentalPrice;
-                      });
-                    },
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(vertical: 3.0),
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 6.0,
-                        horizontal: 8.0,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? (isDark
-                                  ? Colors.blue.shade900.withValues(alpha: 0.3)
-                                  : Colors.blue.shade50)
-                            : (isDark ? Colors.grey[800] : Colors.grey[50]),
-                        borderRadius: BorderRadius.circular(8.0),
-                        border: Border.all(
-                          color: isSelected
-                              ? Colors.blueAccent
-                              : (isDark
-                                    ? Colors.grey[700]!
-                                    : Colors.grey.shade300),
-                          width: isSelected ? 1.5 : 1.0,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Image.asset(
-                            vehicle.imagePath,
-                            width: 45,
-                            height: 45,
-                            errorBuilder: (c, o, s) => const Icon(
-                              Icons.error_outline,
-                              size: 30,
-                              color: Colors.redAccent,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              vehicle.type,
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                                color: isDark ? Colors.white : Colors.black87,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            "₹${rentalPrice.toStringAsFixed(0)}",
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: isDark ? Colors.white : Colors.black87,
-                            ),
-                          ),
-                          IconButton(
-                            icon: Icon(
-                              Icons.info_outline,
-                              color: Colors.blueAccent.shade200,
-                            ),
-                            tooltip: "View package details",
-                            padding: const EdgeInsets.all(4.0),
-                            constraints: const BoxConstraints(),
-                            onPressed: () {
-                              _showRentalVehicleInfoSheet(
-                                context,
-                                vehicle,
-                                _selectedRentalPackage!,
-                                rentalPrice,
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            OutlinedButton.icon(
-              onPressed: _pickSchedule,
-              icon: Icon(
-                Icons.calendar_today_outlined,
-                size: 20,
-                color: isDark ? Colors.white70 : Colors.black87,
-              ),
-              label: Text(
-                _scheduledTime == null
-                    ? "Ride Later"
-                    : "Scheduled for ${DateFormat('dd MMM, hh:mm a').format(_scheduledTime!)}",
-                style: TextStyle(
-                  fontWeight: _scheduledTime == null
-                      ? FontWeight.normal
-                      : FontWeight.bold,
-                  color: _scheduledTime == null
-                      ? (isDark ? Colors.white70 : Colors.black87)
-                      : Colors.blueAccent,
+                label: Text(
+                  _scheduledTime == null
+                      ? "Ride Later"
+                      : "Scheduled for ${DateFormat('dd MMM, hh:mm a').format(_scheduledTime!)}",
+                  style: TextStyle(
+                    fontWeight: _scheduledTime == null
+                        ? FontWeight.normal
+                        : FontWeight.bold,
+                    color: _scheduledTime == null
+                        ? (isDark ? Colors.white70 : Colors.black87)
+                        : Colors.blueAccent,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: isDark ? Colors.white70 : Colors.black87,
+                  side: BorderSide(
+                    color: _scheduledTime == null
+                        ? (isDark ? Colors.grey[600]! : Colors.grey[400]!)
+                        : Colors.blueAccent,
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: isDark ? Colors.white70 : Colors.black87,
-                side: BorderSide(
-                  color: _scheduledTime == null
-                      ? (isDark ? Colors.grey[600]! : Colors.grey[400]!)
-                      : Colors.blueAccent,
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-            ),
 
-            TextButton(
-              onPressed: () => setState(() => _selectedRentalPackage = null),
-              child: const Text("‹ Back to Packages"),
-            ),
-            const SizedBox(height: 8),
-            ProButton(
-              text: _selectedRentalVehicleType != null
-                  ? 'Proceed (₹${(_selectedRentalPrice + _convenienceFee).toStringAsFixed(0)})'
-                  : 'Select a Vehicle',
-              onPressed: _selectedRentalVehicleType != null
-                  ? () {
-                      // Check Wallet Balance logic if needed
-                      if (widget.walletBalance < -50) {
-                        showDialog(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text("Low Wallet Balance"),
-                            content: const Text(
-                              "Your wallet balance is in negative. You cannot book a ride until you make it positive. Please recharge your wallet to book a ride.",
+              TextButton(
+                onPressed: () => setState(() => _selectedRentalPackage = null),
+                child: const Text("‹ Back to Packages"),
+              ),
+              const SizedBox(height: 8),
+              ProButton(
+                text: _selectedRentalVehicleType != null
+                    ? 'Proceed (₹${(_selectedRentalPrice + _convenienceFee).toStringAsFixed(0)})'
+                    : 'Select a Vehicle',
+                onPressed: _selectedRentalVehicleType != null
+                    ? () {
+                        // Check Wallet Balance logic if needed
+                        if (widget.walletBalance < -50) {
+                          showDialog(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: const Text("Low Wallet Balance"),
+                              content: const Text(
+                                "Your wallet balance is in negative. You cannot book a ride until you make it positive. Please recharge your wallet to book a ride.",
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Get.back(),
+                                  child: const Text("Cancel"),
+                                ),
+                                TextButton(
+                                  onPressed: () {
+                                    Get.back(); // Close dialog
+                                    Get.back(); // Close bottom sheet
+                                    Get.to(
+                                      () => WalletScreen(
+                                        user: widget.currentUser,
+                                      ),
+                                    );
+                                  },
+                                  child: const Text("Recharge"),
+                                ),
+                              ],
                             ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Get.back(),
-                                child: const Text("Cancel"),
-                              ),
-                              TextButton(
-                                onPressed: () {
-                                  Get.back(); // Close dialog
-                                  Get.back(); // Close bottom sheet
-                                  Get.to(
-                                    () =>
-                                        WalletScreen(user: widget.currentUser),
-                                  );
-                                },
-                                child: const Text("Recharge"),
-                              ),
-                            ],
-                          ),
+                          );
+                          return;
+                        }
+                        Get.back(); // Close sheet
+                        _firestoreService.navigateToRentalConfirmPickup(
+                          context,
+                          currentUser: widget.currentUser,
+                          currentPosition: widget.currentPosition,
+                          rentalPackage: _selectedRentalPackage!,
+                          rentalVehicleType: _selectedRentalVehicleType!,
+                          rentalPrice: _selectedRentalPrice,
+                          scheduledTime: _scheduledTime,
+                          convenienceFee: _convenienceFee,
+                          walletBalance: widget.walletBalance,
+                          useWallet: _useWalletBalance,
+                          pickupPlaceName: widget.pickupPlaceName, // **NEW**
                         );
-                        return;
                       }
-                      Get.back(); // Close sheet
-                      _firestoreService.navigateToRentalConfirmPickup(
-                        context,
-                        currentUser: widget.currentUser,
-                        currentPosition: widget.currentPosition,
-                        rentalPackage: _selectedRentalPackage!,
-                        rentalVehicleType: _selectedRentalVehicleType!,
-                        rentalPrice: _selectedRentalPrice,
-                        scheduledTime: _scheduledTime,
-                        convenienceFee: _convenienceFee,
-                        walletBalance: widget.walletBalance,
-                        pickupPlaceName: widget.pickupPlaceName, // **NEW**
-                      );
-                    }
-                  : null,
-              backgroundColor: _selectedRentalVehicleType != null
-                  ? null // Use default gradient
-                  : (isDark ? Colors.grey[700] : Colors.grey),
-            ),
-            const SizedBox(height: 16),
+                    : null,
+                backgroundColor: _selectedRentalVehicleType != null
+                    ? null // Use default gradient
+                    : (isDark ? Colors.grey[700] : Colors.grey),
+              ),
+              const SizedBox(height: 16),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

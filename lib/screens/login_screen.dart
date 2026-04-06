@@ -6,6 +6,8 @@ import 'package:project_taxi_with_ai/widgets/pro_library.dart';
 import 'package:project_taxi_with_ai/widgets/form_validator.dart';
 import 'package:project_taxi_with_ai/screens/otp_verification_screen.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 class SignInScreen extends StatefulWidget {
   const SignInScreen({super.key});
 
@@ -16,6 +18,17 @@ class SignInScreen extends StatefulWidget {
 class _SignInScreenState extends State<SignInScreen> {
   final _phoneController = TextEditingController();
   final bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _setHasSeenOnboarding();
+  }
+
+  Future<void> _setHasSeenOnboarding() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('hasSeenOnboarding', true);
+  }
 
   @override
   void dispose() {

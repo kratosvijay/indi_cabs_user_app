@@ -55,6 +55,49 @@ import 'package:project_taxi_with_ai/widgets/custom_showcase.dart';
 
 import '../widgets/snackbar.dart';
 
+// GeofenceZone model for toll calculation
+class GeofenceZone {
+  final String id;
+  final String type;
+  final List<LatLng> boundary;
+  final num surchargeAmount;
+  final List<Map<String, dynamic>> pickupPoints;
+
+  GeofenceZone({
+    required this.id,
+    required this.type,
+    required this.boundary,
+    this.surchargeAmount = 0,
+    this.pickupPoints = const [],
+  });
+  factory GeofenceZone.fromFirestore(DocumentSnapshot doc) {
+    Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+    List<LatLng> boundary = [];
+    (data['boundary'] as List<dynamic>?)?.forEach((point) {
+      if (point is GeoPoint) {
+        boundary.add(LatLng(point.latitude, point.longitude));
+      }
+    });
+    List<Map<String, dynamic>> pickups = [];
+    (data['pickup_points'] as List<dynamic>?)?.forEach((point) {
+      if (point is Map<String, dynamic> &&
+          point['name'] is String &&
+          point['location'] is GeoPoint) {
+        pickups.add({
+          'name': point['name'],
+          'location': point['location'],
+        });
+      }
+    });
+    return GeofenceZone(
+      id: doc.id,
+      type: data['type'] ?? '',
+      boundary: boundary,
+      pickupPoints: pickups,
+      surchargeAmount: data['surcharge_amount'] ?? 0,
+    );
+  }
+}
 
 // --- Main HomePage Widget ---
 class HomePage extends StatefulWidget {
@@ -98,6 +141,9 @@ class _HomePageState extends State<HomePage> {
     region: 'asia-south1',
   ).httpsCallable('calculateFares');
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+
+  final LocationService _locationService = LocationService(apiKey: "");
+  List<GeofenceZone> _geofenceZones = [];
 
   // --- State Variables ---
   late User _currentUser;
@@ -149,6 +195,9 @@ class _HomePageState extends State<HomePage> {
       debugPrint("HomePage: Error loading pricing rules: $e");
     });
     */
+
+    // **NEW:** Load geofence zones for toll calculation
+    _loadGeofenceZones();
 
     // **NEW:** Delay map rendering to prevent freeze on startup
     Future.delayed(const Duration(milliseconds: 500), () {
@@ -285,22 +334,28 @@ class _HomePageState extends State<HomePage> {
           .limit(5)
           .get();
 
+      final DateTime thirtyMinutesAgo = DateTime.now().subtract(const Duration(minutes: 30));
+      
       for (var doc in rideSnapshot.docs) {
         final data = doc.data();
         if (data['status'] == 'completed' && data['reviewed'] != true) {
-          if (mounted) {
-            showDialog(
-              context: context,
-              barrierDismissible: false,
-              builder: (context) => ReviewDialog(
-                rideRequestId: doc.id,
-                driverId: data['driverId'] ?? '',
-                userId: user.uid,
-                isRental: false,
-              ),
-            );
+          // **NEW:** Only show if completed recently (within last 30 mins)
+          final Timestamp? completedAt = data['completedAt'] ?? data['droppedOffAt'] ?? data['createdAt'];
+          if (completedAt != null && completedAt.toDate().isAfter(thirtyMinutesAgo)) {
+            if (mounted) {
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) => ReviewDialog(
+                  rideRequestId: doc.id,
+                  driverId: data['driverId'] ?? '',
+                  userId: user.uid,
+                  isRental: false,
+                ),
+              );
+            }
+            return; // Show one and exit
           }
-          return; // Show one and exit
         }
       }
 
@@ -315,19 +370,23 @@ class _HomePageState extends State<HomePage> {
       for (var doc in rentalSnapshot.docs) {
         final data = doc.data();
         if (data['status'] == 'completed' && data['reviewed'] != true) {
-          if (mounted) {
-            showDialog(
-              context: context,
-              barrierDismissible: false,
-              builder: (context) => ReviewDialog(
-                rideRequestId: doc.id,
-                driverId: data['driverId'] ?? '',
-                userId: user.uid,
-                isRental: true,
-              ),
-            );
+          // **NEW:** Only show if completed recently (within last 30 mins)
+          final Timestamp? completedAt = data['completedAt'] ?? data['droppedOffAt'] ?? data['createdAt'];
+          if (completedAt != null && completedAt.toDate().isAfter(thirtyMinutesAgo)) {
+            if (mounted) {
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) => ReviewDialog(
+                  rideRequestId: doc.id,
+                  driverId: data['driverId'] ?? '',
+                  userId: user.uid,
+                  isRental: true,
+                ),
+              );
+            }
+            return; // Show one and exit
           }
-          return; // Show one and exit
         }
       }
     } catch (e) {
@@ -678,6 +737,7 @@ class _HomePageState extends State<HomePage> {
         pickupPlaceName: _rideController.pickupPlaceName.value, // **NEW**
         destinationAddress: _destinationController.text,
         destinationPlaceName: placeDetails.name, // **NEW**
+        destinationLocation: placeDetails.location, // **NEW**
       );
 
       // **MODIFIED:** Create a dummy "all available" map to bypass the check
@@ -778,31 +838,37 @@ class _HomePageState extends State<HomePage> {
         pickupPlaceName: _rideController.pickupPlaceName.value,
         destinationAddress: _destinationController.text,
         destinationPlaceName: _rideController.destinationPlaceName.value,
+        destinationLocation: _destinationPosition, // **NEW**
         routePoints: routeDetails.polylinePoints,
       );
+
+      // **NEW:** Calculate bounds that account for the bottom sheet (65% height)
+      // We do this by adding a "ghost point" far to the south of the actual bounds
+      // to "push" the real content into the top half of the screen.
+      final LatLng pickup = _rideController.currentPosition.value!;
+      final LatLng dest = _destinationPosition!;
+      
+      final double latDiff = (pickup.latitude - dest.latitude).abs();
+      
+      // Calculate a "south ghost" point to shift the view up
+      // 1.5x shift for 65% sheet height is a good heuristic
+      final LatLng southGhost = LatLng(
+        min(pickup.latitude, dest.latitude) - (latDiff > 0.01 ? latDiff : 0.01) * 1.5,
+        (pickup.longitude + dest.longitude) / 2,
+      );
+
       _rideController.mapService.animateCameraToBounds(
         LatLngBounds(
           southwest: LatLng(
-            min(
-              _rideController.currentPosition.value!.latitude,
-              _destinationPosition!.latitude,
-            ),
-            min(
-              _rideController.currentPosition.value!.longitude,
-              _destinationPosition!.longitude,
-            ),
+            min(min(pickup.latitude, dest.latitude), southGhost.latitude),
+            min(pickup.longitude, dest.longitude),
           ),
           northeast: LatLng(
-            max(
-              _rideController.currentPosition.value!.latitude,
-              _destinationPosition!.latitude,
-            ),
-            max(
-              _rideController.currentPosition.value!.longitude,
-              _destinationPosition!.longitude,
-            ),
+            max(pickup.latitude, dest.latitude),
+            max(pickup.longitude, dest.longitude),
           ),
         ),
+        padding: 80.0, // Reduced padding as ghost point handles the offset
       );
 
       // Update State with Fares
@@ -1106,26 +1172,31 @@ class _HomePageState extends State<HomePage> {
               .map((p) => {'latitude': p.latitude, 'longitude': p.longitude})
               .toList(),
       });
+      
       final fares = result.data['fares'] as Map<dynamic, dynamic>?;
       final appliedSurcharge = result.data['appliedSurcharge'] as num? ?? 0;
       final appliedToll = result.data['appliedToll'] as num? ?? 0;
-      final totalExtras = appliedSurcharge + appliedToll;
-
-      debugPrint(
-        '--- _calculateFares DEBUG (home_page) ---\n'
-        'fares: $fares\n'
-        'appliedSurcharge: $appliedSurcharge\n'
-        'appliedToll: $appliedToll\n'
-        'totalExtras: $totalExtras\n'
-        '-----------------------------------------',
-      );
+      
+      // We calculate our own toll sum from geofences for consistency
+      final num customTollSum = _calculateTollsForRoute(routePolyline ?? []);
 
       if (fares != null) {
         return (
           fares: fares.map(
-            (key, value) => MapEntry(key.toString(), value as num),
+            (key, value) {
+              final String type = key.toString();
+              // Start from total, subtract backend's extras, and add our summed toll
+              num fare = (value as num) - (appliedSurcharge + appliedToll);
+              
+              // Only add toll if NOT Auto
+              if (type != 'Auto') {
+                fare += customTollSum;
+              }
+              
+              return MapEntry(type, fare);
+            },
           ),
-          appliedSurcharge: totalExtras,
+          appliedSurcharge: customTollSum, // Return our summed toll for display
         );
       }
 
@@ -1781,10 +1852,10 @@ class _HomePageState extends State<HomePage> {
                             },
                             child: DraggableScrollableSheet(
                               controller: _sheetController,
-                              initialChildSize: 0.65,
-                                                              minChildSize: 0.1, // **MODIFIED:** Allow collapsing lower for dismissal
-                                snapSizes: const [0.1, 0.3, 0.65, 0.8],
-                              maxChildSize: 0.8,
+                              initialChildSize: 0.60,
+                              minChildSize: 0.1, 
+                              snapSizes: const [0.1, 0.60, 0.85],
+                              maxChildSize: 0.85,
                               snap: true,
                               builder: (context, scrollController) {
                                 return Container(
@@ -2320,5 +2391,58 @@ class _HomePageState extends State<HomePage> {
       debugPrint("Error deleting favorite: $e");
       if (mounted) displaySnackBar(context, 'Failed to remove favorite.');
     }
+  }
+
+  // **NEW:** Load toll zones from Firestore
+  Future<void> _loadGeofenceZones() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('geofenced_zones')
+          .get();
+
+      final List<GeofenceZone> fetchedZones = [];
+      for (var doc in snapshot.docs) {
+        fetchedZones.add(GeofenceZone.fromFirestore(doc));
+      }
+
+      if (mounted) {
+        setState(() {
+          _geofenceZones = fetchedZones;
+        });
+        debugPrint(
+          "HomePage: Loaded ${_geofenceZones.length} geofence zones from 'geofenced_zones'",
+        );
+      }
+    } catch (e) {
+      debugPrint("Error loading geofence zones: $e");
+    }
+  }
+
+  // **NEW:** Calculate tolls based on Firestore geofence zones
+  num _calculateTollsForRoute(List<LatLng> polyline) {
+    if (polyline.isEmpty) return 0;
+    num totalToll = 0;
+
+    // Filter zones that have a surcharge > 0
+    final tollZones =
+        _geofenceZones.where((z) => z.surchargeAmount > 0).toList();
+
+    for (var zone in tollZones) {
+      // Sum all distinct zones that are intersected by the polyline
+      bool crossed = false;
+      for (var point in polyline) {
+        if (_locationService.isPointInPolygon(point, zone.boundary)) {
+          crossed = true;
+          break;
+        }
+      }
+      if (crossed) {
+        totalToll += zone.surchargeAmount;
+        debugPrint(
+          "HomePage Toll Crossed: ${zone.id} | Amount: ${zone.surchargeAmount}",
+        );
+      }
+    }
+    return totalToll;
   }
 } // End of _HomePageState

@@ -423,7 +423,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
             markerId: const MarkerId('destination'),
             position: widget.destinationPosition,
             icon: BitmapDescriptor.defaultMarkerWithHue(
-              BitmapDescriptor.hueAzure,
+              BitmapDescriptor.hueRed,
             ),
             infoWindow: InfoWindow(
               title: "dropOff".tr,
@@ -751,14 +751,33 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
   Future<void> _cancelRideByUser() async {
     _waitingTimer?.cancel();
     _driverMoveTimer?.cancel();
+
     try {
-      String collectionPath = widget.isRental
-          ? 'rental_requests'
-          : 'ride_requests';
-      await FirebaseFirestore.instance
+      String collectionPath = widget.isRental ? 'rental_requests' : 'ride_requests';
+      DocumentReference rideRef = FirebaseFirestore.instance
           .collection(collectionPath)
-          .doc(widget.rideRequestId)
-          .update({'status': 'cancelled'});
+          .doc(widget.rideRequestId);
+
+      // **RETRY LOOP:** Attempt to update Firestore for robustness
+      int attempts = 0;
+      const int maxAttempts = 3;
+      bool success = false;
+      while (attempts < maxAttempts && !success) {
+        try {
+          await rideRef.update({'status': 'cancelled_by_user'});
+          success = true;
+          debugPrint("RideInProgressScreen: Ride status updated to cancelled_by_user");
+        } catch (e) {
+          attempts++;
+          debugPrint("Attempt $attempts failed to cancel ride: $e");
+          if (attempts < maxAttempts) {
+            await Future.delayed(const Duration(milliseconds: 500));
+          } else {
+            rethrow;
+          }
+        }
+      }
+
       if (mounted) {
         displaySnackBar(
           context,
@@ -766,12 +785,15 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
           isError: false,
         );
       }
-      _navigateToHome();
     } catch (e) {
-      if (mounted) {
+      debugPrint("Error in _cancelRideByUser: $e");
+      if (mounted && !e.toString().contains('not-found')) {
         displaySnackBar(context, "Error cancelling ride.");
       }
-      _navigateToHome();
+    } finally {
+      if (mounted) {
+        _navigateToHome();
+      }
     }
   }
 
@@ -2308,6 +2330,12 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
           }
 
           num newFare = faresMap[vehicleType] ?? faresMap.values.first;
+
+          // **NEW:** Exclude tolls for Auto mid-ride if stops are added
+          final num appliedToll = data['appliedToll'] as num? ?? 0;
+          if (vehicleType == 'Auto' && appliedToll > 0) {
+            newFare -= appliedToll;
+          }
 
           final multiStopFee = currentStops.length * 30;
           newFare += multiStopFee;

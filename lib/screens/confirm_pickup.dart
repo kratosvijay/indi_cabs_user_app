@@ -196,12 +196,24 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
     _adjustablePickupLocation = widget.currentPosition;
     _pickupAddress = "Getting address...";
     _useWalletBalance = widget.useWallet; // **NEW**
-    // **MODIFIED:** Add convenience fee to current fare
     _currentConvenienceFee = widget.convenienceFee ?? 0;
+    
+    // **NEW:** Calculate initial tolls from Firestore zones if not rental, and NOT Auto
+    num initialTolls = 0;
+    final String vehicleType = _vehicleTypeForFare();
+    if (!widget.isRental && _currentRouteDetails != null && vehicleType != 'Auto') {
+      // Note: _geofenceZones might be empty here as it's loaded async in _loadGeofencePolygons.
+      // We will re-run this logic in _loadGeofencePolygons to ensure tolls are applied.
+    }
+
+    // Pass the raw calculated fare to _currentCalculatedFare
     _currentCalculatedFare =
         (widget.isRental ? widget.rentalPrice! : widget.calculatedFare!) +
-        _currentConvenienceFee;
-    _currentRouteDetails = widget.isRental ? null : widget.routeDetails;
+        initialTolls;
+    
+    // If calculatedFare already included convenienceFee, we keep it as is, 
+    // but we'll be careful in _confirmRide to subtract it if needed.
+    // However, looking at _refreshFare, it seems we regenerate it.
     _currentScheduledTime = widget.scheduledTime; // **NEW**
     _addressSheetController = TextEditingController(text: _pickupAddress);
     _pickupPlaceName = widget.pickupPlaceName; // **NEW**
@@ -297,7 +309,7 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
             markerId: const MarkerId('destination'),
             position: widget.destinationPosition,
             icon: BitmapDescriptor.defaultMarkerWithHue(
-              BitmapDescriptor.hueAzure,
+              BitmapDescriptor.hueRed,
             ),
             infoWindow: const InfoWindow(title: "Drop-off Location"),
           ),
@@ -404,6 +416,18 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
       } else {
         debugPrint("*** No Common Pickup Zone matched for user position. ***");
       }
+
+      // **NEW:** Recalculate tolls now that zones are loaded
+      if (!widget.isRental && _currentRouteDetails != null) {
+        final double customTolls = _calculateTollsForRoute(_currentRouteDetails!.polylinePoints).toDouble();
+        if (customTolls > 0) {
+          setState(() {
+            _currentCalculatedFare += customTolls;
+            _currentRouteDetails = _currentRouteDetails!.copyWith(tollCost: customTolls);
+          });
+          debugPrint("Applied initial tolls from Firestore: $customTolls");
+        }
+      }
     } catch (e) {
       debugPrint("Error loading geofence polygons: $e");
     }
@@ -436,6 +460,32 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
       }
     }
     return null;
+  }
+
+  // **NEW:** Calculate tolls based on Firestore geofence zones
+  num _calculateTollsForRoute(List<LatLng> polyline) {
+    if (polyline.isEmpty) return 0;
+    num totalToll = 0;
+
+    // Filter zones that have a surcharge > 0
+    final tollZones =
+        _geofenceZones.where((z) => z.surchargeAmount > 0).toList();
+
+    for (var zone in tollZones) {
+      // Check if any point in the polyline is inside the zone
+      bool crossed = false;
+      for (var point in polyline) {
+        if (_locationService.isPointInPolygon(point, zone.boundary)) {
+          crossed = true;
+          break;
+        }
+      }
+      if (crossed) {
+        totalToll += zone.surchargeAmount;
+        debugPrint("Toll Crossed: ${zone.id} | Amount: ${zone.surchargeAmount}");
+      }
+    }
+    return totalToll;
   }
 
   Future<void> _refreshFare() async {
@@ -485,12 +535,22 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
 
       final faresResult = calculationResult.fares;
       final appliedSurcharge = calculationResult.appliedSurcharge;
+      final String vehicleType = _vehicleTypeForFare();
+      num customTolls = _calculateTollsForRoute(newRouteDetails.polylinePoints);
+      
+      // **NEW:** Exclude tolls for Auto
+      if (vehicleType == 'Auto') {
+        customTolls = 0;
+      }
 
-      // Update route details with the newly calculated surcharge/toll
-      newRouteDetails = newRouteDetails.copyWith(tollCost: appliedSurcharge);
+      // Update route details with the newly calculated custom toll
+      newRouteDetails = newRouteDetails.copyWith(tollCost: customTolls);
 
-      // **NEW:** Add multi-stop fee if applicable
-      num finalFare = faresResult[_vehicleTypeForFare()]!;
+      // **FIXED:** Subtract initial surcharge AND initial toll to get base fare, then use our summed custom tolls
+      // This ensures we don't double charge if the backend provided a toll.
+      final num backendToll = faresResult['appliedToll'] ?? 0;
+      num finalFare = (faresResult[vehicleType]! - (appliedSurcharge + backendToll)) + customTolls;
+
       if (widget.intermediateStops != null &&
           widget.intermediateStops!.isNotEmpty) {
         final multiStopFee = widget.intermediateStops!.length * 30;
@@ -663,18 +723,18 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
         cashToPay -= walletUsed;
       }
 
+      // **NEW:** Determine final payment method string
+      String finalPaymentMethod = _selectedPaymentMethod;
+      if (walletUsed > 0) {
+        if (cashToPay > 0) {
+          finalPaymentMethod = 'Cash + Wallet';
+        } else {
+          finalPaymentMethod = 'Wallet';
+        }
+      }
+
       if (widget.isRental) {
         // --- Create Rental Request ---
-        // **NEW:** Determine final payment method string
-        String finalPaymentMethod = _selectedPaymentMethod;
-        if (walletUsed > 0) {
-          if (cashToPay > 0) {
-            finalPaymentMethod = 'Cash + Wallet';
-          } else {
-            finalPaymentMethod = 'Wallet';
-          }
-        }
-
         rideRequestIdFuture = _firestoreService.createRentalRideRequest(
           userId: user.uid, // Use current user uid
           userName: user.displayName,
@@ -700,7 +760,7 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
         );
 
         // **NEW:** Determine final payment method string
-        String finalPaymentMethod = _selectedPaymentMethod;
+        finalPaymentMethod = _selectedPaymentMethod;
         if (walletUsed > 0) {
           if (cashToPay > 0) {
             finalPaymentMethod = 'Cash + Wallet';
@@ -708,6 +768,12 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
             finalPaymentMethod = 'Wallet';
           }
         }
+
+        num baseFare = finalFare;
+        // Subtract items that firestore_services.dart will re-add
+        // finalFare already excludes tipValue, so we only subtract tolls and convenienceFee
+        baseFare -= (_currentRouteDetails?.tollCost ?? 0);
+        baseFare -= _currentConvenienceFee;
 
         rideRequestIdFuture = _firestoreService.createDailyRideRequest(
           userId: user.uid, // Use current user uid
@@ -721,7 +787,7 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
               destinationAddressString, // Use non-null asserted string
           destinationPlaceName: _destinationPlaceName, // **NEW**
           vehicleType: widget.selectedVehicle?.type ?? "Multi-Stop",
-          fare: finalFare,
+          fare: baseFare, // Passing the pure base fare (plus multi-stop if any)
           tip: _tipValue,
           paymentMethod: finalPaymentMethod, // **MODIFIED**
           routeDetails: _currentRouteDetails,
@@ -761,7 +827,16 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
           scheduledTime: _currentScheduledTime,
           destinationAddress: destinationAddressString,
           initialEta: initialEta,
-          isBookForOther: widget.guestName != null, // **NEW**
+          isBookForOther: widget.guestName != null,
+          // **NEW:** Pass all data for possible retry
+          pickupAddress: finalPickupAddress,
+          pickupPlaceName: _pickupPlaceName,
+          destinationPlaceName: _destinationPlaceName,
+          paymentMethod: finalPaymentMethod,
+          convenienceFee: _currentConvenienceFee,
+          walletAmountUsed: walletUsed,
+          cashAmount: cashToPay,
+          routeDetails: _currentRouteDetails,
         );
       }
     } catch (e) {
@@ -815,7 +890,11 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                   displaySnackBar(context, "Please wait, refreshing fare...");
                 }
               },
-              child: Container(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.8,
+                ),
+                child: Container(
                 decoration: BoxDecoration(
                   color: backgroundColor,
                   borderRadius: const BorderRadius.vertical(
@@ -909,6 +988,62 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                       const SizedBox(height: 16),
                       const Divider(),
 
+                      // **NEW:** Wallet Usage Toggle (Moved to Top for Visibility)
+                      if (widget.walletBalance != null)
+                        Container(
+                          margin: const EdgeInsets.symmetric(vertical: 8),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isDark 
+                                ? AppColors.primary.withValues(alpha: 0.15) 
+                                : AppColors.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppColors.primary.withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            secondary: Icon(
+                              Icons.account_balance_wallet,
+                              color: (widget.walletBalance ?? 0) > 0 
+                                  ? AppColors.primary 
+                                  : Colors.grey,
+                              size: 28,
+                            ),
+                            title: Text(
+                              "useWalletBalance".tr,
+                              style: TextStyle(
+                                fontSize: _getAdaptiveFontSize(16),
+                                color: (widget.walletBalance ?? 0) > 0 
+                                    ? textColor 
+                                    : Colors.grey,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            subtitle: Text(
+                              "${"available".tr}: ₹${widget.walletBalance!.toStringAsFixed(0)}",
+                              style: TextStyle(
+                                fontSize: _getAdaptiveFontSize(12),
+                                color: subTextColor,
+                              ),
+                            ),
+                            value: (widget.walletBalance ?? 0) > 0 && _useWalletBalance,
+                            activeThumbColor: AppColors.primary,
+                            onChanged: (isRefreshing || (widget.walletBalance ?? 0) <= 0)
+                                ? null
+                                : (bool value) {
+                                    setSheetState(() {
+                                      _useWalletBalance = value;
+                                      if (!value && _selectedPaymentMethod == 'Wallet') {
+                                        _selectedPaymentMethod = 'Cash';
+                                      }
+                                    });
+                                  },
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+
                       // --- Tip Slider ---
                       const SizedBox(height: 16),
                       Text(
@@ -936,41 +1071,6 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                       const SizedBox(height: 16),
 
                       const SizedBox(height: 16),
-                      // **NEW:** Wallet Usage Toggle
-                      if (widget.walletBalance != null &&
-                          widget.walletBalance! > 0)
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(
-                            "useWalletBalance".tr,
-                            style: TextStyle(
-                              fontSize: _getAdaptiveFontSize(16),
-                              color: textColor,
-                            ),
-                          ),
-                          subtitle: Text(
-                            "${"available".tr}: ₹${widget.walletBalance!.toStringAsFixed(0)}",
-                            style: TextStyle(
-                              fontSize: _getAdaptiveFontSize(12),
-                              color: subTextColor,
-                            ),
-                          ),
-                          value: _useWalletBalance,
-                          activeThumbColor: AppColors.primary,
-                          onChanged: isRefreshing
-                              ? null
-                              : (bool value) {
-                                  setSheetState(() {
-                                    _useWalletBalance = value;
-                                    if (!value && _selectedPaymentMethod == 'Wallet') {
-                                      _selectedPaymentMethod = 'Cash';
-                                    }
-                                  });
-                                },
-                        ),
-                      if (widget.walletBalance != null &&
-                          widget.walletBalance! > 0)
-                        const Divider(),
 
                       // --- Payment Method Button ---
                       OutlinedButton.icon(
@@ -979,18 +1079,20 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                         onPressed: isRefreshing
                             ? null
                             : () async {
-                                final result = await Get.to<String>(
+                                final result = await Get.to<Map<String, dynamic>>(
                                   () => PaymentScreen(
                                     currentPaymentMethod:
                                         _selectedPaymentMethod,
-                                    currentBalance: walletBalance,
+                                    currentBalance: widget.walletBalance ?? 0,
                                     totalFare: totalFare,
+                                    initialUseWallet: _useWalletBalance,
                                   ),
                                 );
                                 if (result != null) {
                                   setSheetState(() {
-                                    _selectedPaymentMethod = result;
-                                    if (result == 'Wallet') {
+                                    _selectedPaymentMethod = result['method'] ?? 'Cash';
+                                    _useWalletBalance = result['useWallet'] ?? false;
+                                    if (_selectedPaymentMethod == 'Wallet') {
                                       _useWalletBalance = true;
                                     }
                                   });
@@ -1018,7 +1120,9 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                       // --- Confirm Booking Button ---
                       ProButton(
                         text: _useWalletBalance
-                            ? "${'bookNow'.tr} (${'cash'.tr}: ₹${max(0, (totalFare - (widget.walletBalance ?? 0))).toStringAsFixed(0)})"
+                            ? (widget.walletBalance != null && widget.walletBalance! >= totalFare)
+                                ? "${'bookNow'.tr} (${'wallet'.tr})"
+                                : "${'bookNow'.tr} (₹${min(widget.walletBalance ?? 0, totalFare).toStringAsFixed(0)} ${'wallet'.tr} + ₹${max(0, (totalFare - (widget.walletBalance ?? 0))).toStringAsFixed(0)} ${'cash'.tr})"
                             : "${'bookNow'.tr} (${'total'.tr}: ₹${totalFare.toStringAsFixed(0)})",
                         isLoading: _isBooking || isRefreshing,
                         fontSize: _getAdaptiveFontSize(18),
@@ -1032,7 +1136,7 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
                   ),
                 ),
               ),
-            );
+            ));
           },
         );
       },

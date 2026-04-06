@@ -84,6 +84,10 @@ class AuthController extends GetxController {
             if (phoneNumber != null && phoneNumber.isNotEmpty) {
               debugPrint("DEBUG: Phone number found. Navigating to HomePage.");
 
+              // **NEW:** Mark onboarding as seen since user is already fully registered/logged in
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setBool('hasSeenOnboarding', true);
+
               // **FIX:** Ensure RideController exists and is initialized
               if (!Get.isRegistered<RideController>()) {
                 debugPrint("DEBUG: Creating new RideController");

@@ -183,6 +183,10 @@ class FirestoreService {
 
       final callable = _functions.httpsCallable('createRideRequest');
 
+      final num baseFare = fare;
+      final num tollCost = (vehicleType == 'Auto') ? 0 : (routeDetails?.tollCost ?? 0);
+      final num totalFare = baseFare + tip + tollCost + (convenienceFee ?? 0);
+
       final Map<String, dynamic> rideData = {
         'userId': userId,
         'userName': userName ?? 'N/A',
@@ -200,9 +204,11 @@ class FirestoreService {
         'destinationAddress': destinationAddress,
         'destinationPlaceName': destinationPlaceName ?? (destinationAddress.contains(',') ? destinationAddress.split(',')[0] : destinationAddress), // **NEW**
         'vehicleClass': vehicleType, // Using vehicleType arg as vehicleClass
-        'fare': fare,
+        'fare': baseFare,
+        'tolls': tollCost, // **NEW:** Tolls posted separately
+        'finalFare': totalFare, // **NEW:** Final fare posted separately
         'tip': tip,
-        'totalFare': fare + tip + (convenienceFee ?? 0),
+        'totalFare': totalFare,
         'paymentMethod': paymentMethod,
         'status': scheduledTime == null ? 'searching' : 'scheduled',
         'rideType': 'daily',
@@ -213,7 +219,7 @@ class FirestoreService {
         'convenienceFee': convenienceFee ?? 0,
         'walletAmountUsed': walletAmountUsed ?? 0, // **NEW**
         'cashAmount':
-            cashAmount ?? (fare + tip + (convenienceFee ?? 0)), // **NEW**
+            cashAmount ?? totalFare, // **NEW**
       };
 
       final result = await callable.call(rideData);
@@ -320,6 +326,7 @@ class FirestoreService {
     num? convenienceFee,
     String? guestName,
     String? guestPhone,
+    bool useWallet = false, // **NEW**
   }) {
     Get.to(
       () => ConfirmPickupScreen(
@@ -338,6 +345,7 @@ class FirestoreService {
         convenienceFee: convenienceFee,
         guestName: guestName,
         guestPhone: guestPhone,
+        useWallet: useWallet, // **NEW**
         // Rental params are null for daily ride
       ),
     );
@@ -394,9 +402,17 @@ class FirestoreService {
     String? rentalVehicleType,
     List<Map<String, dynamic>>? intermediateStops,
     DateTime? scheduledTime,
-    String? destinationAddress, // **NEW**
-    String? initialEta, // **NEW**
-    bool isBookForOther = false, // **NEW**
+    String? destinationAddress,
+    String? initialEta,
+    bool isBookForOther = false,
+    String? pickupAddress,
+    String? pickupPlaceName,
+    String? destinationPlaceName,
+    String? paymentMethod,
+    num? convenienceFee,
+    num? walletAmountUsed,
+    num? cashAmount,
+    RouteDetails? routeDetails,
   }) {
     Get.offAll(
       () => SearchingForRideScreen(
@@ -416,7 +432,15 @@ class FirestoreService {
         scheduledTime: scheduledTime,
         destinationAddress: destinationAddress,
         initialEta: initialEta,
-        isBookForOther: isBookForOther, // **NEW**
+        isBookForOther: isBookForOther,
+        pickupAddress: pickupAddress,
+        pickupPlaceName: pickupPlaceName,
+        destinationPlaceName: destinationPlaceName,
+        paymentMethod: paymentMethod,
+        convenienceFee: convenienceFee,
+        walletAmountUsed: walletAmountUsed,
+        cashAmount: cashAmount,
+        routeDetails: routeDetails,
       ),
     );
   }

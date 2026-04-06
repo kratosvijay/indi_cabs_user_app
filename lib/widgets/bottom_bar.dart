@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:project_taxi_with_ai/widgets/data_models.dart';
-import 'package:project_taxi_with_ai/screens/metro/metro_search_screen.dart';
 
 // Callbacks
 typedef ServiceTypeSelectedCallback = void Function(RideType rideType);
@@ -36,7 +35,9 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
 
   void _scrollListener() {
     if (_scrollController.hasClients) {
-      bool atBottom = _scrollController.offset >= _scrollController.position.maxScrollExtent - 20;
+      bool atBottom =
+          _scrollController.offset >=
+          _scrollController.position.maxScrollExtent - 20;
       if (atBottom != _isAtBottom) {
         setState(() {
           _isAtBottom = atBottom;
@@ -106,17 +107,26 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
                           icon: Icons.local_taxi_outlined,
 
                           label: "dailyRides".tr,
-                          isSelected: widget.selectedServiceType == RideType.daily,
-                          onTap: () => widget.onServiceTypeSelected(RideType.daily),
+                          isSelected:
+                              widget.selectedServiceType == RideType.daily,
+                          onTap: () =>
+                              widget.onServiceTypeSelected(RideType.daily),
                           isDark: isDark,
                         ),
                         _buildServiceTypeCard(
                           context: context,
                           icon: Icons.subway_rounded,
-                          label: "metroTicket".tr,
-                          isSelected: widget.selectedServiceType == RideType.metro,
+                          label: "Metro Ticket".tr,
+                          isSelected:
+                              widget.selectedServiceType == RideType.metro,
                           onTap: () {
-                            Get.to(() => const MetroSearchScreen());
+                            Get.snackbar(
+                              "Metro Ticket".tr,
+                              "Metro Ticket coming soon!",
+                              snackPosition: SnackPosition.BOTTOM,
+                              backgroundColor: Colors.yellow,
+                              colorText: Colors.black,
+                            );
                           },
                           isDark: isDark,
                         ),
@@ -125,16 +135,19 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
                           icon: Icons.person_add_alt_1_outlined,
                           label: "bookForGuest".tr,
                           isSelected:
-                              widget.selectedServiceType == RideType.bookForOther,
-                          onTap: () =>
-                              widget.onServiceTypeSelected(RideType.bookForOther),
+                              widget.selectedServiceType ==
+                              RideType.bookForOther,
+                          onTap: () => widget.onServiceTypeSelected(
+                            RideType.bookForOther,
+                          ),
                           isDark: isDark,
                         ),
                         _buildServiceTypeCard(
                           context: context,
                           icon: Icons.multiple_stop,
                           label: "multiStop".tr,
-                          isSelected: widget.selectedServiceType == RideType.multiStop,
+                          isSelected:
+                              widget.selectedServiceType == RideType.multiStop,
                           onTap: () =>
                               widget.onServiceTypeSelected(RideType.multiStop),
                           isDark: isDark,
@@ -143,14 +156,16 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
                           context: context,
                           icon: Icons.timelapse_outlined,
                           label: "rentals".tr,
-                          isSelected: widget.selectedServiceType == RideType.rental,
-                          onTap: () => widget.onServiceTypeSelected(RideType.rental),
+                          isSelected:
+                              widget.selectedServiceType == RideType.rental,
+                          onTap: () =>
+                              widget.onServiceTypeSelected(RideType.rental),
                           isDark: isDark,
                         ),
                         _buildServiceTypeCard(
                           context: context,
                           icon: Icons.person_pin_outlined,
-                          label: "comingSoon".tr,
+                          label: "actingDriver".tr,
                           isSelected:
                               widget.selectedServiceType == RideType.acting,
                           onTap: () {
@@ -158,8 +173,8 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
                               "comingSoon".tr,
                               "Feature coming soon!",
                               snackPosition: SnackPosition.BOTTOM,
-                              backgroundColor: isDark ? Colors.grey[900] : Colors.white,
-                              colorText: isDark ? Colors.white : Colors.black,
+                              backgroundColor: Colors.yellow,
+                              colorText: Colors.black,
                             );
                           },
                           isDark: isDark,
@@ -195,17 +210,21 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
                             clipBehavior: Clip.antiAlias,
                             color: isDark ? Colors.grey[800] : Colors.grey[100],
                             elevation: isDark ? 6 : 4,
-                            shadowColor: isDark 
-                                ? const Color(0xFFFFD700).withValues(alpha: 0.6) 
+                            shadowColor: isDark
+                                ? const Color(0xFFFFD700).withValues(alpha: 0.6)
                                 : Colors.black.withValues(alpha: 0.3),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
                               side: isDark
-                                  ? const BorderSide(color: Color(0xFFFFD700), width: 1.5)
+                                  ? const BorderSide(
+                                      color: Color(0xFFFFD700),
+                                      width: 1.5,
+                                    )
                                   : BorderSide.none,
                             ),
                             child: InkWell(
-                              onTap: () => widget.onPredefinedDestinationTap(dest),
+                              onTap: () =>
+                                  widget.onPredefinedDestinationTap(dest),
                               child: Padding(
                                 padding: const EdgeInsets.all(8.0),
                                 child: Column(
@@ -258,7 +277,9 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
                       IconButton(
                         onPressed: _toggleScroll,
                         icon: Icon(
-                          _isAtBottom ? Icons.keyboard_double_arrow_up : Icons.keyboard_double_arrow_down,
+                          _isAtBottom
+                              ? Icons.keyboard_double_arrow_up
+                              : Icons.keyboard_double_arrow_down,
                           color: isDark ? Colors.white70 : Colors.black54,
                         ),
                         tooltip: _isAtBottom ? 'Scroll Up' : 'Scroll Down',
@@ -284,17 +305,21 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
                             clipBehavior: Clip.antiAlias,
                             color: isDark ? Colors.grey[800] : Colors.grey[100],
                             elevation: isDark ? 6 : 4,
-                            shadowColor: isDark 
-                                ? const Color(0xFFFFD700).withValues(alpha: 0.6) 
+                            shadowColor: isDark
+                                ? const Color(0xFFFFD700).withValues(alpha: 0.6)
                                 : Colors.black.withValues(alpha: 0.3),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
                               side: isDark
-                                  ? const BorderSide(color: Color(0xFFFFD700), width: 1.5)
+                                  ? const BorderSide(
+                                      color: Color(0xFFFFD700),
+                                      width: 1.5,
+                                    )
                                   : BorderSide.none,
                             ),
                             child: InkWell(
-                              onTap: () => widget.onPredefinedDestinationTap(dest),
+                              onTap: () =>
+                                  widget.onPredefinedDestinationTap(dest),
                               child: Padding(
                                 padding: const EdgeInsets.all(8.0),
                                 child: Column(
@@ -348,16 +373,16 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
     required VoidCallback onTap,
     required bool isDark,
   }) {
-    final selectedColor = isDark
-        ? const Color(0xFFFFD700)
-        : Colors.blueAccent;
+    final selectedColor = isDark ? const Color(0xFFFFD700) : Colors.blueAccent;
     final unselectedColor = isDark
         ? Colors.grey.shade400
         : Colors.grey.shade600;
 
     // Background color
     final backgroundColor = isSelected
-        ? (isDark ? const Color(0xFFFFD700).withValues(alpha: 0.15) : Colors.blue.shade50)
+        ? (isDark
+              ? const Color(0xFFFFD700).withValues(alpha: 0.15)
+              : Colors.blue.shade50)
         : (isDark ? Colors.grey[800] : Colors.white);
 
     final textColor = isSelected

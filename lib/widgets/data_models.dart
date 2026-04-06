@@ -196,27 +196,58 @@ class RentalPackage {
 
   factory RentalPackage.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+    
+    // **RESILIENCE:** Check multiple possible field names for each vehicle price
+    num getPrice(String type) {
+      final List<String> keys = [
+        'price_${type.toLowerCase()}',
+        '${type.toLowerCase()}_price',
+        type,
+        type.toLowerCase(),
+      ];
+      for (var key in keys) {
+        if (data.containsKey(key)) return (data[key] as num?) ?? 0;
+      }
+      return 0;
+    }
+
     Map<String, num> prices = {
-      'Hatchback': data['price_hatchback'] ?? 0,
-      'Sedan': data['price_sedan'] ?? 0,
-      'SUV': data['price_suv'] ?? 0,
-      'Auto': data['price_auto'] ?? 0,
-      'ActingDriver': data['price_actingdriver'] ?? 0, // **NEW LINE**
+      'Hatchback': getPrice('Hatchback'),
+      'Sedan': getPrice('Sedan'),
+      'SUV': getPrice('SUV'),
+      'Auto': getPrice('Auto'),
+      'ActingDriver': getPrice('ActingDriver'),
     };
+
     return RentalPackage(
       id: doc.id,
-      displayName:
-          data['display_name'] ?? '${data['duration_hours'] ?? '?'} hr Package',
-      durationHours: (data['duration_hours'] as num?)?.toInt() ?? 0,
-      kmLimit: (data['km_limit'] as num?)?.toInt() ?? 0,
-      extraKmCharge: data['extra_km_charge'] ?? 0,
-      extraHourCharge: data['extra_hour_charge'] ?? 0,
+      displayName: data['display_name'] ??
+          data['displayName'] ??
+          '${data['duration_hours'] ?? '?'} hr Package',
+      durationHours: (data['duration_hours'] as num?)?.toInt() ?? 
+                    (data['durationHours'] as num?)?.toInt() ?? 0,
+      kmLimit: (data['km_limit'] as num?)?.toInt() ?? 
+               (data['kmLimit'] as num?)?.toInt() ?? 0,
+      extraKmCharge: (data['extra_km_charge'] as num?) ?? (data['extraKmCharge'] as num?) ?? 0,
+      extraHourCharge: (data['extra_hour_charge'] as num?) ?? (data['extraHourCharge'] as num?) ?? 0,
       vehiclePrices: prices,
     );
   }
 
   num getPriceForVehicle(String vehicleType) {
     return vehiclePrices[vehicleType] ?? 0;
+  }
+
+  /// Returns the lowest available price in the package across all vehicles
+  num getMinPrice({bool excludeActingDriver = false}) {
+    num minPrice = double.infinity;
+    vehiclePrices.forEach((type, price) {
+      if (excludeActingDriver && type == 'ActingDriver') return;
+      if (price > 0 && price < minPrice) {
+        minPrice = price;
+      }
+    });
+    return minPrice == double.infinity ? 0 : minPrice;
   }
 }
 
