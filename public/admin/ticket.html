@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Support Ticket Admin | Indi Cabs</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Firebase SDKs (v8) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-functions.js"></script>
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; background: #f8fafc; }
+        .glass { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.3); }
+        .chat-container { height: calc(100vh - 280px); }
+        .user-msg { background: #f1f5f9; color: #1e293b; align-self: flex-start; border-bottom-left-radius: 4px; }
+        .admin-msg { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
+        .hide-scroll::-webkit-scrollbar { display: none; }
+        .quick-reply-pill { 
+            padding: 6px 12px; 
+            border-radius: 12px; 
+            font-size: 11px; 
+            font-weight: 500; 
+            white-space: nowrap; 
+            cursor: pointer; 
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
+    </style>
+</head>
+<body class="flex flex-col h-screen">
+    <!-- Header -->
+    <header class="glass sticky top-0 z-10 px-6 py-4 flex items-center justify-between shadow-sm">
+        <div class="flex items-center gap-3">
+            <button onclick="goBack()" class="w-10 h-10 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl flex items-center justify-center text-gray-500 transition-colors shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+            </button>
+            <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-xl">I</div>
+            <div>
+                <h1 id="ticket-subject" class="font-semibold text-gray-900 leading-tight">Loading Ticket...</h1>
+                <p id="ticket-id-display" class="text-xs text-gray-500 font-monouppercase tracking-wider"></p>
+            </div>
+        </div>
+        <div class="flex items-center gap-4">
+            <button id="close-ticket-btn" class="hidden px-4 py-2 border border-red-200 text-red-600 text-sm font-semibold rounded-xl hover:bg-red-50 transition-colors">
+                Close Ticket
+            </button>
+            <div id="status-badge" class="px-3 py-1 bg-yellow-100 text-yellow-700 text-xs font-bold rounded-full uppercase tracking-tighter">
+                Open
+            </div>
+        </div>
+    </header>
+
+    <!-- Chat Body -->
+    <main id="chat-box" class="flex-1 overflow-y-auto px-6 py-6 flex flex-col gap-4 chat-container hide-scroll">
+        <div id="loading-state" class="flex justify-center italic text-gray-400 text-sm py-4">Connecting to support server...</div>
+    </main>
+
+    <!-- Footer Input & Quick Replies -->
+    <footer class="bg-white border-t border-gray-100 px-6 py-4">
+        <!-- Quick Reply Groups -->
+        <div class="max-w-5xl mx-auto mb-4">
+            <div class="flex gap-2 border-b border-gray-100 mb-2 overflow-x-auto hide-scroll pb-1">
+                <button onclick="showCategory('general', event)" class="text-xs font-bold text-blue-600 border-b-2 border-blue-600 pb-1 px-2 whitespace-nowrap">👋 General</button>
+                <button onclick="showCategory('ride', event)" class="text-xs font-medium text-gray-500 hover:text-blue-600 pb-1 px-2 whitespace-nowrap">🚗 Ride</button>
+                <button onclick="showCategory('payment', event)" class="text-xs font-medium text-gray-500 hover:text-blue-600 pb-1 px-2 whitespace-nowrap">💰 Payment</button>
+                <button onclick="showCategory('location', event)" class="text-xs font-medium text-gray-500 hover:text-blue-600 pb-1 px-2 whitespace-nowrap">📍 App</button>
+                <button onclick="showCategory('account', event)" class="text-xs font-medium text-gray-500 hover:text-blue-600 pb-1 px-2 whitespace-nowrap">🔑 Account</button>
+                <button onclick="showCategory('escalation', event)" class="text-xs font-medium text-gray-500 hover:text-blue-600 pb-1 px-2 whitespace-nowrap">🚨 Escalation</button>
+                <button onclick="showCategory('closing', event)" class="text-xs font-medium text-gray-500 hover:text-blue-600 pb-1 px-2 whitespace-nowrap">🙏 Closing</button>
+                <button onclick="showCategory('smart', event)" class="text-xs font-medium text-gray-500 hover:text-blue-600 pb-1 px-2 whitespace-nowrap">🚀 Smart</button>
+            </div>
+            <div id="quick-replies-container" class="flex flex-wrap gap-2 py-1 max-h-24 overflow-y-auto hide-scroll">
+                <!-- Grouped buttons will be injected here -->
+            </div>
+        </div>
+
+        <form id="reply-form" class="flex gap-3 max-w-5xl mx-auto items-center">
+            <input type="text" id="message-input" placeholder="Type your reply..." 
+                class="flex-1 bg-gray-50 border border-gray-200 rounded-2xl px-5 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+            <button type="submit" id="send-btn" class="bg-blue-600 hover:bg-blue-700 text-white w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-200 transition-all active:scale-95 disabled:bg-gray-300">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+            </button>
+        </form>
+    </footer>
+
+    <script>
+        // CONFIG
+        const firebaseConfig = {
+            apiKey: "AIzaSyBnMfTqInBrDqPnq06CbMkIyGomOwboFto",
+            authDomain: "indicabs-prod.firebaseapp.com",
+            projectId: "indicabs-prod",
+            storageBucket: "indicabs-prod.firebasestorage.app",
+            messagingSenderId: "404641872366",
+            appId: "1:404641872366:web:96a41afc11a7794e27f6ff",
+            measurementId: "G-T05N1HJPNB"
+        };
+
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const functions = firebase.app().functions('asia-south1');
+        
+        // PARSE URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const ticketId = urlParams.get('id');
+        const token = urlParams.get('token');
+        const masterToken = urlParams.get('masterToken');
+
+        function goBack() {
+            if (masterToken) {
+                window.location.href = `tickets.html?masterToken=${masterToken}`;
+            } else {
+                window.location.href = `tickets.html`;
+            }
+        }
+
+        const chatBox = document.getElementById('chat-box');
+        const replyForm = document.getElementById('reply-form');
+        const messageInput = document.getElementById('message-input');
+        const sendBtn = document.getElementById('send-btn');
+        const closeBtn = document.getElementById('close-ticket-btn');
+        const statusBadge = document.getElementById('status-badge');
+        const quickReplyContainer = document.getElementById('quick-replies-container');
+
+        const categories = {
+            general: [
+                { label: "👋 Greeting", text: "Hi 👋 Thanks for reaching out to Indicabs support. How can we assist you today?" },
+                { label: "⏳ Delay response", text: "We’re looking into your request and will update you shortly. Thanks for your patience 🙏" },
+                { label: "✅ Issue resolved", text: "Your issue has been resolved successfully ✅ Please check and let us know if you need anything else." }
+            ],
+            ride: [
+                { label: "🚖 Driver not coming", text: "We’re sorry for the delay. We’re checking with the driver and will update you shortly. If needed, we can help you find another ride." },
+                { label: "❌ Ride cancelled", text: "We apologize for the inconvenience caused due to the cancellation. We’re working to improve reliability and can help you book another ride quickly." },
+                { label: "💸 Fare issue", text: "We understand your concern regarding the fare. We’re reviewing the trip details and will get back to you shortly." }
+            ],
+            payment: [
+                { label: "💳 Payment deducted", text: "We’re sorry for the inconvenience. If the amount was deducted, it will be automatically refunded within 3–5 business days. We’re verifying this on our end." },
+                { label: "💵 Refund status", text: "Your refund has been initiated successfully. It may take 3–5 business days to reflect in your account." }
+            ],
+            location: [
+                { label: "📍 Wrong location", text: "It looks like there was an issue with the pickup location. Please ensure GPS is enabled and try again. We’re working to improve accuracy." },
+                { label: "🐞 App bug", text: "Thanks for reporting this issue. Our technical team is looking into it and we’ll fix it as soon as possible." }
+            ],
+            account: [
+                { label: "🔑 OTP issue", text: "We’re sorry for the delay in OTP. Please check your network connection and try again. If the issue persists, let us know." },
+                { label: "🔒 Account blocked", text: "Your account is currently under review for security reasons. Our team will update you shortly." }
+            ],
+            escalation: [
+                { label: "🚨 Escalated", text: "We understand your concern and have escalated this issue to our priority team. We’ll update you as soon as possible." }
+            ],
+            closing: [
+                { label: "🙏 Polite closing", text: "Thank you for choosing Indicabs. Have a great day! 😊" }
+            ],
+            smart: [
+                { label: "👍 Got it", text: "Got it 👍 checking now" },
+                { label: "🔧 Fixing ASAP", text: "Thanks for reporting, fixing it ASAP 🔧" },
+                { label: "🆔 Share Ride ID", text: "Please share ride ID for quick help" }
+            ]
+        };
+
+        let lastMessageCount = 0;
+
+        function showCategory(id, eventObj) {
+            // Update tabs
+            document.querySelectorAll('footer button').forEach(btn => {
+                btn.classList.remove('text-blue-600', 'border-b-2', 'border-blue-600', 'font-bold');
+                btn.classList.add('text-gray-500', 'font-medium');
+            });
+            if (eventObj && eventObj.target) {
+                eventObj.target.classList.add('text-blue-600', 'border-b-2', 'border-blue-600', 'font-bold');
+                eventObj.target.classList.remove('text-gray-500', 'font-medium');
+            } else if (window.event && window.event.target) {
+                // Fallback for some browsers
+                 window.event.target.classList.add('text-blue-600', 'border-b-2', 'border-blue-600', 'font-bold');
+                 window.event.target.classList.remove('text-gray-500', 'font-medium');
+            }
+
+            // Render buttons
+            quickReplyContainer.innerHTML = '';
+            categories[id].forEach(item => {
+                const btn = document.createElement('button');
+                btn.className = "quick-reply-pill bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100";
+                btn.innerText = item.label;
+                btn.title = item.text;
+                btn.onclick = () => sendReply(item.text);
+                quickReplyContainer.appendChild(btn);
+            });
+        }
+
+        // Initialize with General
+        showCategory('general', null);
+
+        if (!ticketId || (!token && !masterToken)) {
+            chatBox.innerHTML = '<div class="text-red-500 text-center py-20 font-medium">Access Denied: Missing Authentication.</div>';
+        } else {
+            startPolling();
+        }
+
+        async function startPolling() {
+            await refreshData();
+            setInterval(refreshData, 5000);
+        }
+
+        async function refreshData() {
+            try {
+                const getTicketDetails = functions.httpsCallable('getTicketDetails');
+                const result = await getTicketDetails({ ticketId, token, masterToken });
+                const { ticket, messages } = result.data;
+
+                document.getElementById('ticket-subject').innerText = ticket.subject;
+                document.getElementById('ticket-id-display').innerText = `TICKET #${ticketId} • ${ticket.userEmail}`;
+                
+                statusBadge.innerText = ticket.status;
+                if(ticket.status === 'closed') {
+                    statusBadge.className = "px-3 py-1 bg-gray-100 text-gray-500 text-xs font-bold rounded-full uppercase tracking-tighter";
+                    messageInput.disabled = true;
+                    messageInput.placeholder = "This ticket is closed.";
+                    sendBtn.disabled = true;
+                    closeBtn.classList.add('hidden');
+                } else {
+                    closeBtn.classList.remove('hidden');
+                    closeBtn.onclick = handleCloseTicket;
+                }
+
+                if (messages.length !== lastMessageCount) {
+                    const loadingState = document.getElementById('loading-state');
+                    if (loadingState) loadingState.remove();
+                    
+                    chatBox.innerHTML = '';
+                    messages.forEach(msg => {
+                        renderMessage(msg.text, msg.sender === 'admin');
+                    });
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                    lastMessageCount = messages.length;
+                }
+            } catch (err) {
+                console.error("Polling Error:", err);
+                const loadingState = document.getElementById('loading-state');
+                if (loadingState) {
+                    loadingState.innerText = "Error: " + err.message + ". Retrying...";
+                    loadingState.className = "flex justify-center text-red-500 text-sm py-4 px-4 text-center";
+                }
+            }
+        }
+
+        function renderMessage(text, isAdmin) {
+            const div = document.createElement('div');
+            div.className = `max-w-[85%] px-4 py-3 rounded-2xl shadow-sm ${isAdmin ? 'admin-msg' : 'user-msg'}`;
+            div.innerText = text;
+            chatBox.appendChild(div);
+        }
+
+        async function handleCloseTicket() {
+            if(confirm("Are you sure you want to close this ticket? User will no longer be able to reply.")) {
+                try {
+                    const closeTicket = functions.httpsCallable('closeTicket');
+                    await closeTicket({ ticketId, token, masterToken });
+                    window.location.reload();
+                } catch (err) {
+                    alert("Failed to close ticket: " + err.message);
+                }
+            }
+        }
+
+        replyForm.onsubmit = (e) => {
+            e.preventDefault();
+            sendReply(messageInput.value);
+        };
+
+        async function sendReply(text) {
+            text = text.trim();
+            if(!text) return;
+
+            messageInput.value = '';
+            messageInput.disabled = true;
+            sendBtn.disabled = true;
+
+            try {
+                const addAdminReply = functions.httpsCallable('addAdminReply');
+                await addAdminReply({ ticketId, token, masterToken, message: text });
+                await refreshData();
+            } catch (err) {
+                console.error(err);
+                alert("Failed to send reply: " + err.message);
+            } finally {
+                messageInput.disabled = false;
+                sendBtn.disabled = false;
+                messageInput.focus();
+            }
+        }
+    </script>
+</body>
+</html>

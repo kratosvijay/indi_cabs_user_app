@@ -35,6 +35,7 @@ import 'package:project_taxi_with_ai/screens/ride_history.dart';
 
 import 'package:project_taxi_with_ai/google_sign_in.dart';
 import 'package:project_taxi_with_ai/screens/support_hub.dart';
+import 'package:project_taxi_with_ai/screens/ticket_chat_screen.dart'; // **NEW**
 import 'package:project_taxi_with_ai/screens/wallet.dart';
 import 'package:project_taxi_with_ai/widgets/bottom_bar.dart';
 import 'package:project_taxi_with_ai/widgets/data_models.dart';
@@ -211,6 +212,7 @@ class _HomePageState extends State<HomePage> {
     // **NEW:** Check for notification permission prompt & reviews
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       _checkNotificationPermission();
+      _syncFcmToken();
       _checkForPendingReviews();
 
       if (!_hasTriggeredOnboarding && mounted) {
@@ -271,9 +273,64 @@ class _HomePageState extends State<HomePage> {
               offset: const Offset(0, 4),
             ),
           ],
+          onTap: (_) {
+            if (message.data['type'] == 'support_reply') {
+              _handleSupportNotificationTap(message.data['ticketId']);
+            }
+          },
         );
       }
     });
+
+    // **NEW:** Handle notification tap when app is in background
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      if (message.data['type'] == 'support_reply') {
+        _handleSupportNotificationTap(message.data['ticketId']);
+      }
+    });
+
+    // **NEW:** Handle notification if app was opened from terminated state
+    FirebaseMessaging.instance.getInitialMessage().then((message) {
+      if (message != null && message.data['type'] == 'support_reply') {
+        _handleSupportNotificationTap(message.data['ticketId']);
+      }
+    });
+  }
+
+  // **NEW:** Sync FCM Token to Firestore to ensure it's always up to date
+  void _syncFcmToken() async {
+    try {
+      final String? token = await FirebaseMessaging.instance.getToken();
+      if (token != null && mounted) {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(_currentUser.uid)
+            .set({
+          'fcmToken': token,
+          'lastTokenSync': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+        debugPrint("HomePage: FCM Token synced to Firestore");
+      }
+    } catch (e) {
+      debugPrint("HomePage: Error syncing FCM token: $e");
+    }
+  }
+
+  // **NEW:** Helper to navigate to ticket from notification
+  void _handleSupportNotificationTap(String? ticketId) async {
+    if (ticketId == null) return;
+    try {
+      final ticketDoc = await FirebaseFirestore.instance
+          .collection('support_tickets')
+          .doc(ticketId)
+          .get();
+      if (mounted && ticketDoc.exists) {
+        final ticket = SupportTicket.fromFirestore(ticketDoc);
+        Get.to(() => TicketChatScreen(ticket: ticket));
+      }
+    } catch (e) {
+      debugPrint("Error navigating to ticket from notification: $e");
+    }
   }
 
   @override

@@ -797,11 +797,70 @@ class WalletTransaction {
       type: data['type'] ?? 'unknown',
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       description: data['description'] ?? '',
-      status:
-          data['status'] ??
-          'success', // Default to success for backward compatibility
+      status: data['status'] ?? 'pending',
     );
   }
+}
+
+// **NEW:** Model for Support Tickets
+class SupportTicket {
+  final String id;
+  final String userId;
+  final String subject;
+  final String status; // "open", "closed"
+  final DateTime createdAt;
+  final DateTime lastMessageAt;
+  final String secretToken;
+
+  SupportTicket({
+    required this.id,
+    required this.userId,
+    required this.subject,
+    required this.status,
+    required this.createdAt,
+    required this.lastMessageAt,
+    required this.secretToken,
+  });
+
+  factory SupportTicket.fromFirestore(DocumentSnapshot doc) {
+    Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+    return SupportTicket(
+      id: doc.id,
+      userId: data['userId'] ?? '',
+      subject: data['subject'] ?? 'No Subject',
+      status: data['status'] ?? 'open',
+      createdAt: (data['createdAt'] as Timestamp? ?? Timestamp.now()).toDate(),
+      lastMessageAt: (data['lastMessageAt'] as Timestamp? ?? Timestamp.now()).toDate(),
+      secretToken: data['secretToken'] ?? '',
+    );
+  }
+}
+
+// **NEW:** Model for Ticket Messages
+class TicketMessage {
+  final String id;
+  final String sender; // "user", "admin"
+  final String text;
+  final DateTime timestamp;
+
+  TicketMessage({
+    required this.id,
+    required this.sender,
+    required this.text,
+    required this.timestamp,
+  });
+
+  factory TicketMessage.fromFirestore(DocumentSnapshot doc) {
+    Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+    return TicketMessage(
+      id: doc.id,
+      sender: data['sender'] ?? 'user',
+      text: data['text'] ?? '',
+      timestamp: (data['timestamp'] as Timestamp? ?? Timestamp.now()).toDate(),
+    );
+  }
+
+  bool get isUser => sender == 'user';
 }
 
 // **NEW:** Shared state for booking flow (Home & BookForOther)

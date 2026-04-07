@@ -8,6 +8,7 @@ import 'package:project_taxi_with_ai/app_colors.dart';
 import 'package:project_taxi_with_ai/utils/app_translations.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'package:project_taxi_with_ai/screens/splash_screen.dart';
 
@@ -17,6 +18,7 @@ import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:upgrader/upgrader.dart';
 import 'package:flutter/services.dart';
 import 'package:sms_autofill/sms_autofill.dart';
+import 'package:flutter/foundation.dart';
 import 'dart:async'; // For runZonedGuarded
 
 // **NEW:** Background message handler (must be a top-level function)
@@ -101,14 +103,37 @@ void main() {
       try {
         await Firebase.initializeApp();
         
+        debugPrint("DEBUG: Activating App Check. Mode: ${kDebugMode ? 'Debug' : 'Release'}");
         await FirebaseAppCheck.instance.activate(
-          providerAndroid: AndroidDebugProvider(),
-          providerApple: AppleDebugProvider(),
+          androidProvider: kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
+          appleProvider: kDebugMode ? AppleProvider.debug : AppleProvider.deviceCheck,
         );
+        debugPrint("DEBUG: App Check activated.");
+        
+        debugPrint("--------------------------------------------------");
+        debugPrint("CHECK CONSOLE LOGS FOR THE APP CHECK DEBUG TOKEN");
+        debugPrint("AND ADD IT TO FIREBASE > APP CHECK > MANAGE DEBUG TOKENS");
+        debugPrint("--------------------------------------------------");
 
         // Pass all uncaught "fatal" errors from the framework to Crashlytics
         FlutterError.onError =
             FirebaseCrashlytics.instance.recordFlutterFatalError;
+
+        // **NEW:** Android Notification Channel for High Importance
+        const AndroidNotificationChannel channel = AndroidNotificationChannel(
+          'high_importance_channel', // id
+          'High Importance Notifications', // title
+          description: 'This channel is used for important notifications.', // description
+          importance: Importance.max,
+        );
+
+        final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+            FlutterLocalNotificationsPlugin();
+
+        await flutterLocalNotificationsPlugin
+            .resolvePlatformSpecificImplementation<
+                AndroidFlutterLocalNotificationsPlugin>()
+            ?.createNotificationChannel(channel);
 
         // Background message handler setup
         FirebaseMessaging.onBackgroundMessage(

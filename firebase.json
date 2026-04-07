@@ -29,6 +29,7 @@
   ],
   "hosting": {
     "public": "public",
+    "cleanUrls": true,
     "ignore": [
       "firebase.json",
       "**/.*",
@@ -36,7 +37,15 @@
     ],
     "rewrites": [
       {
-        "source": "**",
+        "source": "/admin/ticket",
+        "destination": "/admin/ticket.html"
+      },
+      {
+        "source": "/admin/tickets",
+        "destination": "/admin/tickets.html"
+      },
+      {
+        "source": "!/admin/**",
         "destination": "/index.html"
       }
     ]

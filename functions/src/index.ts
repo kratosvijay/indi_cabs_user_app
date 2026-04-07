@@ -19,10 +19,9 @@ import * as logger from "firebase-functions/logger";
 import {defineString} from "firebase-functions/params";
 import * as nodemailer from "nodemailer";
 // **FIXED:** Removed Razorpay import
+import {v4 as uuidv4} from "uuid";
 
 const geminiApiKey = defineString("GEMINI_API_KEY");
-const gmailEmail = defineString("GMAIL_EMAIL");
-const gmailAppPassword = defineString("GMAIL_APP_PASSWORD");
 const cashfreeAppId = defineString("CASHFREE_APP_ID");
 const cashfreeSecretKey = defineString("CASHFREE_SECRET_KEY");
 const exotelAccountSid = defineString("EXOTEL_ACCOUNT_SID");
@@ -529,18 +528,14 @@ export const createRideRequest = onCall(async (
 
 // **--- NEW EMAIL FUNCTION ---**
 
-/**
- * Sends a support email using Nodemailer and a Gmail App Password.
- * @param {CallableRequest<EmailData>} request The request object.
- * @return {Promise<{success: boolean}>}
- */
+// **SUPPORT EMAIL FUNCTION (MODIFIED FOR TICKETING)**
 export const sendSupportEmail = onCall(async (
   request: CallableRequest<EmailData>
 ) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Must be authenticated.");
   }
-  // **FIXED:** no-trailing-spaces
+
   const uid = request.auth.uid;
   const userEmail = request.auth.token.email || "No email provided";
   const {subject, body} = request.data;
@@ -549,36 +544,315 @@ export const sendSupportEmail = onCall(async (
     throw new HttpsError("invalid-argument", "Missing subject or body.");
   }
 
-  const appEmail = gmailEmail.value();
-  const appPassword = gmailAppPassword.value();
+  const appEmail = process.env.GMAIL_EMAIL;
+  const appPassword = process.env.GMAIL_APP_PASSWORD;
 
-  const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: appEmail,
-      pass: appPassword,
-    },
-  });
+  if (!appEmail || !appPassword) {
+    logger.error("SUPPORT EMAIL ERROR: Credentials missing.");
+    throw new HttpsError("internal", "Server configuration error.");
+  }
 
-  const mailOptions = {
-    from: `"${userEmail} (App Support)" <${appEmail}>`,
-    to: appEmail,
-    subject: `[Support Request] ${subject}`,
-    text: `User ID: ${uid}\nUser Email: ${userEmail}\n\nMessage:\n${body}`,
+  // Generate Ticket Info
+  const ticketId = uuidv4().substring(0, 8).toUpperCase();
+  const secretToken = uuidv4();
+
+  // Get User's FCM Token for notifications
+  const userDoc = await admin.firestore().collection("users").doc(uid).get();
+  const fcmToken = userDoc.data()?.fcmToken || null;
+
+  const ticketData = {
+    userId: uid,
+    userEmail: userEmail,
+    userName: userDoc.data()?.displayName || "IndiCabs User",
+    subject: subject,
+    status: "open",
+    secretToken: secretToken,
+    fcmToken: fcmToken,
+    admins: [] as string[], // **NEW:** List of authorized admin UIDs
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
   };
 
+  const ticketRef = admin.firestore()
+    .collection("support_tickets").doc(ticketId);
+
   try {
+    // 1. Create the Ticket in Firestore
+    await ticketRef.set(ticketData);
+
+    // 2. Add the Initial Message
+    await ticketRef.collection("messages").add({
+      sender: "user",
+      text: body,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    const adminLink = `https://indicabs-prod.web.app/admin/ticket.html?id=${ticketId}&token=${secretToken}`;
+
+    const transporter = nodemailer.createTransport({
+      host: "smtp.hostinger.com",
+      port: 465,
+      secure: true,
+      auth: {user: appEmail, pass: appPassword},
+    });
+
+    const mailOptions = {
+      from: `"Support System (Ticket: ${ticketId})" <${appEmail}>`,
+      to: "support@indicabs.net",
+      replyTo: userEmail,
+      subject: `[TICKET: ${ticketId}] ${subject}`,
+      text: "A new support ticket has been opened.\n\n" +
+            `Ticket ID: ${ticketId}\n` +
+            `User ID: ${uid}\n` +
+            `User Email: ${userEmail}\n\n` +
+            `Message:\n${body}\n\n` +
+            `REPLY TO THIS TICKET SECURELY:\n${adminLink}`,
+      html: `<h3>New Support Ticket: ${ticketId}</h3>` +
+            `<p><b>User:</b> ${userEmail}</p>` +
+            `<p><b>Subject:</b> ${subject}</p>` +
+            `<p><b>Message:</b><br>${body.replace(/\n/g, "<br>")}</p>` +
+            "<br><br>" +
+            `<a href="${adminLink}" style="background-color: #007bff; ` +
+            "color: white; padding: 10px 20px; text-decoration: none; " +
+            "border-radius: 5px;\">Reply to Ticket</a>",
+    };
+
     await transporter.sendMail(mailOptions);
-    logger.info(`Support email sent from ${userEmail}`);
-    return {success: true};
+    logger.info(`Ticket ${ticketId} created and email sent.`);
+    return {success: true, ticketId: ticketId};
   } catch (error) {
-    logger.error(`Error sending email: ${error}`);
-    throw new HttpsError(
-      "internal", "Failed to send email."
-    );
+    logger.error("Error creating ticket/sending email:", error);
+    throw new HttpsError("internal", "Failed to process support request.");
   }
 });
 
+// **--- ADMIN TICKET PORTAL LOGIC ---**
+
+/**
+ * Handles admin replies via the web interface.
+ * This is an HTTPS function that will be called by the web portal.
+ */
+export const addAdminReply = onCall(async (request) => {
+  const {ticketId, token, masterToken, message} = request.data;
+  const MASTER_KEY = "indi_cabs_admin_master_2026_q2_az9x2";
+
+  if (!ticketId || !message) {
+    throw new HttpsError("invalid-argument", "Missing required fields.");
+  }
+
+  const ticketRef = admin.firestore()
+    .collection("support_tickets").doc(ticketId);
+  const ticketDoc = await ticketRef.get();
+
+  const isMaster = masterToken === MASTER_KEY;
+  const isInvalidToken = !isMaster && ticketDoc.data()?.secretToken !== token;
+  if (!ticketDoc.exists || isInvalidToken) {
+    throw new HttpsError("permission-denied", "Invalid ticket ID or token.");
+  }
+
+  try {
+    // 1. Add Message
+    await ticketRef.collection("messages").add({
+      sender: "admin",
+      text: message,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // 2. Update Ticket (and refresh FCM token for future use)
+    const userId = ticketDoc.data()?.userId;
+    let freshToken = ticketDoc.data()?.fcmToken || null;
+    if (userId) {
+      const userDoc = await admin.firestore()
+        .collection("users").doc(userId).get();
+      freshToken = userDoc.data()?.fcmToken || freshToken;
+    }
+    await ticketRef.update({
+      lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
+      ...(freshToken ? {fcmToken: freshToken} : {}),
+    });
+
+    // 3. Send Push Notification to User (Non-blocking)
+    // Try the token saved on the ticket first, then fall back to the
+    // most recent token from the user's profile for freshness.
+    let fcmToken = ticketDoc.data()?.fcmToken;
+    if (!fcmToken) {
+      const userId = ticketDoc.data()?.userId;
+      if (userId) {
+        const userDoc = await admin.firestore()
+          .collection("users").doc(userId).get();
+        fcmToken = userDoc.data()?.fcmToken || null;
+      }
+    }
+
+    if (fcmToken) {
+      try {
+        const payload = {
+          token: fcmToken,
+          notification: {
+            title: "💬 Support Reply",
+            body: message.length > 60 ?
+              message.substring(0, 60) + "..." : message,
+          },
+          data: {
+            ticketId: ticketId,
+            type: "support_reply",
+          },
+          android: {
+            // Route to our pre-created high importance channel
+            notification: {
+              channelId: "high_importance_channel",
+              priority: "high" as const,
+              defaultSound: true,
+              defaultVibrateTimings: true,
+            },
+          },
+          apns: {
+            payload: {
+              aps: {
+                sound: "default",
+                badge: 1,
+              },
+            },
+          },
+        };
+        await admin.messaging().send(payload);
+        logger.info(`FCM sent to user for ticket ${ticketId}`);
+      } catch (fcmError) {
+        logger.error(`FCM Failed for ticket ${ticketId}:`, fcmError);
+        // We continue anyway so the message storage isn't blocked
+      }
+    } else {
+      logger.warn(`No FCM token found for ticket ${ticketId}`);
+    }
+
+    return {success: true};
+  } catch (error) {
+    logger.error("Error adding admin reply:", error);
+    throw new HttpsError("internal", "Failed to add reply.");
+  }
+});
+
+/**
+ * Fetches ticket details and messages for the admin portal.
+ * Restricted by ticketId and secretToken.
+ */
+export const getTicketDetails = onCall(async (request) => {
+  const {ticketId, token, masterToken} = request.data;
+  const MASTER_KEY = "indi_cabs_admin_master_2026_q2_az9x2";
+
+  if (!ticketId) {
+    throw new HttpsError("invalid-argument", "Missing ticketId.");
+  }
+
+  const ticketRef = admin.firestore()
+    .collection("support_tickets").doc(ticketId);
+  const ticketDoc = await ticketRef.get();
+
+  const isMaster = masterToken === MASTER_KEY;
+  const isInvalidToken = !isMaster && ticketDoc.data()?.secretToken !== token;
+  if (!ticketDoc.exists || isInvalidToken) {
+    throw new HttpsError("permission-denied", "Invalid ticket ID or token.");
+  }
+
+  try {
+    const messagesSnapshot = await ticketRef.collection("messages")
+      .orderBy("timestamp", "asc").get();
+
+    const messages = messagesSnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    return {
+      success: true,
+      ticket: {
+        id: ticketDoc.id,
+        ...ticketDoc.data(),
+      },
+      messages: messages,
+    };
+  } catch (error) {
+    logger.error("Error fetching ticket details:", error);
+    throw new HttpsError("internal", "Failed to retrieve ticket info.");
+  }
+});
+
+/**
+ * Closes a ticket from the admin portal.
+ */
+export const closeTicket = onCall(async (request) => {
+  const {ticketId, token, masterToken} = request.data;
+  const MASTER_KEY = "indi_cabs_admin_master_2026_q2_az9x2";
+
+  if (!ticketId) {
+    throw new HttpsError("invalid-argument", "Missing ticketId.");
+  }
+
+  const ticketRef = admin.firestore()
+    .collection("support_tickets").doc(ticketId);
+  const ticketDoc = await ticketRef.get();
+
+  const isMaster = masterToken === MASTER_KEY;
+  const isInvalidToken = !isMaster && ticketDoc.data()?.secretToken !== token;
+  if (!ticketDoc.exists || isInvalidToken) {
+    throw new HttpsError("permission-denied", "Invalid ticket ID or token.");
+  }
+
+  try {
+    await ticketRef.update({status: "closed"});
+    return {success: true};
+  } catch (error) {
+    logger.error("Error closing ticket:", error);
+    throw new HttpsError("internal", "Failed to close ticket.");
+  }
+});
+
+/**
+ * Retrieves a list of all support tickets for the admin dashboard.
+ * Supports both master token and admin auth.
+ */
+export const getAdminTicketsList = onCall(async (request) => {
+  const {masterToken} = request.data;
+  // This is the master key for the owner's immediate access without an account
+  const MASTER_KEY = "indi_cabs_admin_master_2026_q2_az9x2";
+
+  let isAuthorized = false;
+
+  // 1. Check Master Token
+  if (masterToken === MASTER_KEY) {
+    isAuthorized = true;
+  }
+
+  // 2. Check Firebase Auth + Admin Role (Future)
+  if (!isAuthorized && request.auth) {
+    const adminDoc = await admin.firestore()
+      .collection("admins").doc(request.auth.uid).get();
+    if (adminDoc.exists) {
+      isAuthorized = true;
+    }
+  }
+
+  if (!isAuthorized) {
+    throw new HttpsError("permission-denied", "Unauthorized access.");
+  }
+
+  try {
+    const snapshot = await admin.firestore()
+      .collection("support_tickets")
+      .orderBy("lastMessageAt", "desc")
+      .get();
+
+    const tickets = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    return {success: true, tickets};
+  } catch (error) {
+    logger.error("Error fetching admin tickets:", error);
+    throw new HttpsError("internal", "Failed to retrieve tickets.");
+  }
+});
 
 // **--- NEW CHATBOT FUNCTION ---**
 

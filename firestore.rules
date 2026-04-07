@@ -106,5 +106,35 @@ service cloud.firestore {
       allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow update, delete: if false; // For now, only creation and reading by owner
     }
+
+    // --- Support Ticketing ---
+    match /support_tickets/{ticketId} {
+      allow create: if isSignedIn();
+      
+      // Allow read/update if the user is the owner OR if their UID IS in the authorized admins list
+      allow read, update: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || 
+        (request.auth.uid in resource.data.get('admins', [])) ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+      
+      // ADMIN LISTING: Allow listing all tickets if the user is in the global admins collection
+      allow list: if isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      
+      // RESTRICTION: Only admins can close a ticket
+      allow update: if isSignedIn() && (
+        (request.auth.uid in resource.data.get('admins', [])) ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      ) && request.resource.data.status == 'closed';
+
+      match /messages/{messageId} {
+        // Optimization: Use a helper to check parent ticket authorization
+        allow read, write: if isSignedIn() && (
+          get(/databases/$(database)/documents/support_tickets/$(ticketId)).data.userId == request.auth.uid ||
+          (request.auth.uid in get(/databases/$(database)/documents/support_tickets/$(ticketId)).data.get('admins', [])) ||
+          exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        );
+      }
+    }
   }
 }

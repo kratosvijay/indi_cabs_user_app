@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Support Dashboard | Indi Cabs</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Firebase SDKs (v8) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-functions.js"></script>
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; background: #f8fafc; }
+        .glass { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.3); }
+        .ticket-row { transition: all 0.2s; cursor: pointer; }
+        .ticket-row:hover { background-color: #f1f5f9; transform: translateY(-1px); }
+        .hide-scroll::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen">
+    <!-- Login Overlay (Only for non-token access) -->
+    <div id="login-overlay" class="fixed inset-0 z-50 bg-slate-900 flex items-center justify-center hidden p-4">
+        <div class="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full">
+            <div class="text-center mb-8">
+                <div class="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl text-white font-bold text-3xl mb-4 shadow-lg shadow-blue-200">I</div>
+                <h2 class="text-2xl font-bold text-gray-900">Admin Dashboard</h2>
+                <p class="text-gray-500 mt-2">Sign in or use your master token</p>
+            </div>
+            <form id="login-form" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Email Address</label>
+                    <input type="email" id="login-email" required class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Password</label>
+                    <input type="password" id="login-password" required class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                </div>
+                <button type="submit" id="login-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg shadow-blue-200 transition-all active:scale-95 disabled:opacity-50">
+                    Sign In
+                </button>
+            </form>
+            <p id="login-error" class="text-red-500 text-sm text-center mt-4 hidden"></p>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <header class="glass sticky top-0 z-10 px-6 py-4 flex items-center justify-between shadow-sm">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-xl cursor-pointer" onclick="window.location.reload()">I</div>
+            <h1 class="font-semibold text-gray-900 text-lg">Support Dashboard</h1>
+        </div>
+        <div class="flex items-center gap-4">
+            <button id="logout-btn" onclick="logout()" class="text-gray-500 hover:text-red-600 text-sm font-medium transition-colors hidden">Logout</button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main id="main-content" class="flex-1 p-6 max-w-7xl mx-auto w-full hidden">
+        <div class="flex flex-col gap-6">
+            <!-- Stats & Filter -->
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div class="flex gap-4">
+                    <button onclick="setFilter('open')" id="filter-open" class="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-xl shadow-md shadow-blue-100 transition-all">Open Tickets</button>
+                    <button onclick="setFilter('closed')" id="filter-closed" class="px-4 py-2 bg-white text-gray-500 text-sm font-semibold rounded-xl hover:bg-gray-50 transition-all">Closed</button>
+                </div>
+                <div class="relative w-full md:w-64">
+                    <input type="text" id="search-input" placeholder="Search email..." class="w-full bg-white border border-gray-200 rounded-xl px-4 py-2 pl-10 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                    <svg class="w-4 h-4 text-gray-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                </div>
+            </div>
+
+            <!-- Table Container -->
+            <div class="bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead>
+                            <tr class="bg-gray-50 border-b border-gray-100 text-xs font-bold text-gray-500 uppercase tracking-widest">
+                                <th class="px-6 py-4">Ticket</th>
+                                <th class="px-6 py-4">User</th>
+                                <th class="px-6 py-4">Subject</th>
+                                <th class="px-6 py-4">Last Update</th>
+                                <th class="px-6 py-4">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tickets-tbody" class="divide-y divide-gray-50 text-sm text-gray-600">
+                            <tr>
+                                <td colspan="5" class="py-20 text-center text-gray-400 italic">Synchronizing with server...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // CONFIG
+        const firebaseConfig = {
+            apiKey: "AIzaSyBnMfTqInBrDqPnq06CbMkIyGomOwboFto",
+            authDomain: "indicabs-prod.firebaseapp.com",
+            projectId: "indicabs-prod",
+            storageBucket: "indicabs-prod.firebasestorage.app",
+            messagingSenderId: "404641872366",
+            appId: "1:404641872366:web:96a41afc11a7794e27f6ff",
+            measurementId: "G-T05N1HJPNB"
+        };
+
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const functions = firebase.app().functions('asia-south1');
+
+        const loginOverlay = document.getElementById('login-overlay');
+        const loginForm = document.getElementById('login-form');
+        const mainContent = document.getElementById('main-content');
+        const ticketsTbody = document.getElementById('tickets-tbody');
+        const searchInput = document.getElementById('search-input');
+        const loginBtn = document.getElementById('login-btn');
+        const loginError = document.getElementById('login-error');
+        const logoutBtn = document.getElementById('logout-btn');
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const masterAdminToken = urlParams.get('masterToken');
+
+        let currentFilter = 'open';
+        let allTickets = [];
+
+        // INITIALIZATION: Check if master token is used
+        if (masterAdminToken) {
+            console.log("Using Master Token Access");
+            mainContent.classList.remove('hidden');
+            loadTickets();
+        } else {
+            // Standard Auth flow
+            auth.onAuthStateChanged(user => {
+                if (user) {
+                    loginOverlay.classList.add('hidden');
+                    mainContent.classList.remove('hidden');
+                    logoutBtn.classList.remove('hidden');
+                    loadTickets();
+                } else {
+                    loginOverlay.classList.remove('hidden');
+                    mainContent.classList.add('hidden');
+                    logoutBtn.classList.add('hidden');
+                }
+            });
+        }
+
+        async function loadTickets() {
+            try {
+                const getAdminTicketsList = functions.httpsCallable('getAdminTicketsList');
+                const result = await getAdminTicketsList({ masterToken: masterAdminToken });
+                allTickets = result.data.tickets;
+                renderTickets();
+            } catch (err) {
+                console.error("Dashboard Error:", err);
+                if (err.code === 'permission-denied' && !masterAdminToken) {
+                    loginOverlay.classList.remove('hidden');
+                    mainContent.classList.add('hidden');
+                } else if (err.code === 'permission-denied') {
+                    alert("Access Denied: Invalid Master Token.");
+                } else {
+                    alert("Error: " + err.message);
+                }
+            }
+        }
+
+        // Login Handler (Future support staff)
+        loginForm.onsubmit = async (e) => {
+            e.preventDefault();
+            loginBtn.disabled = true;
+            loginError.classList.add('hidden');
+            try {
+                await auth.signInWithEmailAndPassword(
+                    document.getElementById('login-email').value,
+                    document.getElementById('login-password').value
+                );
+            } catch (err) {
+                loginError.innerText = err.message;
+                loginError.classList.remove('hidden');
+                loginBtn.disabled = false;
+            }
+        };
+
+        function logout() {
+            auth.signOut();
+        }
+
+        function setFilter(status) {
+            currentFilter = status;
+            document.getElementById('filter-open').className = status === 'open' 
+                ? 'px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-xl shadow-md shadow-blue-100 transition-all'
+                : 'px-4 py-2 bg-white text-gray-500 text-sm font-semibold rounded-xl hover:bg-gray-50 transition-all';
+            document.getElementById('filter-closed').className = status === 'closed'
+                ? 'px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-xl shadow-md shadow-blue-100 transition-all'
+                : 'px-4 py-2 bg-white text-gray-500 text-sm font-semibold rounded-xl hover:bg-gray-50 transition-all';
+            renderTickets();
+        }
+
+        searchInput.oninput = renderTickets;
+
+        function renderTickets() {
+            const searchTerm = searchInput.value.toLowerCase();
+            const filtered = allTickets.filter(t => {
+                const matchesStatus = t.status === currentFilter;
+                const matchesSearch = t.userEmail?.toLowerCase().includes(searchTerm) || t.subject?.toLowerCase().includes(searchTerm);
+                return matchesStatus && matchesSearch;
+            });
+
+            if (filtered.length === 0) {
+                ticketsTbody.innerHTML = `<tr><td colspan="5" class="py-20 text-center text-gray-400 italic">No ${currentFilter} tickets found.</td></tr>`;
+                return;
+            }
+
+            ticketsTbody.innerHTML = filtered.map(t => `
+                <tr class="ticket-row group" onclick="openTicket('${t.id}', '${t.secretToken}')">
+                    <td class="px-6 py-5 font-monouppercase text-xs font-bold text-gray-900">#${t.id}</td>
+                    <td class="px-6 py-5">
+                        <div class="font-semibold text-gray-900">${t.userEmail || 'Anonymous'}</div>
+                        <div class="text-[10px] text-gray-400 tracking-tight">${t.userId?.substring(0, 12)}...</div>
+                    </td>
+                    <td class="px-6 py-5 text-gray-600 font-medium">${t.subject}</td>
+                    <td class="px-6 py-5 text-xs text-gray-400 font-medium">${formatDate(t.lastMessageAt)}</td>
+                    <td class="px-6 py-5">
+                        <span class="px-2.5 py-1 ${t.status === 'open' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'} text-[10px] font-bold rounded-full uppercase tracking-tighter">
+                            ${t.status}
+                        </span>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function openTicket(id, token) {
+            let url = `ticket.html?id=${id}`;
+            if (token && token !== 'undefined') url += `&token=${token}`;
+            if (masterAdminToken) url += `&masterToken=${masterAdminToken}`;
+            window.location.href = url;
+        }
+
+        function formatDate(ts) {
+            if (!ts) return 'N/A';
+            const date = ts._seconds ? new Date(ts._seconds * 1000) : new Date(ts);
+            return date.toLocaleString('en-IN', {
+                month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+            });
+        }
+    </script>
+</body>
+</html>

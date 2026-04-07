@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:project_taxi_with_ai/widgets/snackbar.dart';
 import 'package:project_taxi_with_ai/widgets/pro_library.dart';
+import 'package:project_taxi_with_ai/widgets/data_models.dart';
+import 'package:project_taxi_with_ai/screens/ticket_chat_screen.dart';
 
 class EmailSupportScreen extends StatefulWidget {
   const EmailSupportScreen({super.key});
@@ -37,18 +40,47 @@ class _EmailSupportScreenState extends State<EmailSupportScreen> {
     setState(() => _isLoading = true);
 
     try {
-      await _sendEmailCallable.call({
+      final user = FirebaseAuth.instance.currentUser;
+      debugPrint("DEBUG: Sending support email. User ID: ${user?.uid}");
+      debugPrint("DEBUG: User is anonymous: ${user?.isAnonymous}");
+      debugPrint("DEBUG: User Email: ${user?.email}");
+
+      if (user == null) {
+        if (mounted) displaySnackBar(context, "Error: You must be logged in to send support emails.");
+        return;
+      }
+
+      final result = await _sendEmailCallable.call({
         'subject': _subjectController.text,
         'body': _bodyController.text,
       });
 
       if (mounted) {
+        final ticketId = result.data['ticketId'] as String?;
+        _subjectController.clear();
+        _bodyController.clear();
+        
         displaySnackBar(
           context,
-          "Support email sent successfully!",
+          "Ticket #$ticketId opened successfully!",
           isError: false,
         );
-        Get.back(); // Go back to the support hub
+
+        // Fetch the ticket from Firestore to navigate
+        final ticketDoc = await FirebaseFirestore.instance
+            .collection('support_tickets')
+            .doc(ticketId)
+            .get();
+        
+        if (mounted && ticketDoc.exists) {
+          final ticket = SupportTicket.fromFirestore(ticketDoc);
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => TicketChatScreen(ticket: ticket),
+            ),
+          );
+        }
       }
     } on FirebaseFunctionsException catch (e) {
       if (mounted) {
