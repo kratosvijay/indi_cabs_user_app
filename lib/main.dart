@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:project_taxi_with_ai/config/env_config.dart';
+import 'package:project_taxi_with_ai/config/secrets_config.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:get/get.dart';
@@ -71,15 +72,15 @@ void main() {
             EnvConfig(
               environment: Environment.prod,
               appName: 'Indi Cabs',
-              googleMapsKey: 'AIzaSyBnMfTqInBrDqPnq06CbMkIyGomOwboFto',
-              serverClientId: '404641872366-iu3c35ku51jp9mt85a1j0ult661tnvot.apps.googleusercontent.com',
-              ondcSubscriberId: 'api.indicabs.net',
-              ondcSigningPublicKey: '5z256FcRsaWzX8ngCo1tbx0QjrtFC7q0cBeAFifDrRA=',
-              ondcEncryptionPublicKey: 'MCowBQYDK2VuAyEAMNf/3bNxKAYlvBWnS7xeRLsn+dJ1IUyAGvP8EDtMDR8=',
-              ondcUniqueKeyId: '0b35d6b4-ed03-478f-9ad3-a8b3528026ef',
-              ondcDomain: 'ONDC:TRV11',
-              ondcCityCode: '*', // All Cities
-              trackingUrl: 'https://indicabs-prod.web.app/track',
+              googleMapsKey: SecretsConfig.googleMapsKeyProd,
+              serverClientId: SecretsConfig.serverClientIdProd,
+              ondcSubscriberId: SecretsConfig.ondcSubscriberId,
+              ondcSigningPublicKey: SecretsConfig.ondcSigningPublicKey,
+              ondcEncryptionPublicKey: SecretsConfig.ondcEncryptionPublicKey,
+              ondcUniqueKeyId: SecretsConfig.ondcUniqueKeyId,
+              ondcDomain: SecretsConfig.ondcDomain,
+              ondcCityCode: SecretsConfig.ondcCityCode,
+              trackingUrl: SecretsConfig.trackingUrlProd,
             ),
           );
         } else {
@@ -87,15 +88,15 @@ void main() {
             EnvConfig(
               environment: Environment.dev,
               appName: 'Indi Cabs Dev',
-              googleMapsKey: 'AIzaSyDxGUTTcU-yMjVfqbhSPeg8GGvfSrqtmSo',
-              serverClientId: '854114457795-d0hns7g6jnhnoba53v178lomsvop234i.apps.googleusercontent.com',
-              ondcSubscriberId: 'api.indicabs.net',
-              ondcSigningPublicKey: '5z256FcRsaWzX8ngCo1tbx0QjrtFC7q0cBeAFifDrRA=',
-              ondcEncryptionPublicKey: 'MCowBQYDK2VuAyEAMNf/3bNxKAYlvBWnS7xeRLsn+dJ1IUyAGvP8EDtMDR8=',
-              ondcUniqueKeyId: '0b35d6b4-ed03-478f-9ad3-a8b3528026ef',
-              ondcDomain: 'ONDC:TRV11',
-              ondcCityCode: '*', // All Cities
-              trackingUrl: 'https://projecttaxi-df0d2.web.app/track',
+              googleMapsKey: SecretsConfig.googleMapsKeyDev,
+              serverClientId: SecretsConfig.serverClientIdDev,
+              ondcSubscriberId: SecretsConfig.ondcSubscriberId,
+              ondcSigningPublicKey: SecretsConfig.ondcSigningPublicKey,
+              ondcEncryptionPublicKey: SecretsConfig.ondcEncryptionPublicKey,
+              ondcUniqueKeyId: SecretsConfig.ondcUniqueKeyId,
+              ondcDomain: SecretsConfig.ondcDomain,
+              ondcCityCode: SecretsConfig.ondcCityCode,
+              trackingUrl: SecretsConfig.trackingUrlDev,
             ),
           );
         }
@@ -105,8 +106,8 @@ void main() {
         
         debugPrint("DEBUG: Activating App Check. Mode: ${kDebugMode ? 'Debug' : 'Release'}");
         await FirebaseAppCheck.instance.activate(
-          androidProvider: kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
-          appleProvider: kDebugMode ? AppleProvider.debug : AppleProvider.deviceCheck,
+          providerAndroid: kDebugMode ? const AndroidDebugProvider() : const AndroidPlayIntegrityProvider(),
+          providerApple: kDebugMode ? const AppleDebugProvider() : const AppleDeviceCheckProvider(),
         );
         debugPrint("DEBUG: App Check activated.");
         
