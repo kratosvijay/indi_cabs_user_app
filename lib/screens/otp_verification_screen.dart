@@ -60,6 +60,10 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> with Code
     _secondsRemaining = 60;
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
       if (_secondsRemaining == 0) {
         setState(() {
           _canResend = true;
@@ -84,9 +88,11 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> with Code
         phoneNumber: widget.phoneNumber,
         forceResendingToken: _resendToken,
         verificationCompleted: (PhoneAuthCredential credential) async {
-          // Auto-verification (common on Android)
-          _otpController.text = credential.smsCode ?? "";
-          await _verifyOtp(credential);
+          if (mounted) {
+            // Auto-verification (common on Android)
+            _otpController.text = credential.smsCode ?? "";
+            await _verifyOtp(credential);
+          }
         },
         verificationFailed: (FirebaseAuthException e) {
           if (mounted) {

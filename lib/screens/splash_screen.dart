@@ -48,12 +48,10 @@ class _SplashScreenState extends State<SplashScreen> {
       // 5. Check Permissions (BEFORE Controllers)
       final locStatus = await Permission.location.status;
       final notifStatus = await Permission.notification.status;
-      final contactStatus = await Permission.contacts.status;
 
       debugPrint("Permissions Check:");
       debugPrint("Location: $locStatus");
       debugPrint("Notification: $notifStatus");
-      debugPrint("Contacts: $contactStatus");
 
       if (!locStatus.isGranted) {
         debugPrint("Redirecting to PermissionsScreen");

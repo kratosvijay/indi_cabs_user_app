@@ -2016,36 +2016,73 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
           .collection('users')
           .doc(user.uid);
 
+      double newBalance = 0.0;
       await FirebaseFirestore.instance.runTransaction((transaction) async {
         final snapshot = await transaction.get(userRef);
         if (!snapshot.exists) return;
 
         final double currentBalance =
             (snapshot.data()?['wallet_balance'] as num?)?.toDouble() ?? 0.0;
-        final double newBalance = currentBalance - 30.0;
+        // Allow wallet to go negative — penalty for cancellation
+        newBalance = currentBalance - 30.0;
 
         transaction.update(userRef, {'wallet_balance': newBalance});
 
-        // Optional: Add to payment history
+        // Log to payment_history (status: 'successful' so it appears in wallet history)
         final historyRef = userRef.collection('payment_history').doc();
         transaction.set(historyRef, {
           'amount': 30.0,
           'type': 'debit',
           'description': 'Cancellation Fee',
-          'createdAt': FieldValue.serverTimestamp(),
+          'rideId': widget.rideRequestId,
+          'paymentMethod': 'Wallet',
+          'status': 'successful',
           'is_cancellation_fee': true,
+          'createdAt': FieldValue.serverTimestamp(),
         });
       });
 
       if (mounted) {
+        final String balanceText = newBalance < 0
+            ? 'Wallet: ₹${newBalance.toStringAsFixed(0)} (negative)'
+            : 'Wallet: ₹${newBalance.toStringAsFixed(0)}';
         displaySnackBar(
           context,
-          "₹30 cancellation fee deducted.",
+          '₹30 cancellation fee deducted. $balanceText',
           isError: true,
         );
+
+        // Warn user if they are close to or below the -₹50 block threshold
+        if (newBalance <= -30) {
+          Future.delayed(const Duration(seconds: 2), () {
+            if (mounted) {
+              Get.snackbar(
+                'Wallet Warning',
+                newBalance <= -50
+                    ? 'Your wallet balance is ₹${newBalance.toStringAsFixed(0)}. '
+                      'You must recharge to book your next ride.'
+                    : 'Your wallet is at ₹${newBalance.toStringAsFixed(0)}. '
+                      'One more cancellation will block bookings until you recharge.',
+                snackPosition: SnackPosition.TOP,
+                backgroundColor:
+                    newBalance <= -50 ? Colors.red.shade700 : Colors.orange.shade700,
+                colorText: Colors.white,
+                margin: const EdgeInsets.all(10),
+                borderRadius: 16,
+                duration: const Duration(seconds: 5),
+                icon: Icon(
+                  newBalance <= -50
+                      ? Icons.block
+                      : Icons.warning_amber_rounded,
+                  color: Colors.white,
+                ),
+              );
+            }
+          });
+        }
       }
     } catch (e) {
-      debugPrint("Error deducting cancellation fee: $e");
+      debugPrint('Error deducting cancellation fee: $e');
     }
   }
 

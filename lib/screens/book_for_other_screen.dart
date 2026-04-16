@@ -8,7 +8,6 @@ import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:project_taxi_with_ai/widgets/data_models.dart';
 import 'package:project_taxi_with_ai/widgets/directions_service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 import 'package:project_taxi_with_ai/widgets/ride_confirm_sheet.dart';
 import '../widgets/snackbar.dart';
@@ -74,97 +73,25 @@ class _BookForOtherScreenState extends State<BookForOtherScreen> {
 
   Future<void> _pickContact() async {
     try {
-      // 1. Prominent Disclosure for Contacts
-      final bool? proceed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Row(
-            children: [
-              Icon(Icons.contacts, color: Colors.orange),
-              SizedBox(width: 10),
-              Text("Contacts Access"),
-            ],
-          ),
-          content: const Text(
-            "Indi Cabs needs access to your contacts to let you quickly find and select "
-            "friends or family members you are booking for. Their name and phone number "
-            "will be used only to create the ride request.",
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text("Not Now"),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text("I Understand"),
-            ),
-          ],
-        ),
-      );
-
-      if (proceed != true) return;
-
-      final status = await Permission.contacts.request();
-
-      if (status.isPermanentlyDenied) {
-        if (mounted) {
-          showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text("Contacts Permission Required"),
-              content: const Text(
-                "You have permanently denied contact access. Please open your app settings and enable Contacts to use this feature.",
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text("Cancel"),
-                ),
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    openAppSettings();
-                  },
-                  child: const Text("Open Settings"),
-                ),
-              ],
-            ),
-          );
-        }
-        return;
-      }
-
-      if (status.isGranted) {
-        final contactId = await FlutterContacts.native.showPicker();
-        if (contactId != null) {
-          final contact = await FlutterContacts.get(
-            contactId,
-            properties: {ContactProperty.name, ContactProperty.phone},
-          );
-          if (contact != null) {
-            String name = contact.displayName ?? '';
-            String phone = '';
-            if (contact.phones.isNotEmpty) {
-              // Pick the first available phone number
-              phone = contact.phones.first.number;
-            }
-
-            setState(() {
-              _guestName = name;
-              _guestPhone = phone;
-              _contactController.text = "$name ($phone)";
-            });
+      final contactId = await FlutterContacts.native.showPicker();
+      if (contactId != null) {
+        final contact = await FlutterContacts.get(
+          contactId,
+          properties: {ContactProperty.name, ContactProperty.phone},
+        );
+        if (contact != null) {
+          String name = contact.displayName ?? '';
+          String phone = '';
+          if (contact.phones.isNotEmpty) {
+            // Pick the first available phone number
+            phone = contact.phones.first.number;
           }
-        }
-      } else {
-        if (mounted) {
-          displaySnackBar(context, "Permission denied to access contacts.");
+
+          setState(() {
+            _guestName = name;
+            _guestPhone = phone;
+            _contactController.text = "$name ($phone)";
+          });
         }
       }
     } catch (e) {

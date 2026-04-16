@@ -18,6 +18,7 @@ import 'package:project_taxi_with_ai/widgets/firestore_services.dart';
 import 'package:project_taxi_with_ai/widgets/location_service.dart';
 import 'package:project_taxi_with_ai/widgets/map_service.dart';
 import 'payment_screen.dart';
+import 'wallet.dart';
 import '../widgets/snackbar.dart';
 import 'package:project_taxi_with_ai/widgets/pro_library.dart'; // Import snackbar
 import 'package:project_taxi_with_ai/app_colors.dart';
@@ -680,6 +681,63 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
   /// Creates the ride/rental request in Firestore
   Future<void> _confirmRide({StateSetter? setSheetState}) async {
     if (_isBooking) return;
+
+    // ── Cancellation-debt gate ─────────────────────────────────────────────
+    // If the user has accumulated unpaid cancellation fees (wallet < -₹50),
+    // block booking until they recharge their wallet.
+    final double currentWallet = (widget.walletBalance ?? 0).toDouble();
+    if (currentWallet < -50) {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            icon: const Icon(
+              Icons.account_balance_wallet,
+              color: Colors.red,
+              size: 40,
+            ),
+            title: const Text(
+              'Wallet Recharge Required',
+              textAlign: TextAlign.center,
+            ),
+            content: Text(
+              'Your wallet balance is ₹${currentWallet.toStringAsFixed(0)} '
+              'due to unpaid cancellation fees.\n\n'
+              'Please recharge your wallet to at least ₹0 to continue booking rides.',
+              textAlign: TextAlign.center,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.add_card),
+                label: const Text('Recharge Wallet'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.deepPurple,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  // Navigate to the wallet screen to recharge
+                  Get.to(() => WalletScreen(user: widget.user));
+                },
+              ),
+            ],
+          ),
+        );
+      }
+      return; // Block booking
+    }
+    // ──────────────────────────────────────────────────────────────────────
+
     if (setSheetState != null) {
       setSheetState(() => _isBooking = true);
     } else {

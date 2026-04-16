@@ -85,6 +85,38 @@ interface EmailData {
   body: string;
 }
 
+// --- Invoice Interfaces ---
+interface InvoiceData {
+  invoiceId: string;
+  rideId: string;
+  userId: string;
+  driverId: string;
+  pickupLocation: string;
+  dropoffLocation: string;
+  baseFare: number;
+  distanceFare: number;
+  timeFare: number;
+  tollCost: number;
+  surgeFare: number;
+  discount: number;
+  totalFare: number;
+  paymentMethod: string;
+  paymentStatus: string;
+  rideStartTime: admin.firestore.Timestamp;
+  rideEndTime: admin.firestore.Timestamp;
+  durationMinutes: number;
+  distanceKilometers: number;
+  driverName: string;
+  driverEmail: string;
+  userEmail: string;
+  userName: string;
+  vehicleNumber: string;
+  vehicleType: string;
+  createdAt: admin.firestore.FieldValue;
+  currency: string;
+  cityName: string;
+}
+
 interface CreateOrderData {
   amount: number; // Amount in smallest currency unit (e.g., paise)
   currency: string; // e.g., "INR"
@@ -1480,3 +1512,629 @@ export const createMetroBooking = onCall(async (
     throw new HttpsError("internal", "Failed to save metro booking.");
   }
 });
+
+// --- INVOICE SYSTEM ---
+
+/**
+ * Cloud Function: Triggers when a ride is completed and generates/sends invoice
+ * @param {FirestoreEvent<Change<DocumentSnapshot>>} event The Firestore event.
+ */
+export const onRideCompleted = onDocumentUpdated(
+  "ride_requests/{rideId}",
+  async (event: FirestoreEvent<Change<DocumentSnapshot> | undefined>) => {
+    if (!event.data) {
+      logger.warn("No event data found for onRideCompleted.");
+      return;
+    }
+
+    const dataBefore = event.data.before.data();
+    const dataAfter = event.data.after.data();
+
+    if (!dataBefore || !dataAfter) {
+      logger.warn("Missing data before or after update in onRideCompleted.");
+      return;
+    }
+
+    // Trigger only on completed status
+    if (dataBefore.status !== "completed" && dataAfter.status === "completed") {
+      const rideId = event.data.after.id;
+      logger.info(`Ride ${rideId} completed. Processing post-ride actions...`);
+
+      // 1. Generate and send invoice email
+      try {
+        await generateAndSendInvoice(rideId, dataAfter);
+      } catch (error) {
+        logger.error(`Failed to generate invoice for ride ${rideId}:`, error);
+        // Don't re-throw, log for manual review
+      }
+
+      // 2. Handle wallet debit for 'Wallet' or 'Cash + Wallet' (split) payments
+      const rawMethod: string = (dataAfter.paymentMethod || "").toLowerCase();
+      const isWalletOnly = rawMethod === "wallet";
+      const isSplitPayment = rawMethod === "cash + wallet";
+
+      if (isWalletOnly || isSplitPayment) {
+        const userId: string = dataAfter.userId;
+
+        // For split payment, use the pre-calculated walletAmountUsed field.
+        // For wallet-only, use full fare (with fallbacks).
+        let walletDebitAmount: number;
+        if (isSplitPayment) {
+          walletDebitAmount = Number(dataAfter.walletAmountUsed) || 0;
+        } else {
+          walletDebitAmount =
+            Number(dataAfter.fare) ||
+            Number(dataAfter.totalFare) ||
+            Number(dataAfter.finalPrice) || 0;
+        }
+
+        const cashAmount: number = Number(dataAfter.cashAmount) || 0;
+
+        if (walletDebitAmount > 0 && userId) {
+          const userRef = db.collection("users").doc(userId);
+          try {
+            let newBalance = 0;
+            await db.runTransaction(async (tx) => {
+              const userSnap = await tx.get(userRef);
+              if (!userSnap.exists) {
+                throw new Error(`User ${userId} not found`);
+              }
+
+              const currentBalance: number =
+                (userSnap.data()?.wallet_balance as number) || 0;
+              // Prevent balance going negative
+              newBalance = Math.max(0, currentBalance - walletDebitAmount);
+
+              tx.update(userRef, {wallet_balance: newBalance});
+
+              // Log a single debit entry showing wallet portion
+              const historyRef = userRef.collection("payment_history").doc();
+              const description = isSplitPayment ?
+                `Ride fare (split) – Wallet: ₹${walletDebitAmount}, Cash: ₹${cashAmount} – ${rideId}` :
+                `Ride fare – ${rideId}`;
+
+              tx.set(historyRef, {
+                amount: walletDebitAmount,
+                type: "debit",
+                description,
+                rideId,
+                paymentMethod: isSplitPayment ? "Cash + Wallet" : "Wallet",
+                walletAmountUsed: walletDebitAmount,
+                cashAmount: isSplitPayment ? cashAmount : 0,
+                status: "successful",
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              });
+            });
+
+            logger.info(
+              `Wallet debited ₹${walletDebitAmount} (${rawMethod}) ` +
+              `for user ${userId}. New balance: ₹${newBalance}`
+            );
+
+            // 3. Send FCM push notification to the user
+            try {
+              const userSnap = await userRef.get();
+              const fcmToken: string = userSnap.data()?.fcmToken || "";
+              if (fcmToken) {
+                const notifTitle = isSplitPayment ?
+                  "Split Payment Successful" :
+                  "Wallet Payment Successful";
+
+                let notifBody: string;
+                if (isSplitPayment) {
+                  notifBody =
+                    `₹${walletDebitAmount} debited from wallet` +
+                    ` + ₹${cashAmount} cash for ride ${rideId}.` +
+                    ` Wallet balance: ₹${newBalance.toFixed(2)}.`;
+                } else {
+                  notifBody =
+                    `₹${walletDebitAmount} debited from your IndiCabs wallet` +
+                    ` for ride ${rideId}.` +
+                    ` Remaining balance: ₹${newBalance.toFixed(2)}.`;
+                }
+
+                await admin.messaging().send({
+                  token: fcmToken,
+                  notification: {title: notifTitle, body: notifBody},
+                  android: {
+                    priority: "high",
+                    notification: {channelId: "wallet_notifications"},
+                  },
+                  data: {
+                    type: "wallet_debit",
+                    rideId,
+                    walletAmount: walletDebitAmount.toString(),
+                    cashAmount: cashAmount.toString(),
+                    newBalance: newBalance.toString(),
+                    isSplit: isSplitPayment ? "true" : "false",
+                    click_action: "FLUTTER_NOTIFICATION_CLICK",
+                  },
+                });
+                logger.info(
+                  `Wallet debit notification sent to user ${userId} (${rawMethod})`
+                );
+
+                await userRef.collection("notifications").add({
+                  title: notifTitle,
+                  body: notifBody,
+                  type: "wallet_debit",
+                  rideId,
+                  walletAmount: walletDebitAmount,
+                  cashAmount: isSplitPayment ? cashAmount : 0,
+                  newBalance,
+                  isSplit: isSplitPayment,
+                  timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                  isRead: false,
+                });
+              } else {
+                logger.warn(
+                  `No FCM token for user ${userId}, skipping wallet notification`
+                );
+              }
+            } catch (notifErr) {
+              logger.error("Failed to send wallet notification:", notifErr);
+            }
+          } catch (walletErr) {
+            logger.error(
+              `Failed to debit wallet for ride ${rideId}:`, walletErr
+            );
+          }
+        } else {
+          logger.warn(
+            `Wallet debit skipped for ride ${rideId}: ` +
+            `walletDebitAmount=${walletDebitAmount}, userId=${userId}`
+          );
+        }
+      }
+    }
+  }
+);
+
+/**
+ * Generates invoice data and sends it to the user
+ * @param {string} rideId The ride request ID.
+ * @param {RideData} rideData The ride data from Firestore.
+ */
+async function generateAndSendInvoice(
+  rideId: string,
+  rideData: RideData
+): Promise<void> {
+  try {
+    // 1. Fetch user and driver details
+    const userDoc = await db.collection("users").doc(rideData.userId).get();
+    const driverDoc = await db.collection("drivers").doc(rideData.driverId).get();
+
+    const userData = userDoc.data();
+    const driverData = driverDoc.data();
+
+    if (!userData || !driverData) {
+      throw new Error("User or driver data not found.");
+    }
+
+    // Validate email addresses
+    const userEmail = userData.email;
+    const driverEmail = driverData.email || driverData.contactEmail || "";
+
+    if (!userEmail || !userEmail.includes("@")) {
+      logger.warn(`Invalid user email for ride ${rideId}: ${userEmail}`);
+      return;
+    }
+
+    // 2. Calculate duration and distance
+    const startTime = rideData.startTime?.toDate() || new Date();
+    const endTime = rideData.endTime?.toDate() || new Date();
+    const durationMinutes = Math.round(
+      (endTime.getTime() - startTime.getTime()) / 60000
+    );
+    const distanceKilometers = (rideData.distance || 0) / 1000;
+
+    // 3. Create invoice data object
+    const invoiceId = `INV-${rideId}-${Date.now()}`;
+    const invoiceData: InvoiceData = {
+      invoiceId,
+      rideId,
+      userId: rideData.userId,
+      driverId: rideData.driverId,
+      pickupLocation: rideData.pickupAddress || "Pickup Location",
+      dropoffLocation: rideData.destinationAddress || "Dropoff Location",
+      baseFare: rideData.baseFare || 0,
+      distanceFare: rideData.distanceFare || 0,
+      timeFare: rideData.timeFare || 0,
+      tollCost: rideData.tollCost || 0,
+      surgeFare: rideData.surgeFare || 0,
+      discount: rideData.discount || 0,
+      totalFare: rideData.totalFare || rideData.finalPrice || 0,
+      paymentMethod: rideData.paymentMethod || "card",
+      paymentStatus: rideData.paymentStatus || "completed",
+      rideStartTime: rideData.startTime || admin.firestore.Timestamp.now(),
+      rideEndTime: rideData.endTime || admin.firestore.Timestamp.now(),
+      durationMinutes,
+      distanceKilometers: parseFloat(distanceKilometers.toFixed(2)),
+      driverName: driverData.displayName || "Driver",
+      driverEmail,
+      userEmail,
+      userName: userData.name || userData.firstName || "Valued Customer",
+      vehicleNumber: driverData.vehicleNumber || "N/A",
+      vehicleType: driverData.vehicleType || "Standard",
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      currency: "₹",
+      cityName: rideData.city || "India",
+    };
+
+    // 4. Store invoice in Firestore
+    const invoiceRef = db.collection("invoices").doc(invoiceId);
+    await invoiceRef.set(invoiceData);
+
+    // 5. Also store in user's subcollection for easier access
+    await db
+      .collection("users")
+      .doc(rideData.userId)
+      .collection("invoices")
+      .doc(invoiceId)
+      .set({
+        invoiceId,
+        rideId,
+        totalFare: invoiceData.totalFare,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        rideDate: rideData.startTime || admin.firestore.Timestamp.now(),
+      });
+
+    // 6. Generate and send invoice email
+    await sendInvoiceEmail(invoiceData, userEmail);
+
+    logger.info(`Invoice ${invoiceId} generated and sent successfully.`);
+  } catch (error) {
+    logger.error("Error in generateAndSendInvoice:", error);
+    throw error;
+  }
+}
+
+/**
+ * Generates invoice HTML and sends it via email
+ * @param {InvoiceData} invoiceData The invoice data.
+ * @param {string} userEmail The user's email address.
+ */
+async function sendInvoiceEmail(
+  invoiceData: InvoiceData,
+  userEmail: string
+): Promise<void> {
+  try {
+    const appEmail = process.env.GMAIL_EMAIL;
+    const appPassword = process.env.GMAIL_PASSWORD;
+    const emailProvider = process.env.GMAIL_PROVIDER || "gmail"; // "gmail" or "hostinger"
+
+    if (!appEmail || !appPassword) {
+      logger.warn("Email credentials not configured. Skipping invoice email.");
+      return;
+    }
+
+    // 1. Generate invoice HTML
+    const invoiceHtml = generateInvoiceHtml(invoiceData);
+
+    // 2. Create email transporter (supports Gmail and Hostinger)
+    let transporter;
+    if (emailProvider === "hostinger") {
+      transporter = nodemailer.createTransport({
+        host: "mail.indicabs.net",
+        port: 587,
+        secure: false, // TLS
+        auth: {user: appEmail, pass: appPassword},
+      });
+    } else {
+      // Default to Gmail
+      transporter = nodemailer.createTransport({
+        service: "gmail",
+        auth: {user: appEmail, pass: appPassword},
+      });
+    }
+
+    // 3. Send email
+    const mailOptions = {
+      from: `"Indi Cabs" <${appEmail}>`,
+      to: userEmail,
+      subject: `Your Indi Cabs Invoice - ${invoiceData.invoiceId}`,
+      html: invoiceHtml,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    logger.info(`Invoice email sent to ${userEmail}. Message ID: ${info.messageId}`);
+  } catch (error) {
+    logger.error("Error sending invoice email:", error);
+    throw error;
+  }
+}
+
+/**
+ * Generates HTML for invoice email
+ * @param {InvoiceData} invoice The invoice data.
+ * @return {string} The HTML string.
+ */
+/* eslint-disable max-len, require-jsdoc */
+function generateInvoiceHtml(invoice: InvoiceData): string {
+  /* eslint-enable max-len, require-jsdoc */
+  const formattedDate = new Date(
+    invoice.rideStartTime.toDate()
+  ).toLocaleDateString("en-IN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  const formattedTime = new Date(
+    invoice.rideStartTime.toDate()
+  ).toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body {
+          font-family: Arial, sans-serif;
+          background-color: #f5f5f5;
+          margin: 0;
+          padding: 20px;
+        }
+        .container {
+          max-width: 600px;
+          margin: 0 auto;
+          background-color: white;
+          border-radius: 8px;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+          overflow: hidden;
+        }
+        .header {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          padding: 40px 20px;
+          text-align: center;
+        }
+        .header h1 {
+          margin: 0;
+          font-size: 28px;
+        }
+        .invoice-number {
+          font-size: 14px;
+          opacity: 0.9;
+          margin-top: 10px;
+        }
+        .content {
+          padding: 40px;
+        }
+        .greeting {
+          font-size: 16px;
+          margin-bottom: 20px;
+          color: #333;
+        }
+        .section {
+          margin-bottom: 30px;
+        }
+        .section-title {
+          font-size: 14px;
+          font-weight: bold;
+          color: #667eea;
+          text-transform: uppercase;
+          margin-bottom: 15px;
+          border-bottom: 2px solid #667eea;
+          padding-bottom: 10px;
+        }
+        .trip-details {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 15px;
+          margin-bottom: 20px;
+        }
+        .detail-item {
+          background-color: #f9f9f9;
+          padding: 15px;
+          border-radius: 5px;
+        }
+        .detail-label {
+          font-size: 12px;
+          color: #999;
+          text-transform: uppercase;
+          margin-bottom: 5px;
+        }
+        .detail-value {
+          font-size: 14px;
+          color: #333;
+          font-weight: 500;
+        }
+        .fare-table {
+          width: 100%;
+          border-collapse: collapse;
+        }
+        .fare-row {
+          border-bottom: 1px solid #eee;
+          padding: 12px 0;
+        }
+        .fare-row-last {
+          border-bottom: 2px solid #667eea;
+          padding: 12px 0;
+        }
+        .fare-label {
+          color: #666;
+          font-size: 14px;
+        }
+        .fare-value {
+          text-align: right;
+          color: #333;
+          font-weight: 500;
+          font-size: 14px;
+        }
+        .total-fare {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+          margin-top: 15px;
+          padding: 15px;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          border-radius: 5px;
+          color: white;
+        }
+        .total-label {
+          font-size: 14px;
+        }
+        .total-value {
+          text-align: right;
+          font-size: 24px;
+          font-weight: bold;
+        }
+        .driver-section {
+          background-color: #f9f9f9;
+          padding: 15px;
+          border-radius: 5px;
+          margin-top: 15px;
+        }
+        .footer {
+          background-color: #f5f5f5;
+          padding: 20px;
+          text-align: center;
+          font-size: 12px;
+          color: #999;
+          border-top: 1px solid #eee;
+        }
+        .footer-text {
+          margin: 5px 0;
+        }
+        .payment-status {
+          display: inline-block;
+          background-color: #4caf50;
+          color: white;
+          padding: 5px 10px;
+          border-radius: 3px;
+          font-size: 12px;
+          font-weight: bold;
+          margin-top: 10px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>Indi Cabs</h1>
+          <div class="invoice-number">Invoice: ${invoice.invoiceId}</div>
+        </div>
+
+        <div class="content">
+          <div class="greeting">
+            Thank you for choosing Indi Cabs, <strong>${invoice.userName}</strong>!
+          </div>
+
+          <!-- Trip Details Section -->
+          <div class="section">
+            <div class="section-title">Trip Details</div>
+            <div class="trip-details">
+              <div class="detail-item">
+                <div class="detail-label">Pickup</div>
+                <div class="detail-value">${invoice.pickupLocation}</div>
+              </div>
+              <div class="detail-item">
+                <div class="detail-label">Dropoff</div>
+                <div class="detail-value">${invoice.dropoffLocation}</div>
+              </div>
+              <div class="detail-item">
+                <div class="detail-label">Date & Time</div>
+                <div class="detail-value">${formattedDate} at ${formattedTime}</div>
+              </div>
+              <div class="detail-item">
+                <div class="detail-label">Duration</div>
+                <div class="detail-value">${invoice.durationMinutes} minutes</div>
+              </div>
+              <div class="detail-item">
+                <div class="detail-label">Distance</div>
+                <div class="detail-value">${invoice.distanceKilometers} km</div>
+              </div>
+              <div class="detail-item">
+                <div class="detail-label">Vehicle Type</div>
+                <div class="detail-value">${invoice.vehicleType}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Driver Details Section -->
+          <div class="section">
+            <div class="section-title">Driver Details</div>
+            <div class="driver-section">
+              <div><strong>${invoice.driverName}</strong></div>
+              <div style="font-size: 14px; color: #666; margin-top: 5px;">
+                Vehicle: ${invoice.vehicleNumber}
+              </div>
+            </div>
+          </div>
+
+          <!-- Fare Breakdown Section -->
+          <div class="section">
+            <div class="section-title">Fare Breakdown</div>
+            <table class="fare-table">
+              <tr class="fare-row">
+                <td class="fare-label">Base Fare</td>
+                <td class="fare-value">${invoice.currency} ${invoice.baseFare.toFixed(2)}</td>
+              </tr>
+              <tr class="fare-row">
+                <td class="fare-label">Distance (${invoice.distanceKilometers} km)</td>
+                <td class="fare-value">${invoice.currency} ${invoice.distanceFare.toFixed(2)}</td>
+              </tr>
+              ${invoice.timeFare > 0 ? `
+              <tr class="fare-row">
+                <td class="fare-label">Time Charge</td>
+                <td class="fare-value">${invoice.currency} ${invoice.timeFare.toFixed(2)}</td>
+              </tr>
+              ` : ""}
+              ${invoice.tollCost > 0 ? `
+              <tr class="fare-row">
+                <td class="fare-label">Toll Cost</td>
+                <td class="fare-value">${invoice.currency} ${invoice.tollCost.toFixed(2)}</td>
+              </tr>
+              ` : ""}
+              ${invoice.surgeFare > 0 ? `
+              <tr class="fare-row">
+                <td class="fare-label">Surge Charge</td>
+                <td class="fare-value">${invoice.currency} ${invoice.surgeFare.toFixed(2)}</td>
+              </tr>
+              ` : ""}
+              ${invoice.discount > 0 ? `
+              <tr class="fare-row">
+                <td class="fare-label">Discount</td>
+                <td class="fare-value" style="color: #4caf50;">-${invoice.currency} ${invoice.discount.toFixed(2)}</td>
+              </tr>
+              ` : ""}
+              <tr class="fare-row-last">
+                <td class="fare-label"><strong>Total Fare</strong></td>
+                <td class="fare-value"><strong>${invoice.currency} ${invoice.totalFare.toFixed(2)}</strong></td>
+              </tr>
+            </table>
+          </div>
+
+          <!-- Payment Status -->
+          <div class="section">
+            <div style="text-align: center;">
+              <div class="section-title" style="text-align: left;">Payment Status</div>
+              <div class="payment-status">${invoice.paymentStatus.toUpperCase()}</div>
+              <div style="margin-top: 10px; font-size: 13px; color: #666;">
+                Payment Method: ${invoice.paymentMethod.charAt(0).toUpperCase() + invoice.paymentMethod.slice(1)}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer">
+          <div class="footer-text">
+            This is an automated invoice. Please keep it for your records.
+          </div>
+          <div class="footer-text">
+            © 2024 Indi Cabs. All rights reserved.
+          </div>
+          <div class="footer-text" style="margin-top: 10px; border-top: 1px solid #ccc; padding-top: 10px;">
+            For support, please contact us at support@indicabs.com
+          </div>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+/* eslint-enable max-len, require-jsdoc */

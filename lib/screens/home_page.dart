@@ -2502,4 +2502,104 @@ class _HomePageState extends State<HomePage> {
     }
     return totalToll;
   }
+
+  // --- BACK-TO-BACK RIDES INTEGRATION ---
+
+  /// Check if driver has queued rides
+  Future<bool> driverHasQueuedRides(String driverId) async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('driver_ride_queue')
+          .doc(driverId)
+          .get();
+
+      if (doc.exists) {
+        final data = doc.data();
+        final queuedIds = data?['queuedRideIds'] as List?;
+        return queuedIds?.isNotEmpty ?? false;
+      }
+      return false;
+    } catch (e) {
+      debugPrint("Error checking queued rides: $e");
+      return false;
+    }
+  }
+
+  /// Get driver's next pickup location
+  Future<LatLng?> getDriverNextPickup(String driverId) async {
+    try {
+      final queueDoc = await FirebaseFirestore.instance
+          .collection('driver_ride_queue')
+          .doc(driverId)
+          .get();
+
+      if (queueDoc.exists) {
+        final queuedIds = queueDoc['queuedRideIds'] as List?;
+        if (queuedIds?.isNotEmpty ?? false) {
+          final nextRideId = queuedIds!.first;
+          final rideDoc = await FirebaseFirestore.instance
+              .collection('ride_requests')
+              .doc(nextRideId)
+              .get();
+
+          if (rideDoc.exists) {
+            final data = rideDoc.data();
+            final pickupLoc = data?['pickupLocation'];
+            if (pickupLoc != null) {
+              if (pickupLoc is GeoPoint) {
+                return LatLng(pickupLoc.latitude, pickupLoc.longitude);
+              } else if (pickupLoc is Map) {
+                final lat = pickupLoc['latitude'] ?? pickupLoc['lat'];
+                final lng = pickupLoc['longitude'] ?? pickupLoc['lng'];
+                if (lat != null && lng != null) {
+                  return LatLng((lat as num).toDouble(), (lng as num).toDouble());
+                }
+              }
+            }
+          }
+        }
+      }
+      return null;
+    } catch (e) {
+      debugPrint("Error getting next pickup: $e");
+      return null;
+    }
+  }
+
+  /// Get ETA to next customer (in seconds)
+  Future<int?> getETAToNextPickup(LatLng driverLocation, LatLng nextPickup) async {
+    try {
+      final distanceInMeters = _calculateDistance(
+        driverLocation.latitude,
+        driverLocation.longitude,
+        nextPickup.latitude,
+        nextPickup.longitude,
+      );
+
+      const double averageSpeedMs = 11.11; // 40 km/h
+      return (distanceInMeters / averageSpeedMs).toInt();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Calculate distance between two coordinates (Haversine formula)
+  double _calculateDistance(double lat1, double lng1, double lat2, double lng2) {
+    const double earthRadiusMeters = 6371000;
+    final double dLat = _degreesToRadians(lat2 - lat1);
+    final double dLng = _degreesToRadians(lng2 - lng1);
+    final double a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(_degreesToRadians(lat1)) *
+            cos(_degreesToRadians(lat2)) *
+            sin(dLng / 2) *
+            sin(dLng / 2);
+    final double c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return earthRadiusMeters * c;
+  }
+
+  double _degreesToRadians(double degrees) {
+    return degrees * (3.14159265359 / 180);
+  }
+
+  // --- END BACK-TO-BACK RIDES INTEGRATION ---
 } // End of _HomePageState

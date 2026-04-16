@@ -36,3 +36,4 @@ package-lock.json
 
 # Gradle generated files
 .kotlin/
+lib/config/secrets_config.dart

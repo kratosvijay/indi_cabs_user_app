@@ -72,6 +72,7 @@ android {
 }
 dependencies {
     implementation("androidx.activity:activity-ktx:1.9.0")
+    implementation("androidx.appcompat:appcompat:1.7.0") // Required for Theme.AppCompat (edge-to-edge)
     implementation("com.google.android.play:integrity:1.6.0") // Play Integrity API
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

@@ -15,7 +15,6 @@ class _PermissionsScreenState extends State<PermissionsScreen>
     with WidgetsBindingObserver {
   bool _locationGranted = false;
   bool _notificationGranted = false;
-  bool _contactsGranted = false;
   bool _isChecking = true;
 
   @override
@@ -42,17 +41,15 @@ class _PermissionsScreenState extends State<PermissionsScreen>
   Future<void> _checkPermissions() async {
     final locStatus = await Permission.locationWhenInUse.status;
     final notifStatus = await Permission.notification.status;
-    final contactStatus = await Permission.contacts.status;
 
     debugPrint(
-      "Permissions Check - Location: $locStatus, Notif: $notifStatus, Contacts: $contactStatus",
+      "Permissions Check - Location: $locStatus, Notif: $notifStatus",
     );
 
     if (mounted) {
       setState(() {
         _locationGranted = locStatus.isGranted;
         _notificationGranted = notifStatus.isGranted;
-        _contactsGranted = contactStatus.isGranted;
         _isChecking = false;
       });
     }
@@ -135,9 +132,8 @@ class _PermissionsScreenState extends State<PermissionsScreen>
             Text("• Safety monitoring during your trip."),
             SizedBox(height: 12),
             Text(
-              "This data is collected even when the app is closed or not in use, "
-              "to ensure your ride tracking is never interrupted and for your safety.",
-              style: TextStyle(fontStyle: FontStyle.italic, color: Colors.redAccent),
+              "Location data is used solely for the active session to provide the best service experience.",
+              style: TextStyle(fontStyle: FontStyle.italic),
             ),
           ],
         ),
@@ -163,7 +159,6 @@ class _PermissionsScreenState extends State<PermissionsScreen>
     await [
       Permission.locationWhenInUse,
       Permission.notification,
-      Permission.contacts,
     ].request();
     await _checkPermissions();
     if (_locationGranted) {
@@ -226,7 +221,7 @@ class _PermissionsScreenState extends State<PermissionsScreen>
               _buildPermissionTile(
                 icon: Icons.location_on_outlined,
                 title: "Location",
-                description: "To find rides near you and track your trip (even when app is closed).",
+                description: "To find rides near you and track your trip progress.",
                 isGranted: _locationGranted,
                 onTap: _handleLocationRequest,
                 isDark: isDark,
@@ -240,15 +235,7 @@ class _PermissionsScreenState extends State<PermissionsScreen>
                 onTap: () => _requestPermission(Permission.notification),
                 isDark: isDark,
               ),
-              const SizedBox(height: 16),
-              _buildPermissionTile(
-                icon: Icons.contacts_outlined,
-                title: "Contacts",
-                description: "To allow booking rides for friends.",
-                isGranted: _contactsGranted,
-                onTap: () => _requestPermission(Permission.contacts),
-                isDark: isDark,
-              ),
+
 
               const Spacer(),
 
