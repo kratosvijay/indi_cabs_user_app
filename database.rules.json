@@ -15,6 +15,24 @@
         ".read": "auth != null",
         ".write": "$uid === auth.uid"
       }
+    },
+    "driver_locations": {
+      ".read": "auth != null",
+      "$driverId": {
+        ".write": "auth != null"
+      }
+    },
+    "ride_requests": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "rental_requests": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "$other": {
+      ".read": "auth != null",
+      ".write": "auth != null"
     }
   }
 }

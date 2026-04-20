@@ -536,6 +536,18 @@ class RideController extends GetxController {
 
   void listenToRideStatus(String rideId, {bool isRental = false}) {
     _rideStatusSubscription?.cancel();
+    if (rideId.isEmpty) {
+      debugPrint("listenToRideStatus: rideId is empty, skipping listener.");
+      return;
+    }
+    // **NEW:** Reset status and data immediately to avoid stale data from previous rides
+    if (currentRideId.value != rideId) {
+      rideStatus.value = '';
+      rideData.clear();
+      assignedDriver.value = null;
+      driverLocation.value = null;
+    }
+    
     currentRideId.value = rideId;
     _rideStatusSubscription = FirebaseFirestore.instance
         .collection(isRental ? 'rental_requests' : 'ride_requests')
@@ -635,16 +647,25 @@ class RideController extends GetxController {
 
   void listenToDriverLocation(String driverId) {
     _driverLocationSubscription?.cancel();
+    if (driverId.isEmpty) {
+      debugPrint("listenToDriverLocation: driverId is empty, skipping listener.");
+      return;
+    }
     _driverLocationSubscription = FirebaseFirestore.instance
         .collection('drivers')
         .doc(driverId)
         .snapshots()
         .listen((snapshot) {
           if (snapshot.exists) {
+            final data = snapshot.data();
+            debugPrint("DEBUG: Driver sync update received for: ${snapshot.id}");
+            debugPrint("DEBUG: Driver sync data: $data");
             final driver = Driver.fromFirestore(snapshot);
             assignedDriver.value = driver;
             driverLocation.value = driver.currentLocation;
             driverBearing.value = driver.bearing;
+          } else {
+            debugPrint("DEBUG: Driver sync update received but document DOES NOT EXIST: ${snapshot.id}");
           }
         });
   }
@@ -887,6 +908,10 @@ class RideController extends GetxController {
     LatLng location,
     String address,
   ) async {
+    if (rideId.isEmpty) {
+      debugPrint("addRentalStop: rideId is empty, skipping update.");
+      return;
+    }
     try {
       await FirebaseFirestore.instance
           .collection('rental_requests')

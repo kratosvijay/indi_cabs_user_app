@@ -107,6 +107,9 @@ class _RideConfirmationBottomSheetState
   final GlobalKey _scheduleButtonKey = GlobalKey();
   bool _useWalletBalance = false; // **NEW**
 
+  // Showcase tour flag
+  bool _shouldStartShowcase = false;
+
   @override
   void initState() {
     super.initState();
@@ -116,7 +119,7 @@ class _RideConfirmationBottomSheetState
         final prefs = await SharedPreferences.getInstance();
         final hasSeen = prefs.getBool('hasSeenScheduleTour') ?? false;
         if (!hasSeen && mounted) {
-          ShowcaseView.get().startShowCase([widget.showcaseKey!]);
+          setState(() => _shouldStartShowcase = true);
           await prefs.setBool('hasSeenScheduleTour', true);
         }
       });
@@ -476,6 +479,16 @@ class _RideConfirmationBottomSheetState
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // Trigger showcase tour once context is available
+    if (_shouldStartShowcase && widget.showcaseKey != null) {
+      _shouldStartShowcase = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ShowCaseWidget.of(context).startShowCase([widget.showcaseKey!]);
+        }
+      });
+    }
 
     // **MODIFIED:** Re-check logic with filtered list
     if (!widget.isLoadingFares &&

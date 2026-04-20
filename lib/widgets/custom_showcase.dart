@@ -26,94 +26,98 @@ class CustomShowcase extends StatelessWidget {
   Widget build(BuildContext context) {
     return Showcase.withWidget(
       key: showcaseKey,
+      height: 140,
+      width: 300,
       targetShapeBorder: targetShapeBorder,
-      container: Container(
-        width: 300,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Colors.grey[900]
-              : Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.2),
-              blurRadius: 10,
-              offset: const Offset(0, 5),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              title,
-              style: GoogleFonts.notoSans(
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-                color: Theme.of(context).brightness == Brightness.dark
-                    ? Colors.white
-                    : Colors.black87,
+      container: Builder(
+        builder: (ctx) => Container(
+          width: 300,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? Colors.grey[900]
+                : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.2),
+                blurRadius: 10,
+                offset: const Offset(0, 5),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              description,
-              style: GoogleFonts.notoSans(
-                fontSize: 14,
-                color: Theme.of(context).brightness == Brightness.dark
-                    ? Colors.white70
-                    : Colors.black54,
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                title,
+                style: GoogleFonts.notoSans(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? Colors.white
+                      : Colors.black87,
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                if (!isLastStep)
-                  TextButton(
-                    onPressed: () {
-                      ShowcaseView.get().dismiss();
-                    },
-                    child: Text(
-                      'Skip',
-                      style: TextStyle(
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? Colors.grey[400]
-                            : Colors.grey[600],
-                        fontWeight: FontWeight.w600,
+              const SizedBox(height: 8),
+              Text(
+                description,
+                style: GoogleFonts.notoSans(
+                  fontSize: 14,
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? Colors.white70
+                      : Colors.black54,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (!isLastStep)
+                    TextButton(
+                      onPressed: () {
+                        ShowCaseWidget.of(ctx).dismiss();
+                      },
+                      child: Text(
+                        'Skip',
+                        style: TextStyle(
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? Colors.grey[400]
+                              : Colors.grey[600],
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: () {
-                    if (isLastStep) {
-                      ShowcaseView.get().dismiss();
-                    } else {
-                      ShowcaseView.get().next();
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blueAccent,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () {
+                      if (isLastStep) {
+                        ShowCaseWidget.of(ctx).dismiss();
+                      } else {
+                        ShowCaseWidget.of(ctx).next();
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blueAccent,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 10,
+                      ),
                     ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 10,
+                    child: Text(
+                      isLastStep ? 'Got it!' : 'Next',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  child: Text(
-                    isLastStep ? 'Got it!' : 'Next',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
       child: child,

@@ -28,6 +28,13 @@ service cloud.firestore {
       return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
+    function isPhoneOwner() {
+      return isSignedIn() && (
+        resource.data.get('phoneNumber', '') == request.auth.token.get('phone_number', '') ||
+        resource.data.get('phone', '') == request.auth.token.get('phone_number', '')
+      );
+    }
+
     // --- DEFAULT DENY ---
     match /{document=**} {
       allow read, write: if false;
@@ -55,7 +62,7 @@ service cloud.firestore {
         request.resource.data.get('uid', '') == request.auth.uid
       );
 
-      allow update: if isDriverOwner(driverId) || isUser(); // Users rate drivers / update status
+      allow update: if isDriverOwner(driverId) || isUser() || isPhoneOwner(); // Users rate drivers / update status
       allow delete: if false;
 
       match /{subcollection=**} {
@@ -63,68 +70,36 @@ service cloud.firestore {
       }
     }
 
+    // --- DRIVER RIDE QUEUE ---
+    match /driver_ride_queue/{driverId} {
+      allow read, write: if isSignedIn() && request.auth.uid == driverId;
+    }
+
     // --- RIDE REQUESTS ---
     match /ride_requests/{rideId} {
-      allow get: if isSignedIn() && (
-        request.auth.uid == resource.data.userId || 
-        request.auth.uid == resource.data.driverId || 
-        request.auth.uid == resource.data.driverUid
-      );
-
-      allow list: if isSignedIn();
-      allow create: if isOwner(request.resource.data.userId);
-
-      allow update: if isSignedIn() && (
-        request.auth.uid == resource.data.userId || 
-        request.auth.uid == resource.data.driverId || 
-        request.auth.uid == resource.data.driverUid || 
-        resource.data.status == 'searching' || 
-        resource.data.status == 'cancelled'
-      );
-
-      allow delete: if false;
+      allow read, write: if isSignedIn();
 
       match /messages/{messageId} {
-        allow read, write: if isSignedIn() && (
-          request.auth.uid == get(/databases/$(database)/documents/ride_requests/$(rideId)).data.userId ||
-          request.auth.uid == get(/databases/$(database)/documents/ride_requests/$(rideId)).data.driverUid ||
-          request.auth.uid == get(/databases/$(database)/documents/ride_requests/$(rideId)).data.driverId
-        );
+        allow read, write: if isSignedIn();
       }
     }
 
     // --- RENTAL REQUESTS ---
     match /rental_requests/{rideId} {
-      allow get: if isSignedIn() && (
-        request.auth.uid == resource.data.userId || 
-        request.auth.uid == resource.data.driverId || 
-        request.auth.uid == resource.data.driverUid
-      );
-
-      allow list: if isSignedIn();
-      allow create: if isOwner(request.resource.data.userId);
-
-      allow update: if isSignedIn() && (
-        request.auth.uid == resource.data.userId || 
-        request.auth.uid == resource.data.driverId || 
-        request.auth.uid == resource.data.driverUid || 
-        resource.data.status == 'searching' || 
-        resource.data.status == 'cancelled'
-      );
-      allow delete: if false;
+      allow read, write: if isSignedIn();
 
       match /messages/{messageId} {
-        allow read, write: if isSignedIn() && (
-          request.auth.uid == get(/databases/$(database)/documents/rental_requests/$(rideId)).data.userId ||
-          request.auth.uid == get(/databases/$(database)/documents/rental_requests/$(rideId)).data.driverUid ||
-          request.auth.uid == get(/databases/$(database)/documents/rental_requests/$(rideId)).data.driverId
-        );
+        allow read, write: if isSignedIn();
       }
     }
 
     // --- OTP VERIFICATIONS ---
     match /otp_verifications/{phoneNumber} {
-      allow read, write: if false; // Cloud Functions only
+      // Allow users to initiate their own OTP verified by their phone number in Auth token
+      allow read, write: if isSignedIn() && (
+        phoneNumber == request.auth.token.phone_number || 
+        phoneNumber == request.auth.token.get('phone_number', '')
+      );
     }
 
     // --- FLEET OPERATORS ---
@@ -132,8 +107,8 @@ service cloud.firestore {
       allow get: if isOwner(operatorId);
       allow list: if true;
       allow create: if isOwner(operatorId);
-      allow update: if isOwner(operatorId);
-      allow delete: if false;
+      allow update: if isOwner(operatorId) || isPhoneOwner();
+      allow delete: if isOwner(operatorId) || isPhoneOwner();
     }
 
     // --- EARNINGS ---
@@ -211,6 +186,21 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow write: if isSignedIn();
     }
+
+    // --- RIDE REWARDS ---
+    // Document ID == user UID. Users can read their own reward status.
+    // Writes are performed exclusively by Cloud Functions (processRideRewards).
+    match /user_rewards/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if false; // Cloud Functions only
+    }
+
+    // --- ADMINS ---
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
 
     // --- METRO BOOKINGS ---
     match /metro_bookings/{bookingId} {

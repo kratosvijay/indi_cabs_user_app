@@ -5,7 +5,7 @@ import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:project_taxi_with_ai/config/env_config.dart';
 import 'package:project_taxi_with_ai/widgets/data_models.dart';
 import 'package:project_taxi_with_ai/widgets/directions_service.dart';
 import 'package:project_taxi_with_ai/widgets/map_service.dart';
@@ -36,7 +36,7 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
   @override
   void initState() {
     super.initState();
-    final apiKey = dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
+    final apiKey = EnvConfig.instance.googleMapsKey;
     _directionsService = DirectionsService(apiKey: apiKey);
     _buildMapElements();
     if (widget.ride.driverId != null && widget.ride.driverId!.isNotEmpty) {

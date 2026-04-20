@@ -5,6 +5,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:project_taxi_with_ai/widgets/snackbar.dart';
 import 'package:project_taxi_with_ai/widgets/pro_library.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:project_taxi_with_ai/app_colors.dart';
 
 // A simple model for a chat message
@@ -86,6 +87,9 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
               .map((m) => m.toJson())
               .toList()
         : [];
+    debugPrint("SupportChat: Calling chatbot...");
+    final user = FirebaseAuth.instance.currentUser;
+    debugPrint("SupportChat: Current User UID: ${user?.uid ?? 'NULL'}");
 
     try {
       // Call the cloud function

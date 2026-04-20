@@ -18,6 +18,7 @@ import * as admin from "firebase-admin";
 import * as logger from "firebase-functions/logger";
 import {defineString} from "firebase-functions/params";
 import * as nodemailer from "nodemailer";
+import {onSchedule} from "firebase-functions/v2/scheduler";
 // **FIXED:** Removed Razorpay import
 import {v4 as uuidv4} from "uuid";
 
@@ -442,7 +443,9 @@ export const createRideRequest = onCall(async (
     firestoreData.endRidePin = endRidePin;
   } else {
     // Daily/Multi-Stop rides
-    firestoreData.safetyPin = generatePin();
+    const pin = generatePin();
+    firestoreData.safetyPin = pin;
+    firestoreData.startRidePin = pin; // Unify for driver app broadcast
   }
 
   // 1. Run the transaction to create the ride & update counter
@@ -489,67 +492,9 @@ export const createRideRequest = onCall(async (
     );
   }
 
-  // **FIXED:** Create the docRef *after* the transaction,
-  // once newRideIdString is guaranteed to be set.
-  const newRideDocRef = db.collection(collectionPath).doc(newRideIdString);
 
-  // 2. NOW, find a driver (outside the transaction)
-  try {
-    let driversQuery: admin.firestore.Query = db.collection("drivers")
-      .where("isOnline", "==", true)
-      .where("isAvailable", "==", true);
+  // Driver assignment is handled by the Driver App via its own listener/flow.
 
-    if (rideData.vehicleClass === "ActingDriver") {
-      driversQuery = driversQuery.where("isActingDriver", "==", true);
-    } else {
-      // **FIXED:** Filter by 'vehicleClass' for both Daily and Rental
-      driversQuery = driversQuery.where(
-        "vehicleClass", "==", rideData.vehicleClass
-      );
-    }
-
-    const availableDrivers = await driversQuery.limit(5).get();
-    logger.info(`DriverSearch: Found ${availableDrivers.size} ` +
-      "online/available drivers matching vehicleClass " +
-      rideData.vehicleClass);
-
-    // If no specific vehicle match, check why (Diagnostic Log)
-    if (availableDrivers.empty) {
-      const allOnline = await db.collection("drivers")
-        .where("isOnline", "==", true)
-        .where("isAvailable", "==", true)
-        .limit(1).get();
-      logger.warn(`DriverSearch: No match for ${rideData.vehicleClass}. ` +
-        `General online drivers available: ${!allOnline.empty}`);
-    }
-
-    // 3. If a driver is found, assign them.
-    if (!availableDrivers.empty) {
-      const driverToAssign = availableDrivers.docs[0];
-      const driver = driverToAssign.data();
-
-      // This update will trigger onRideRequestUpdated
-      await newRideDocRef.update({
-        status: "accepted",
-        driverId: driverToAssign.id,
-        driverName: driver.displayName || "N/A",
-        driverPhone: driver.phoneNumber || "N/A",
-        driverPhotoUrl: driver.photoUrl || "",
-        carModel: driver.carName || "N/A",
-        carNumber: driver.vehicleNumber || "N/A",
-      });
-
-      // Mark driver as unavailable
-      await driverToAssign.ref.update({
-        isAvailable: false,
-        assignedRideId: newRideIdString,
-      });
-    } else {
-      logger.warn(`No drivers found for ride ${newRideIdString}.`);
-    }
-  } catch (error) {
-    logger.error(`Error assigning driver for ride ${newRideIdString}:`, error);
-  }
 
   // 4. Return the Ride ID
   logger.info(`Created ride ${newRideIdString} for user ${userId}`);
@@ -909,7 +854,12 @@ export const getChatbotResponse = onCall(async (
 
   const apiKey = geminiApiKey.value();
 
-  const model = "gemini-2.5-flash-preview-09-2025";
+  const model = "gemini-1.5-flash"; // Fixed invalid model name
+
+  logger.info("getChatbotResponse called by: " + (request.auth ? request.auth.uid : "UNAUTHENTICATED"));
+  const authHeader = request.rawRequest.headers.authorization;
+  logger.info(`Auth Header info: ${authHeader ? "Present (" + authHeader.substring(0, 15) + "...) " : "Missing"}`);
+
   const apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/" +
     `${model}:generateContent?key=${apiKey}`;
 
@@ -1611,6 +1561,7 @@ export const onRideCompleted = onDocumentUpdated(
               `for user ${userId}. New balance: ₹${newBalance}`
             );
 
+
             // 3. Send FCM push notification to the user
             try {
               const userSnap = await userRef.get();
@@ -1684,6 +1635,100 @@ export const onRideCompleted = onDocumentUpdated(
             `Wallet debit skipped for ride ${rideId}: ` +
             `walletDebitAmount=${walletDebitAmount}, userId=${userId}`
           );
+        }
+      }
+
+      // **RIDE REWARDS: fires for ALL payment methods (Cash / Wallet / Split)**
+      try {
+        await processRideRewards(dataAfter.userId);
+      } catch (rewardErr) {
+        logger.error(`Failed to process rewards for ride ${rideId}:`, rewardErr);
+      }
+    }
+  }
+);
+
+/**
+ * Cloud Function: Triggers when a rental ride is completed
+ */
+export const onRentalCompleted = onDocumentUpdated(
+  "rental_requests/{rideId}",
+  async (event: FirestoreEvent<Change<DocumentSnapshot> | undefined>) => {
+    if (!event.data) return;
+    const dataBefore = event.data.before.data();
+    const dataAfter = event.data.after.data();
+    if (!dataBefore || !dataAfter) return;
+
+    if (dataBefore.status !== "completed" && dataAfter.status === "completed") {
+      const rideId = event.params.rideId;
+      logger.info(`Rental ${rideId} completed. Processing post-ride actions...`);
+
+      // 1. Generate and send invoice email
+      try {
+        await generateAndSendInvoice(rideId, dataAfter);
+      } catch (error) {
+        logger.error(`Failed to generate invoice for rental ${rideId}:`, error);
+      }
+
+      // 2. Handle wallet debit
+      const rawMethod: string = (dataAfter.paymentMethod || "").toLowerCase();
+      const isWalletOnly = rawMethod === "wallet";
+      const isSplitPayment = rawMethod === "cash + wallet";
+
+      if (isWalletOnly || isSplitPayment) {
+        const userId: string = dataAfter.userId;
+        let walletDebitAmount: number;
+        if (isSplitPayment) {
+          walletDebitAmount = Number(dataAfter.walletAmountUsed) || 0;
+        } else {
+          walletDebitAmount =
+            Number(dataAfter.fare) ||
+            Number(dataAfter.totalFare) ||
+            Number(dataAfter.finalPrice) || 0;
+        }
+
+        if (walletDebitAmount > 0 && userId) {
+          const userRef = db.collection("users").doc(userId);
+          try {
+            await db.runTransaction(async (tx) => {
+              const userSnap = await tx.get(userRef);
+              if (!userSnap.exists) return;
+
+              const currentBalance: number = (userSnap.data()?.wallet_balance as number) || 0;
+              const newBalance = Math.max(0, currentBalance - walletDebitAmount);
+              tx.update(userRef, {wallet_balance: newBalance});
+
+              const historyRef = userRef.collection("payment_history").doc();
+              tx.set(historyRef, {
+                amount: walletDebitAmount,
+                type: "debit",
+                description: `Rental ride fare – ${rideId}`,
+                rideId,
+                status: "successful",
+                paymentMethod: isSplitPayment ? "Cash + Wallet" : "Wallet",
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              });
+            });
+            logger.info(`Successfully debited wallet for user ${userId} and rental ${rideId}`);
+          } catch (err) {
+            logger.error(`Wallet debit failed for rental ${rideId}:`, err);
+          }
+        }
+      }
+
+      // **RIDE REWARDS TRIGGER**
+      await processRideRewards(dataAfter.userId);
+
+      // 3. Mark driver as available again
+      if (dataAfter.driverId) {
+        try {
+          await db.collection("drivers").doc(dataAfter.driverId).update({
+            isAvailable: true,
+            assignedRideId: null,
+          });
+          logger.info(`Driver ${dataAfter.driverId} marked available.`);
+        } catch (e) {
+          logger.error(`Failed to release driver ${dataAfter.driverId}:`, e);
         }
       }
     }
@@ -2138,3 +2183,143 @@ function generateInvoiceHtml(invoice: InvoiceData): string {
   `;
 }
 /* eslint-enable max-len, require-jsdoc */
+
+// --- RIDE REWARDS SYSTEM ---
+
+/**
+ * Shared logic to process rewards when a ride is completed.
+ * Rule: 7 rides = ₹100 (Max 4 times per month).
+ * @param {string} userId The user ID.
+ */
+async function processRideRewards(userId: string) {
+  const rewardRef = db.collection("user_rewards").doc(userId);
+  const userRef = db.collection("users").doc(userId);
+
+  try {
+    let shouldSendNotification = false;
+    let fcmTokenForNotif: string | undefined;
+    let newCycleCountForNotif = 0;
+
+    await db.runTransaction(async (tx) => {
+      const rewardSnap = await tx.get(rewardRef);
+      const userSnap = await tx.get(userRef);
+
+      if (!userSnap.exists) return;
+
+      const now = new Date();
+      const currentMonth = `${now.getFullYear()}-${now.getMonth() + 1}`;
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const existingData: any = rewardSnap.exists ? rewardSnap.data() : null;
+
+      let currentCycleRides = existingData?.currentCycleRides ?? 0;
+      let completedCycles = existingData?.completedCycles ?? 0;
+      let totalRewardsEarned = existingData?.totalRewardsEarned ?? 0;
+      let lastResetMonth = existingData?.lastResetMonth ?? currentMonth;
+
+      // Monthly Reset Check
+      if (lastResetMonth !== currentMonth) {
+        currentCycleRides = 0;
+        completedCycles = 0;
+        totalRewardsEarned = 0;
+        lastResetMonth = currentMonth;
+      }
+
+      // Increment ride count
+      const newRideCount = currentCycleRides + 1;
+      let shouldReward = false;
+
+      if (newRideCount >= 7) {
+        if (completedCycles < 4) {
+          shouldReward = true;
+          completedCycles += 1;
+          totalRewardsEarned += 100;
+        }
+        // Reset cycle regardless (even if max cycles reached)
+        currentCycleRides = 0;
+      } else {
+        currentCycleRides = newRideCount;
+      }
+
+      // Build a fresh plain object — never mutate snapshot.data() directly
+      const updatedRewardData = {
+        currentCycleRides,
+        completedCycles,
+        totalRewardsEarned,
+        lastResetMonth,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      };
+
+      tx.set(rewardRef, updatedRewardData, {merge: true});
+
+      if (shouldReward) {
+        const currentBalance = (userSnap.data()?.wallet_balance as number) || 0;
+        tx.update(userRef, {wallet_balance: currentBalance + 100});
+
+        const historyRef = userRef.collection("payment_history").doc();
+        tx.set(historyRef, {
+          amount: 100,
+          type: "credit",
+          description: `Ride Reward Milestone Reached! (Cycle ${completedCycles}/4)`,
+          status: "successful",
+          paymentMethod: "Reward",
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        shouldSendNotification = true;
+        fcmTokenForNotif = userSnap.data()?.fcmToken;
+        newCycleCountForNotif = completedCycles;
+      }
+    });
+
+    // Send FCM notification outside transaction
+    if (shouldSendNotification && fcmTokenForNotif) {
+      try {
+        await admin.messaging().send({
+          token: fcmTokenForNotif,
+          notification: {
+            title: "🎉 Ride Reward Earned!",
+            body: "Congratulations! You've completed 7 rides and earned ₹100!",
+          },
+          data: {type: "reward_earned", amount: "100", cycle: String(newCycleCountForNotif)},
+          android: {
+            notification: {channelId: "high_importance_channel", sound: "cracker"},
+          },
+          apns: {payload: {aps: {sound: "cracker.wav"}}},
+        });
+      } catch (notifErr) {
+        logger.error("Failed to send reward notification:", notifErr);
+      }
+    }
+
+    logger.info(`Processed ride rewards for user ${userId}`);
+  } catch (error) {
+    logger.error(`Error processing ride rewards for user ${userId}:`, error);
+  }
+}
+
+
+/**
+ * Scheduled function to reset rewards at the start of each month.
+ */
+export const resetMonthlyRewards = onSchedule("0 0 1 * *", async () => {
+  const usersWithRewards = await db.collection("user_rewards").get();
+  const batch = db.batch();
+
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${now.getMonth() + 1}`;
+
+  usersWithRewards.forEach((doc) => {
+    batch.update(doc.ref, {
+      currentCycleRides: 0,
+      completedCycles: 0,
+      totalRewardsEarned: 0, // Should we reset total earned each month or keep it?
+      // Requirement said "Maintain monthly_rewards_earned", so we reset.
+      lastResetMonth: currentMonth,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  });
+
+  await batch.commit();
+  logger.info("Monthly rewards reset complete.");
+});

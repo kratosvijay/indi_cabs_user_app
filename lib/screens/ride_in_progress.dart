@@ -8,7 +8,6 @@ import 'package:share_plus/share_plus.dart';
 import 'package:project_taxi_with_ai/config/env_config.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:project_taxi_with_ai/widgets/data_models.dart';
 import 'package:project_taxi_with_ai/widgets/directions_service.dart';
 import 'package:project_taxi_with_ai/widgets/location_service.dart';
@@ -111,6 +110,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
   final ValueNotifier<double> _sheetExtentNotifier = ValueNotifier(
     0.45,
   ); // **FIX:** Initialize at declaration
+  bool _hasShownCompletionNotification = false; // **NEW:** Track if completion notification shown
   @override
   void initState() {
     super.initState();
@@ -118,7 +118,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     _currentPickupLocation = widget.pickupLocation;
     _pickupLocation = widget.pickupLocation; // Initialize _pickupLocation
     _newlyAdjustedPickup = widget.pickupLocation;
-    _apiKey = dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
+    _apiKey = EnvConfig.instance.googleMapsKey;
     _locationService = LocationService(apiKey: _apiKey);
     _directionsService = DirectionsService(apiKey: _apiKey);
     // Defer heavy initialization and map rendering
@@ -131,11 +131,15 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     });
 
     // **FIX:** Support rental requests collection
-    _rideController.listenToRideStatus(
-      widget.rideRequestId,
-      isRental: widget.isRental,
-    );
-    _rideController.listenToDriverLocation(widget.driverId);
+    if (widget.rideRequestId.isNotEmpty) {
+      _rideController.listenToRideStatus(
+        widget.rideRequestId,
+        isRental: widget.isRental,
+      );
+    }
+    if (widget.driverId.isNotEmpty) {
+      _rideController.listenToDriverLocation(widget.driverId);
+    }
 
     _statusSub = _rideController.rideStatus.listen(_handleRideStatusChange);
     _driverSub = _rideController.assignedDriver.listen((d) {
@@ -143,13 +147,32 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     });
 
     // Check initial status
-    final currentStatus = _rideController.rideStatus.value;
+    final currentStatus = _rideController.rideStatus.value.toLowerCase();
+    final currentRid = _rideController.currentRideId.value;
+    
+    final terminalStatuses = [
+      'completed',
+      'finished',
+      'settled',
+      'ended',
+      'dropped_off',
+      'droppedoff',
+      'success',
+      'paid',
+      'archived'
+    ];
+    
     if (currentStatus == 'arrived') {
       _driverHasArrived = true;
+      // Restore timer from persisted arrivedAt — don't reset to 0
       _startWaitingTimer();
     } else if (currentStatus == 'started' || currentStatus == 'on_trip') {
       _driverHasArrived = true;
       _isRideStarted = true;
+    } else if (terminalStatuses.contains(currentStatus) && currentRid == widget.rideRequestId) {
+      // **NEW:** Immediately navigate home if ride is already completed
+      debugPrint("RideInProgressScreen: Initial status is terminal ($currentStatus). Navigating home.");
+      _navigateToHome();
     }
   }
 
@@ -185,6 +208,8 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     final status = rawStatus.toLowerCase();
     if (status == 'arrived' && !_driverHasArrived) {
       setState(() => _driverHasArrived = true);
+      // Persist the arrival timestamp so the timer survives minimize/resume
+      _writeArrivedAt();
       _startWaitingTimer();
       if (!widget.isRental) {
         // Ensure map is ready before routing
@@ -242,9 +267,24 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
           ],
         );
       }
-    } else if (status == 'completed') {
-      if (mounted) {
-        displaySnackBar(context, "rideCompleted".tr, isError: false);
+    } else if ([
+      'completed',
+      'finished',
+      'settled',
+      'ended',
+      'dropped_off',
+      'droppedoff',
+      'success',
+      'paid',
+      'archived'
+    ].contains(status)) {
+      if (mounted && !_hasShownCompletionNotification) {
+        _hasShownCompletionNotification = true;
+        displaySnackBar(
+          context,
+          "rideCompleted".tr,
+          isError: false,
+        );
       }
       _navigateToHome(delaySeconds: 3);
     } else if (status == 'cancelled' || status == 'cancelled_by_driver') {
@@ -690,9 +730,34 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     }
   }
 
+  /// Writes the driver-arrived timestamp to Firestore (only once — uses set-with-merge).
+  Future<void> _writeArrivedAt() async {
+    if (widget.rideRequestId.isEmpty) return;
+    try {
+      final collection = widget.isRental ? 'rental_requests' : 'ride_requests';
+      await FirebaseFirestore.instance
+          .collection(collection)
+          .doc(widget.rideRequestId)
+          .set({'arrivedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('_writeArrivedAt error: $e');
+    }
+  }
+
   void _startWaitingTimer() {
     _waitingTimer?.cancel();
-    _elapsedSeconds = 0;
+
+    // Calculate elapsed seconds from the persisted arrivedAt timestamp.
+    // This keeps the timer accurate after minimize / screen rebuilds.
+    final dynamic arrivedAtRaw = _rideController.rideData['arrivedAt'];
+    if (arrivedAtRaw is Timestamp) {
+      final arrivedAt = arrivedAtRaw.toDate();
+      _elapsedSeconds = DateTime.now().difference(arrivedAt).inSeconds.clamp(0, 9999);
+    } else {
+      // Fallback: no timestamp yet (first snapshot hasn't arrived), start from 0.
+      _elapsedSeconds = 0;
+    }
+
     _waitingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) {
         timer.cancel();
@@ -873,7 +938,6 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     });
   }
 
-  @override
   @override
   Widget build(BuildContext context) {
     return Obx(() {
@@ -1292,19 +1356,46 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                                  const SizedBox(height: 4),
-                                  // Vehicle Details: Brand Model (Number)
+                                  const SizedBox(height: 2),
+                                  // Car Name: Brand + Model
                                   Text(
-                                    "${_driver!.vehicleBrand.isNotEmpty ? '${_driver!.vehicleBrand} ' : ''}${_driver!.vehicleModel.isNotEmpty ? _driver!.vehicleModel : _driver!.carModel} (${_driver!.carNumber})",
+                                    "${_driver!.vehicleBrand.isNotEmpty ? '${_driver!.vehicleBrand} ' : ''}${_driver!.vehicleModel.isNotEmpty ? _driver!.vehicleModel : _driver!.carModel}",
                                     style: TextStyle(
-                                      fontSize: 14,
+                                      fontSize: 13,
                                       color: subTextColor,
                                       fontWeight: FontWeight.w500,
                                     ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(height: 6),
+                                  // Car Number — highlighted license plate box
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: isDark
+                                          ? const Color(0xFF1A1A00)
+                                          : const Color(0xFFFFF9C4),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: const Color(0xFFFFBF00),
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      _driver!.carNumber,
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w800,
+                                        color: Color(0xFFFFBF00),
+                                        letterSpacing: 2.0,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
                                   // Vehicle Class Badge
                                   Container(
                                     padding: const EdgeInsets.symmetric(
@@ -1320,8 +1411,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                                       ),
                                     ),
                                     child: Text(
-                                      _driver!
-                                          .vehicleType, // This now maps to vehicleClass (e.g. Sedan)
+                                      _driver!.vehicleType,
                                       style: const TextStyle(
                                         fontSize: 10,
                                         fontWeight: FontWeight.bold,
@@ -2242,7 +2332,11 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
           address,
         );
         if (mounted) {
-          displaySnackBar(context, "Stop added successfully!");
+          displaySnackBar(
+            context,
+            "Stop added successfully!",
+            isError: false,
+          );
         }
       } catch (e) {
         if (mounted) {

@@ -37,6 +37,8 @@ class _ReviewDialogState extends State<ReviewDialog> {
     });
 
     try {
+      debugPrint("Submitting review for ride: ${widget.rideRequestId}, driver: ${widget.driverId}");
+
       // 1. Add review to 'reviews' collection
       final reviewRef = FirebaseFirestore.instance.collection('reviews').doc();
       await reviewRef.set({
@@ -48,6 +50,7 @@ class _ReviewDialogState extends State<ReviewDialog> {
         'timestamp': FieldValue.serverTimestamp(),
         'isRental': widget.isRental,
       });
+      debugPrint("Review document created: ${reviewRef.id}");
 
       // 2. Mark ride request as reviewed
       final rideCollection = widget.isRental ? 'rental_requests' : 'ride_requests';
@@ -55,38 +58,48 @@ class _ReviewDialogState extends State<ReviewDialog> {
           .collection(rideCollection)
           .doc(widget.rideRequestId)
           .update({'reviewed': true});
+      debugPrint("Ride request marked as reviewed in $rideCollection");
 
-      // 3. Update driver rating and ratingCount
-      final driverRef = FirebaseFirestore.instance.collection('drivers').doc(widget.driverId);
-      
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
-        final driverSnapshot = await transaction.get(driverRef);
-        if (driverSnapshot.exists) {
-          final data = driverSnapshot.data()!;
-          final currentRating = (data['rating'] as num?)?.toDouble() ?? 5.0; // default 5.0
-          final currentCount = (data['ratingCount'] as num?)?.toInt() ?? 0;
+      // 3. Update driver rating and ratingCount (Skip if driverId is missing)
+      if (widget.driverId.isNotEmpty) {
+        try {
+          final driverRef = FirebaseFirestore.instance.collection('drivers').doc(widget.driverId);
+          
+          await FirebaseFirestore.instance.runTransaction((transaction) async {
+            final driverSnapshot = await transaction.get(driverRef);
+            if (driverSnapshot.exists) {
+              final data = driverSnapshot.data()!;
+              final currentRating = (data['rating'] as num?)?.toDouble() ?? 5.0; // default 5.0
+              final currentCount = (data['ratingCount'] as num?)?.toInt() ?? 0;
 
-          // Calculate new average
-          final newCount = currentCount + 1;
-          // If previous count was 0 and rating was 5.0 (default), calculating could be off,
-          // but mathematically: (0 * 5.0 + newRating) / 1 = newRating.
-          // Wait, if count is 0, total score is 0.
-          final totalScore = currentCount == 0 ? 0.0 : (currentRating * currentCount);
-          final newRating = (totalScore + _rating) / newCount;
+              // Calculate new average
+              final newCount = currentCount + 1;
+              final totalScore = currentCount == 0 ? 0.0 : (currentRating * currentCount);
+              final newRating = (totalScore + _rating) / newCount;
 
-          transaction.update(driverRef, {
-            'rating': double.parse(newRating.toStringAsFixed(1)),
-            'ratingCount': newCount,
+              transaction.update(driverRef, {
+                'rating': double.parse(newRating.toStringAsFixed(1)),
+                'ratingCount': newCount,
+              });
+            } else {
+              debugPrint("Driver document not found for rating update: ${widget.driverId}");
+            }
           });
+          debugPrint("Driver rating updated successfully");
+        } catch (driverError) {
+          // Log but don't fail the entire review if driver update fails
+          debugPrint("Non-critical error updating driver rating: $driverError");
         }
-      });
+      } else {
+        debugPrint("Skipping driver rating update because driverId is empty");
+      }
 
       if (mounted) {
         Get.back(); // close dialog
         displaySnackBar(context, "Thank you for your review!", isError: false);
       }
     } catch (e) {
-      debugPrint("Error submitting review: $e");
+      debugPrint("CRITICAL Error submitting review: $e");
       if (mounted) {
         displaySnackBar(context, "Failed to submit review. Please try again.");
       }

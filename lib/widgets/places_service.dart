@@ -71,6 +71,7 @@ class PlacesService {
     final Map<String, String> headers = {
       'Content-Type': 'application/json',
       'X-Goog-Api-Key': apiKey,
+      'X-Goog-FieldMask': 'suggestions', // Required for Google Places (New)
     };
     final Map<String, dynamic> body = {
       'input': input,
@@ -113,6 +114,7 @@ class PlacesService {
         debugPrint(
           'PlacesService Error fetching autocomplete: ${response.statusCode} ${response.reasonPhrase}',
         );
+        debugPrint('Response body: ${response.body}');
         return []; // Return empty list on API error
       }
     } catch (e) {

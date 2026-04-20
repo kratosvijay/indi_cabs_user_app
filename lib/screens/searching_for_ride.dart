@@ -169,6 +169,17 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
       _showScheduledMessage();
     }
     debugPrint("SearchingForRideScreen: initState completed");
+
+    // **NEW:** Show wallet usage notification if balance was used
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && widget.walletAmountUsed != null && widget.walletAmountUsed! > 0) {
+        displaySnackBar(
+          context,
+          "₹${widget.walletAmountUsed?.toStringAsFixed(0)} paid using wallet balance.",
+          isError: false,
+        );
+      }
+    });
   }
 
   Future<void> _waitForRideRequestId() async {
@@ -331,40 +342,49 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
           final status = data['status'] as String?;
           final driverId = data['driverId'] as String?;
 
-          if (status == 'accepted') {
-            if (!_isDriverFound) {
-              setState(() => _isDriverFound = true);
-              _tipTimer?.cancel();
-              _showTipCard = false;
-              _searchTimeoutTimer?.cancel();
+          // ── Navigate to RideInProgress ──
+          // Requires BOTH: an active status (not just any snapshot with driverId)
+          // AND a valid driverId. This prevents old completed rides from triggering nav.
+          const activeStatuses = ['accepted', 'arrived', 'started'];
+          final bool isActiveStatus = status != null && activeStatuses.contains(status);
 
-              if (mounted) {
-                displaySnackBar(context, "A cab has been booked!", isError: false);
-              }
-              _playBookingSuccessAudio();
+          if (isActiveStatus && driverId != null && driverId.isNotEmpty && !_isDriverFound) {
+            setState(() => _isDriverFound = true);
+            _tipTimer?.cancel();
+            _showTipCard = false;
+            _searchTimeoutTimer?.cancel();
+
+            if (mounted) {
+              displaySnackBar(context, "A cab has been booked!", isError: false);
             }
+            _playBookingSuccessAudio();
 
-            if (driverId != null && driverId.isNotEmpty) {
-              _rideStatusSubscription?.cancel();
-              _rideStatusSubscription = null;
+            _rideStatusSubscription?.cancel();
+            _rideStatusSubscription = null;
 
-              Get.off(
-                () => RideInProgressScreen(
-                  user: widget.user,
-                  pickupLocation: widget.pickupLocation,
-                  destinationPosition: widget.destinationPosition,
-                  isRental: widget.isRental,
-                  rideRequestId: _resolvedRideRequestId!,
-                  selectedVehicleType: widget.isRental
-                      ? widget.rentalVehicleType!
-                      : (widget.selectedVehicle?.type ?? "Multi-Stop"),
-                  rentalPackage: widget.rentalPackage,
-                  driverId: driverId,
-                  intermediateStops: widget.intermediateStops,
-                ),
-              );
-            }
-          } else if (status == 'cancelled' || status == 'no_drivers_found') {
+            Get.off(
+              () => RideInProgressScreen(
+                user: widget.user,
+                pickupLocation: widget.pickupLocation,
+                destinationPosition: widget.destinationPosition,
+                isRental: widget.isRental,
+                rideRequestId: _resolvedRideRequestId!,
+                selectedVehicleType: widget.isRental
+                    ? widget.rentalVehicleType!
+                    : (widget.selectedVehicle?.type ?? "Multi-Stop"),
+                rentalPackage: widget.rentalPackage,
+                driverId: driverId,
+                intermediateStops: widget.intermediateStops,
+              ),
+            );
+            return;
+          }
+
+
+          // ── Cancelled or no drivers ──
+          if (status == 'cancelled' ||
+              status == 'cancelled_by_driver' ||
+              status == 'no_drivers_found') {
             _rideStatusSubscription?.cancel();
             _rideStatusSubscription = null;
             _searchTimeoutTimer?.cancel();
@@ -372,19 +392,16 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
               context,
               status == 'cancelled'
                   ? "Ride cancelled."
-                  : "No drivers found. Please try again.",
+                  : status == 'cancelled_by_driver'
+                      ? "Driver cancelled the ride. Please book again."
+                      : "No drivers found. Please try again.",
             );
             if (mounted) {
               Get.offAll(() => HomePage(user: widget.user));
             }
           }
         } else {
-          _rideStatusSubscription?.cancel();
-          _rideStatusSubscription = null;
-          if (mounted && !_isCancelling) {
-            displaySnackBar(context, "Ride request not found.");
-            Get.offAll(() => HomePage(user: widget.user));
-          }
+          debugPrint("Snapshot does not exist yet. Waiting for remote sync...");
         }
       },
       onError: (error) {
@@ -394,6 +411,7 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
       },
     );
   }
+
 
   // **NEW:** Search Timeout logic
   void _startSearchTimeoutTimer() {

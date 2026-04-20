@@ -14,8 +14,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:showcaseview/showcaseview.dart';
 
-import 'package:flutter/foundation.dart'; // For defaultTargetPlatform
-import 'package:flutter/gestures.dart'; // For gestureRecognizers
+import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:project_taxi_with_ai/screens/about.dart';
@@ -40,8 +39,6 @@ import 'package:project_taxi_with_ai/screens/wallet.dart';
 import 'package:project_taxi_with_ai/widgets/bottom_bar.dart';
 import 'package:project_taxi_with_ai/widgets/data_models.dart';
 
-import 'package:project_taxi_with_ai/widgets/favorites.dart';
-
 // Import Other Screens
 import 'package:project_taxi_with_ai/screens/profile_page.dart';
 import 'package:project_taxi_with_ai/screens/edit_location.dart';
@@ -55,6 +52,8 @@ import 'package:project_taxi_with_ai/widgets/review_dialog.dart'; // **NEW IMPOR
 import 'package:project_taxi_with_ai/widgets/custom_showcase.dart';
 
 import '../widgets/snackbar.dart';
+import 'package:project_taxi_with_ai/screens/ride_rewards_screen.dart';
+import 'package:project_taxi_with_ai/theme/kinetic_styles.dart';
 
 // GeofenceZone model for toll calculation
 class GeofenceZone {
@@ -84,10 +83,7 @@ class GeofenceZone {
       if (point is Map<String, dynamic> &&
           point['name'] is String &&
           point['location'] is GeoPoint) {
-        pickups.add({
-          'name': point['name'],
-          'location': point['location'],
-        });
+        pickups.add({'name': point['name'], 'location': point['location']});
       }
     });
     return GeofenceZone(
@@ -154,8 +150,10 @@ class _HomePageState extends State<HomePage> {
   RideType _selectedServiceType = RideType.daily;
   bool _isMapReadyToRender = false; // **NEW:** Delay map rendering
   bool _isVehicleSheetOpen = false; // Track if vehicle sheet is visible
-  bool _isProcessingSelection = false; // **NEW:** Prevent multiple rapid selections
-  final DraggableScrollableController _sheetController = DraggableScrollableController();
+  bool _isProcessingSelection =
+      false; // **NEW:** Prevent multiple rapid selections
+  final DraggableScrollableController _sheetController =
+      DraggableScrollableController();
   final ValueNotifier<double> _sheetExtent = ValueNotifier<double>(0.4);
 
   // **NEW:** Reactive booking state
@@ -173,7 +171,7 @@ class _HomePageState extends State<HomePage> {
     // Initialize Services - REMOVED (Handled in Splash/RideController)
     /*
     try {
-      final apiKey = dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
+    final apiKey = EnvConfig.instance.googleMapsKey;
       debugPrint("HomePage: Initializing services");
       _locationService = LocationService(apiKey: apiKey);
       _placesService = PlacesService(apiKey: apiKey);
@@ -221,26 +219,12 @@ class _HomePageState extends State<HomePage> {
         final hasSeen = prefs.getBool('hasSeenAppOnboarding') ?? false;
         if (!hasSeen) {
           if (mounted) {
-            ShowcaseView.get().startShowCase([
-              _searchShowcaseKey
-            ]);
+            ShowCaseWidget.of(context).startShowCase([_searchShowcaseKey]);
           }
           await prefs.setBool('hasSeenAppOnboarding', true);
         }
       }
     });
-
-    ShowcaseView.register(
-      hideFloatingActionWidgetForShowcase: [],
-      onFinish: () async {
-        final prefs = await SharedPreferences.getInstance();
-        final hasSeenWallet = prefs.getBool('hasSeenWalletTour') ?? false;
-        if (!hasSeenWallet && mounted && _destinationPosition == null) {
-          _scaffoldKey.currentState?.openDrawer();
-          await prefs.setBool('hasSeenWalletTour', true);
-        }
-      },
-    );
 
 
     // **NEW:** Sync pickup address from controller
@@ -255,8 +239,19 @@ class _HomePageState extends State<HomePage> {
       debugPrint("Foreground message received: ${message.messageId}");
       _saveNotificationToFirestore(message);
 
-      // Show local notification/snackbar
+      // **NEW:** Deduplicate status notifications if already on specialized screens
       if (message.notification != null && mounted) {
+        final title = message.notification!.title?.toLowerCase() ?? '';
+        final body = message.notification!.body?.toLowerCase() ?? '';
+        final currentRoute = Get.currentRoute;
+
+        // Skip "Ride Completed" snackbars if on RideInProgressScreen (it handles its own)
+        if (currentRoute == '/RideInProgressScreen' && 
+            (title.contains('completed') || body.contains('completed') || body.contains('dropped off'))) {
+          debugPrint("FCM: Skipping redundant completion snackbar on RideInProgressScreen");
+          return;
+        }
+
         Get.snackbar(
           message.notification!.title ?? 'New Notification',
           message.notification!.body ?? '',
@@ -306,9 +301,9 @@ class _HomePageState extends State<HomePage> {
             .collection('users')
             .doc(_currentUser.uid)
             .set({
-          'fcmToken': token,
-          'lastTokenSync': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+              'fcmToken': token,
+              'lastTokenSync': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
         debugPrint("HomePage: FCM Token synced to Firestore");
       }
     } catch (e) {
@@ -337,15 +332,15 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _destinationController.dispose();
     _destinationFocusNode.dispose();
-    // _markersFocusNode.dispose();
-    ShowcaseView.get().unregister();
     super.dispose();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _rideController.updateMapStyle(Theme.of(context).brightness == Brightness.dark);
+    _rideController.updateMapStyle(
+      Theme.of(context).brightness == Brightness.dark,
+    );
   }
 
   // **NEW:** Helper to save notification to Firestore
@@ -379,6 +374,23 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _checkForPendingReviews() async {
     if (!mounted) return;
+
+    // **NEW:** Optimization - Don't show review popup if user is in an active ride or booking
+    final activeRides = await _rideController.checkActiveRides();
+    if (activeRides.isNotEmpty) {
+      debugPrint("HomePage: Skipping review check because user has active rides.");
+      return;
+    }
+
+    // **NEW:** Only show if the current top route is actually HomePage
+    // This prevents the dialog from popping up over SearchingForRideScreen or RideInProgress
+    if (Get.currentRoute != '/HomePage' && Get.currentRoute != '/') {
+      debugPrint("HomePage: Skipping review check because HomePage is not the current top route (Current: ${Get.currentRoute})");
+      // We don't return here because we might want to check again later, 
+      // but for now, let's just return to avoid intrusive popups.
+      return;
+    }
+
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
@@ -391,14 +403,18 @@ class _HomePageState extends State<HomePage> {
           .limit(5)
           .get();
 
-      final DateTime thirtyMinutesAgo = DateTime.now().subtract(const Duration(minutes: 30));
-      
+      final DateTime thirtyMinutesAgo = DateTime.now().subtract(
+        const Duration(minutes: 30),
+      );
+
       for (var doc in rideSnapshot.docs) {
         final data = doc.data();
         if (data['status'] == 'completed' && data['reviewed'] != true) {
           // **NEW:** Only show if completed recently (within last 30 mins)
-          final Timestamp? completedAt = data['completedAt'] ?? data['droppedOffAt'] ?? data['createdAt'];
-          if (completedAt != null && completedAt.toDate().isAfter(thirtyMinutesAgo)) {
+          final Timestamp? completedAt =
+              data['completedAt'] ?? data['droppedOffAt'] ?? data['createdAt'];
+          if (completedAt != null &&
+              completedAt.toDate().isAfter(thirtyMinutesAgo)) {
             if (mounted) {
               showDialog(
                 context: context,
@@ -428,8 +444,10 @@ class _HomePageState extends State<HomePage> {
         final data = doc.data();
         if (data['status'] == 'completed' && data['reviewed'] != true) {
           // **NEW:** Only show if completed recently (within last 30 mins)
-          final Timestamp? completedAt = data['completedAt'] ?? data['droppedOffAt'] ?? data['createdAt'];
-          if (completedAt != null && completedAt.toDate().isAfter(thirtyMinutesAgo)) {
+          final Timestamp? completedAt =
+              data['completedAt'] ?? data['droppedOffAt'] ?? data['createdAt'];
+          if (completedAt != null &&
+              completedAt.toDate().isAfter(thirtyMinutesAgo)) {
             if (mounted) {
               showDialog(
                 context: context,
@@ -784,7 +802,8 @@ class _HomePageState extends State<HomePage> {
 
       setState(() {
         _destinationPosition = placeDetails.location;
-        _destinationController.text = displayOverrideName ?? placeDetails.address;
+        _destinationController.text =
+            displayOverrideName ?? placeDetails.address;
         _rideController.predictions.clear();
         _rideController.isCalculatingFares.value = true;
       });
@@ -904,13 +923,14 @@ class _HomePageState extends State<HomePage> {
       // to "push" the real content into the top half of the screen.
       final LatLng pickup = _rideController.currentPosition.value!;
       final LatLng dest = _destinationPosition!;
-      
+
       final double latDiff = (pickup.latitude - dest.latitude).abs();
-      
+
       // Calculate a "south ghost" point to shift the view up
       // 1.5x shift for 65% sheet height is a good heuristic
       final LatLng southGhost = LatLng(
-        min(pickup.latitude, dest.latitude) - (latDiff > 0.01 ? latDiff : 0.01) * 1.5,
+        min(pickup.latitude, dest.latitude) -
+            (latDiff > 0.01 ? latDiff : 0.01) * 1.5,
         (pickup.longitude + dest.longitude) / 2,
       );
 
@@ -1151,7 +1171,7 @@ class _HomePageState extends State<HomePage> {
 
     if (rideType == _selectedServiceType) {
       if (rideType == RideType.daily && !_destinationFocusNode.hasFocus) {
-         _destinationFocusNode.requestFocus();
+        _destinationFocusNode.requestFocus();
       }
       return;
     }
@@ -1229,30 +1249,28 @@ class _HomePageState extends State<HomePage> {
               .map((p) => {'latitude': p.latitude, 'longitude': p.longitude})
               .toList(),
       });
-      
+
       final fares = result.data['fares'] as Map<dynamic, dynamic>?;
       final appliedSurcharge = result.data['appliedSurcharge'] as num? ?? 0;
       final appliedToll = result.data['appliedToll'] as num? ?? 0;
-      
+
       // We calculate our own toll sum from geofences for consistency
       final num customTollSum = _calculateTollsForRoute(routePolyline ?? []);
 
       if (fares != null) {
         return (
-          fares: fares.map(
-            (key, value) {
-              final String type = key.toString();
-              // Start from total, subtract backend's extras, and add our summed toll
-              num fare = (value as num) - (appliedSurcharge + appliedToll);
-              
-              // Only add toll if NOT Auto
-              if (type != 'Auto') {
-                fare += customTollSum;
-              }
-              
-              return MapEntry(type, fare);
-            },
-          ),
+          fares: fares.map((key, value) {
+            final String type = key.toString();
+            // Start from total, subtract backend's extras, and add our summed toll
+            num fare = (value as num) - (appliedSurcharge + appliedToll);
+
+            // Only add toll if NOT Auto
+            if (type != 'Auto') {
+              fare += customTollSum;
+            }
+
+            return MapEntry(type, fare);
+          }),
           appliedSurcharge: customTollSum, // Return our summed toll for display
         );
       }
@@ -1305,7 +1323,9 @@ class _HomePageState extends State<HomePage> {
 
   void _animateCameraToRoute() {
     Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted && _rideController.currentPosition.value != null && _destinationPosition != null) {
+      if (mounted &&
+          _rideController.currentPosition.value != null &&
+          _destinationPosition != null) {
         _rideController.mapService.animateCameraToBounds(
           _rideController.mapService.calculateBounds(
             _rideController.currentPosition.value!,
@@ -1316,8 +1336,6 @@ class _HomePageState extends State<HomePage> {
       }
     });
   }
-
-
 
   void _dismissVehicleSheet() {
     if (!mounted) return;
@@ -1330,7 +1348,6 @@ class _HomePageState extends State<HomePage> {
   }
 
   // Builds the inline vehicle selection sheet content
-
 
   Future<void> _showRentalBottomSheet({bool isActingDriver = false}) {
     final currentPos = _rideController.currentPosition.value;
@@ -1345,17 +1362,19 @@ class _HomePageState extends State<HomePage> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => Obx(() => RentalBottomSheet(
-        rentalPackages: _rideController.rentalPackages,
-        isLoadingRentals: _rideController.isLoadingRentals.value,
-        rentalVehicleOptions: VehicleOption.rentalOptions,
-        currentUser: _currentUser,
-        currentPosition: currentPos,
-        isActingDriver: isActingDriver,
-        pricingRules: _rideController.pricingRules.value,
-        walletBalance: _rideController.walletBalance.value,
-        pickupPlaceName: _rideController.pickupPlaceName.value,
-      )),
+      builder: (_) => Obx(
+        () => RentalBottomSheet(
+          rentalPackages: _rideController.rentalPackages,
+          isLoadingRentals: _rideController.isLoadingRentals.value,
+          rentalVehicleOptions: VehicleOption.rentalOptions,
+          currentUser: _currentUser,
+          currentPosition: currentPos,
+          isActingDriver: isActingDriver,
+          pricingRules: _rideController.pricingRules.value,
+          walletBalance: _rideController.walletBalance.value,
+          pickupPlaceName: _rideController.pickupPlaceName.value,
+        ),
+      ),
     );
   }
 
@@ -1365,7 +1384,6 @@ class _HomePageState extends State<HomePage> {
     required bool isPickup,
   }) async {
     _dismissVehicleSheet(); // Close the inline vehicle sheet if open
-
 
     final result = await Get.to<Map<String, dynamic>>(
       () => EditLocationScreen(initialLocation: initialLocation),
@@ -1581,7 +1599,9 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     // **NEW:** Automatically dismiss search bar if keyboard closes (e.g., system swipe)
     final bool isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
-    if (_wasKeyboardVisible && !isKeyboardVisible && _destinationFocusNode.hasFocus) {
+    if (_wasKeyboardVisible &&
+        !isKeyboardVisible &&
+        _destinationFocusNode.hasFocus) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _destinationFocusNode.hasFocus) {
           _destinationFocusNode.unfocus();
@@ -1609,9 +1629,25 @@ class _HomePageState extends State<HomePage> {
             statusBarIconBrightness: Brightness.dark,
           );
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: systemOverlayStyle,
-      child: PopScope(
+    return ShowCaseWidget(
+      onStart: (index, key) {
+        debugPrint('Showcase Status: On Start $index $key');
+      },
+      onComplete: (index, key) {
+        debugPrint('Showcase Status: On Complete $index $key');
+      },
+      onFinish: () async {
+        debugPrint('Showcase Status: Finished');
+        final prefs = await SharedPreferences.getInstance();
+        final hasSeenWallet = prefs.getBool('hasSeenWalletTour') ?? false;
+        if (!hasSeenWallet && mounted && _destinationPosition == null) {
+          _scaffoldKey.currentState?.openDrawer();
+          await prefs.setBool('hasSeenWalletTour', true);
+        }
+      },
+      builder: (context) => AnnotatedRegion<SystemUiOverlayStyle>(
+        value: systemOverlayStyle,
+        child: PopScope(
         canPop: false,
         onPopInvokedWithResult: (didPop, result) {
           if (didPop) return;
@@ -1628,610 +1664,717 @@ class _HomePageState extends State<HomePage> {
           }
         },
         child: Scaffold(
-              key: _scaffoldKey,
-            onDrawerChanged: (isOpen) async {
-              setState(() {}); // **NEW:** Ensure SearchBarWidget updates its enabled state
-              if (isOpen && mounted) {
-                final prefs = await SharedPreferences.getInstance();
-                final hasSeen = prefs.getBool('hasSeenWalletTour') ?? false;
-                if (!hasSeen) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    ShowcaseView.get().startShowCase([_walletShowcaseKey]);
-                  });
-                  await prefs.setBool('hasSeenWalletTour', true);
-                }
+          key: _scaffoldKey,
+          onDrawerChanged: (isOpen) async {
+            setState(() {});
+            if (isOpen && mounted) {
+              final prefs = await SharedPreferences.getInstance();
+              final hasSeen = prefs.getBool('hasSeenWalletTour') ?? false;
+              if (!hasSeen) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  ShowCaseWidget.of(context).startShowCase([_walletShowcaseKey]);
+                });
+                await prefs.setBool('hasSeenWalletTour', true);
               }
-            },
-            drawerEnableOpenDragGesture: false, // **NEW:** Only open drawer via button
-        resizeToAvoidBottomInset: false, // Prevents MapView stutter during keyboard animation
-        // AppBar removed — hamburger + notification are now floating over the map
-        drawer: Builder(builder: (context) => _buildDrawer()),
-        body: Obx(() {
-          return _rideController.isLoadingLocation.value
-              ? const Center(child: CircularProgressIndicator())
-              : GestureDetector(
-                  onTap: () {
-                    if (_destinationFocusNode.hasFocus) {
-                      FocusScope.of(context).unfocus();
-                      SystemChannels.textInput.invokeMethod('TextInput.hide');
-                    }
-                  },
-                  child: SizedBox.expand(
-                    child: Stack(
-                      children: [
-                        // Google Map
-                        if (_isMapReadyToRender)
-                          ValueListenableBuilder<double>(
-                            valueListenable: _sheetExtent,
-                            builder: (context, extent, child) {
-                              final double currentBottom = _isVehicleSheetOpen 
-                                  ? MediaQuery.of(context).size.height * extent 
-                                  : 0;
-                              // Map scales down slightly as sheet expands (Swiggy effect)
-                              final double scale = _isVehicleSheetOpen ? (1.0 + ((extent - 0.4).clamp(0, 1.0) * 0.3)) : 1.0;
-                              
-                              return AnimatedPositioned(
-                                duration: const Duration(milliseconds: 50),
-                                curve: Curves.easeOut,
-                                top: 0,
-                                left: 0,
-                                right: 0,
-                                bottom: currentBottom,
-                                child: Transform.scale(
-                                  scale: scale,
-                                  alignment: Alignment.topCenter,
-                                  child: ClipRRect(
-                                    borderRadius: _isVehicleSheetOpen
-                                        ? const BorderRadius.only(
-                                            bottomLeft: Radius.circular(20),
-                                            bottomRight: Radius.circular(20),
-                                          )
-                                        : BorderRadius.zero,
-                                    child: GoogleMap(
-                                      initialCameraPosition: MapService.initialPosition,
-                                      mapType: MapType.normal,
-                                      style: _rideController.mapStyleJson.value,
-                                      myLocationEnabled: false,
-                                      myLocationButtonEnabled: false,
-                                      zoomControlsEnabled: false,
-                                      markers: _rideController.markers.union(
-                                        _rideController.driverMarkers,
-                                      ),
-                                      polylines: _rideController.polylines,
-                                      onTap: (_) => FocusScope.of(context).unfocus(),
-                                      onMapCreated: (controller) {
-                                        debugPrint("!!! MAP CREATED CALLBACK FIRED !!!");
-                                        _rideController.onMapCreated(controller);
-                                      },
-                                      padding: EdgeInsets.only(
-                                        bottom: _isVehicleSheetOpen ? 10 : mapBottomPadding,
-                                        top: statusBarHeight + 80,
-                                      ),
-                                      gestureRecognizers:
-                                          <Factory<OneSequenceGestureRecognizer>>{
-                                            Factory<OneSequenceGestureRecognizer>(
-                                              () => EagerGestureRecognizer(),
-                                            ),
-                                            Factory<PanGestureRecognizer>(
-                                              () => PanGestureRecognizer(),
-                                            ),
-                                            Factory<ScaleGestureRecognizer>(
-                                              () => ScaleGestureRecognizer(),
-                                            ),
-                                            Factory<TapGestureRecognizer>(
-                                              () => TapGestureRecognizer(),
-                                            ),
-                                            Factory<VerticalDragGestureRecognizer>(
-                                              () => VerticalDragGestureRecognizer(),
-                                            ),
-                                          },
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          )
-                        else
-                          const Center(child: CircularProgressIndicator()),
-                        // Custom GPS Button
-                        Positioned(
-                          bottom: mapBottomPadding + 60,
-                          right: 16,
-                          child: IgnorePointer(
-                            ignoring: _destinationFocusNode.hasFocus,
-                            child: AnimatedOpacity(
-                              duration: const Duration(milliseconds: 200),
-                              opacity: _destinationFocusNode.hasFocus
-                                  ? 0.0
-                                  : 1.0,
-                              child: Visibility(
-                                visible: _destinationPosition == null,
-                                child: FloatingActionButton(
-                                  heroTag: 'gpsButton',
-                                  onPressed:
-                                      _rideController.goToCurrentUserLocation,
-                                  backgroundColor:
-                                      Theme.of(context).brightness ==
-                                          Brightness.dark
-                                      ? Colors.grey[800]
-                                      : Colors.white,
-                                  elevation: 4,
-                                  child: Icon(
-                                    Icons.gps_fixed,
-                                    color:
-                                        Theme.of(context).brightness ==
-                                            Brightness.dark
-                                        ? Colors.white
-                                        : Colors.blueAccent,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        // Bottom Bar
-                        Positioned(
-                          bottom: 0,
-                          left: 0,
-                          right: 0,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IgnorePointer(
-                                ignoring: _destinationFocusNode.hasFocus,
-                                child: AnimatedOpacity(
-                                  duration: const Duration(milliseconds: 200),
-                                  opacity: _destinationFocusNode.hasFocus
-                                      ? 0.0
-                                      : 1.0,
-                                  child: Visibility(
-                                    visible: _destinationPosition == null,
-                                    replacement: Container(),
-                                    child: BottomBarWidget(
-                                      key: _bottomBarKey,
-                                      selectedServiceType: _selectedServiceType,
-                                      onServiceTypeSelected:
-                                          _handleServiceTypeSelected,
-                                      onPredefinedDestinationTap:
-                                          _handlePredefinedTap,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const LiftableBannerAd(),
-                            ],
-                          ),
-                        ),
-                        // Floating top row: Menu + Search + Notification
-                        Positioned(
-                          top: statusBarHeight + 10,
-                          left: 12,
-                          right: 12,
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Unified Search Bar with integrated Menu
-                              Expanded(
-                                child: CustomShowcase(
-                                  showcaseKey: _searchShowcaseKey,
-                                  title: 'whereTo'.tr,
-                                  description:
-                                      'enterPickupDrop'.tr,
-                                  isLastStep: true,
-                                  targetShapeBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                                  child: Obx(
-                                    () => SearchBarWidget(
-                                      key: _searchBarKey,
-                                      isDrawerOpen: _scaffoldKey.currentState?.isDrawerOpen ?? false,
-                                      destinationController: _destinationController,
-                                      destinationFocusNode: _destinationFocusNode,
-                                      isSearchEnabled:
-                                          _selectedServiceType == RideType.daily ||
-                                          _selectedServiceType == RideType.acting,
-                                      isDestinationSelected: _destinationPosition != null,
-                                      predictions: _rideController.predictions.toList(),
-                                      searchHistory: _rideController.searchHistory.toList(),
-                                      favoritePlaces: _rideController.favoritePlaces.toList(),
-                                      pickupAddress: _rideController.pickupAddress.value,
-                                      onPickupTap: _handlePickupLocationTap,
-                                      onSearchChanged: _handleSearchChanged,
-                                      onPredictionTap: _handlePredictionTap,
-                                      onHistoryTap: _handleHistoryTap,
-                                      onFocusChange: (hasFocus) {
-                                        setState(() {});
-                                      },
-                                      onClearSearch: _handleClearSearch,
-                                      onFavoriteToggle: _handleHistoryFavoriteToggle,
-                                      onSelectOnMap: _handleSelectOnMap,
-                                      onMenuTap: () {
-                                        FocusScope.of(context).unfocus();
-                                        FocusManager.instance.primaryFocus?.unfocus();
-                                        SystemChannels.textInput.invokeMethod('TextInput.hide');
-                                        _scaffoldKey.currentState?.openDrawer();
-                                        setState(() {}); // **NEW:** Force update to disable search bar
-                                      },
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        // Favorites List
-                        Positioned(
-                          top: statusBarHeight + 75,
-                          left: 16,
-                          right: 16,
-                          child: AnimatedOpacity(
-                            duration: const Duration(milliseconds: 300),
-                            opacity:
-                                !_destinationFocusNode.hasFocus &&
-                                    _destinationPosition == null &&
-                                    (_selectedServiceType == RideType.daily ||
-                                        _selectedServiceType ==
-                                            RideType.acting ||
-                                        _selectedServiceType ==
-                                            RideType.bookForOther ||
-                                        _selectedServiceType ==
-                                            RideType.multiStop)
-                                ? 1.0
-                                : 0.0,
-                            child: IgnorePointer(
-                              ignoring:
-                                  _destinationFocusNode.hasFocus ||
-                                  _destinationPosition != null ||
-                                  (_selectedServiceType != RideType.daily &&
-                                      _selectedServiceType != RideType.acting &&
-                                      _selectedServiceType !=
-                                          RideType.bookForOther &&
-                                      _selectedServiceType !=
-                                          RideType.multiStop),
-                              child: FavoritesWidget(
-                                userId: _currentUser.uid,
-                                firestoreService:
-                                    _rideController.firestoreService,
-                                onFavoriteTap: _handleFavoriteTap,
-                                onFavoriteLongPress: _showFavoriteOptions,
-                              ),
-                            ),
-                          ),
-                        ),
-                        // Swiggy Style Draggable Sheet
-                        if (_isVehicleSheetOpen)
-                          NotificationListener<DraggableScrollableNotification>(
-                            onNotification: (notification) {
-                              _sheetExtent.value = notification.extent;
-                              // Auto-dismiss if dragged to the bottom
-                              if (notification.extent <= 0.15) {
-                                _dismissVehicleSheet();
-                              }
-                              return true;
-                            },
-                            child: DraggableScrollableSheet(
-                              controller: _sheetController,
-                              initialChildSize: 0.60,
-                              minChildSize: 0.1, 
-                              snapSizes: const [0.1, 0.60, 0.85],
-                              maxChildSize: 0.85,
-                              snap: true,
-                              builder: (context, scrollController) {
-                                return Container(
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(context).brightness == Brightness.dark
-                                        ? Colors.grey[900]
-                                        : Colors.white,
-                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withValues(alpha: 0.1),
-                                        blurRadius: 10,
-                                        offset: const Offset(0, -2),
-                                      ),
-                                    ],
-                                  ),
-                                  child: ValueListenableBuilder<BookingState>(
-                                    valueListenable: _bookingState,
-                                    builder: (context, state, _) {
-                                      return RideConfirmationBottomSheet(
-                                        currentUser: _currentUser,
-                                        currentPosition: _rideController.currentPosition.value!,
-                                        destinationPosition: _destinationPosition!,
-                                        pickupAddress: _pickupController.text,
-                                        destinationAddress: _destinationController.text,
-                                        isDropoffInServiceArea: _isDropoffInServiceArea,
-                                        vehicleOptions: VehicleOption.defaultOptions.map((option) {
-                                          final realEta = _rideController.getNearestDriverEta(option.type);
-                                          return VehicleOption(
-                                            type: option.type,
-                                            imagePath: option.imagePath,
-                                            price: option.price,
-                                            eta: realEta,
+            }
+          },
+          drawerEnableOpenDragGesture: false,
+          resizeToAvoidBottomInset: false,
+          drawer: Builder(builder: (context) => _buildDrawer()),
+          body: Obx(() {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            return _rideController.isLoadingLocation.value
+                ? const Center(child: CircularProgressIndicator())
+                : GestureDetector(
+                    onTap: () {
+                      if (_destinationFocusNode.hasFocus) {
+                        FocusScope.of(context).unfocus();
+                        SystemChannels.textInput.invokeMethod('TextInput.hide');
+                      }
+                    },
+                    child: SizedBox.expand(
+                      child: Stack(
+                        children: [
+                          if (_isMapReadyToRender)
+                            ValueListenableBuilder<double>(
+                              valueListenable: _sheetExtent,
+                              builder: (context, extent, child) {
+                                final double currentBottom = _isVehicleSheetOpen
+                                    ? MediaQuery.of(context).size.height *
+                                          extent
+                                    : 0;
+                                final double scale = _isVehicleSheetOpen
+                                    ? (1.0 +
+                                          ((extent - 0.4).clamp(0, 1.0) * 0.3))
+                                    : 1.0;
+
+                                return AnimatedPositioned(
+                                  duration: const Duration(milliseconds: 50),
+                                  curve: Curves.easeOut,
+                                  top: 0,
+                                  left: 0,
+                                  right: 0,
+                                  bottom: currentBottom,
+                                  child: Transform.scale(
+                                    scale: scale,
+                                    alignment: Alignment.topCenter,
+                                    child: ClipRRect(
+                                      borderRadius: _isVehicleSheetOpen
+                                          ? const BorderRadius.only(
+                                              bottomLeft: Radius.circular(20),
+                                              bottomRight: Radius.circular(20),
+                                            )
+                                          : BorderRadius.zero,
+                                      child: GoogleMap(
+                                        initialCameraPosition:
+                                            MapService.initialPosition,
+                                        mapType: MapType.normal,
+                                        style:
+                                            _rideController.mapStyleJson.value,
+                                        myLocationEnabled: false,
+                                        myLocationButtonEnabled: false,
+                                        zoomControlsEnabled: false,
+                                        markers: _rideController.markers.union(
+                                          _rideController.driverMarkers,
+                                        ),
+                                        polylines: _rideController.polylines,
+                                        onTap: (_) =>
+                                            FocusScope.of(context).unfocus(),
+                                        onMapCreated: (controller) {
+                                          _rideController.onMapCreated(
+                                            controller,
                                           );
-                                        }).toList(),
-                                        polylines: state.route != null
-                                            ? {
-                                                Polyline(
-                                                  polylineId: const PolylineId("route"),
-                                                  points: state.route!.polylinePoints,
-                                                  color: Colors.black,
-                                                  width: 5,
-                                                ),
-                                              }
-                                            : _rideController.polylines,
-                                        isLoadingFares: state.isLoading,
-                                        calculatedFares: state.fares,
-                                        eta: state.route != null ? "${(state.route!.durationSeconds / 60).round()} min" : null,
-                                        routeDetails: state.route,
-                                        pricingRules: _rideController.pricingRules.value,
-                                        walletBalance: _rideController.walletBalance.value,
-                                        rideType: _selectedServiceType,
-                                        showcaseKey: _rideLaterShowcaseKey,
-                                        showScheduleTour: true, // Only triggers if not already seen in BottomSheet initState logic
-                                        availability: const {
-                                          'Auto': true, 'Hatchback': true, 'Sedan': true, 'SUV': true, 'ActingDriver': false,
                                         },
-                                        pickupPlaceName: _rideController.pickupPlaceName.value,
-                                        destinationPlaceName: _rideController.destinationPlaceName.value,
-                                        scrollController: scrollController,
-                                        onEditPickup: () => _handleEditLocation(_rideController.currentPosition.value!, isPickup: true),
-                                        onEditDropoff: () => _handleEditLocation(_destinationPosition!, isPickup: false),
-                                        onSaveDropoffFavorite: _handleSaveDropoffFavorite,
-                                        onSavePickupFavorite: _handleSavePickupFavorite,
-                                      );
-                                    },
+                                        padding: EdgeInsets.only(
+                                          bottom: _isVehicleSheetOpen
+                                              ? 10
+                                              : mapBottomPadding,
+                                          top: statusBarHeight + 80,
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 );
                               },
+                            )
+                          else
+                            const Center(child: CircularProgressIndicator()),
+                          Positioned(
+                            bottom: mapBottomPadding + 60,
+                            right: 16,
+                            child: Visibility(
+                              visible: _destinationPosition == null,
+                              child: FloatingActionButton(
+                                heroTag: 'gpsButton',
+                                onPressed:
+                                    _rideController.goToCurrentUserLocation,
+                                backgroundColor: isDark
+                                    ? Colors.grey[800]
+                                    : Colors.white,
+                                child: Icon(
+                                  Icons.gps_fixed,
+                                  color: isDark
+                                      ? Colors.white
+                                      : Colors.blueAccent,
+                                ),
+                              ),
                             ),
                           ),
-                    ],
-                  ),
-                ),
-              );
-            }),
+                          Positioned(
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Visibility(
+                                  visible: _destinationPosition == null,
+                                  child: BottomBarWidget(
+                                    key: _bottomBarKey,
+                                    selectedServiceType: _selectedServiceType,
+                                    onServiceTypeSelected:
+                                        _handleServiceTypeSelected,
+                                    onPredefinedDestinationTap:
+                                        _handlePredefinedTap,
+                                  ),
+                                ),
+                                const LiftableBannerAd(),
+                              ],
+                            ),
+                          ),
+                          Positioned(
+                            top: statusBarHeight + 10,
+                            left: 12,
+                            right: 12,
+                            child: CustomShowcase(
+                              showcaseKey: _searchShowcaseKey,
+                              title: 'whereTo'.tr,
+                              description: 'enterPickupDrop'.tr,
+                              isLastStep: true,
+                              targetShapeBorder: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(30),
+                              ),
+                              child: SearchBarWidget(
+                                key: _searchBarKey,
+                                isDrawerOpen:
+                                    _scaffoldKey.currentState?.isDrawerOpen ??
+                                    false,
+                                destinationController: _destinationController,
+                                destinationFocusNode: _destinationFocusNode,
+                                isSearchEnabled:
+                                    _selectedServiceType == RideType.daily ||
+                                    _selectedServiceType == RideType.acting,
+                                isDestinationSelected:
+                                    _destinationPosition != null,
+                                predictions: _rideController.predictions
+                                    .toList(),
+                                searchHistory: _rideController.searchHistory
+                                    .toList(),
+                                favoritePlaces: _rideController.favoritePlaces
+                                    .toList(),
+                                pickupAddress:
+                                    _rideController.pickupAddress.value,
+                                onPickupTap: _handlePickupLocationTap,
+                                onSearchChanged: _handleSearchChanged,
+                                onPredictionTap: _handlePredictionTap,
+                                onHistoryTap: _handleHistoryTap,
+                                onFocusChange: (hasFocus) => setState(() {}),
+                                onClearSearch: _handleClearSearch,
+                                onFavoriteToggle: _handleHistoryFavoriteToggle,
+                                onSelectOnMap: _handleSelectOnMap,
+                                onMenuTap: () {
+                                  _scaffoldKey.currentState?.openDrawer();
+                                  setState(() {});
+                                },
+                              ),
+                            ),
+                          ),
+                          if (_isVehicleSheetOpen)
+                            NotificationListener<
+                              DraggableScrollableNotification
+                            >(
+                              onNotification: (notification) {
+                                _sheetExtent.value = notification.extent;
+                                if (notification.extent <= 0.15) {
+                                  _dismissVehicleSheet();
+                                }
+                                return true;
+                              },
+                              child: DraggableScrollableSheet(
+                                controller: _sheetController,
+                                initialChildSize: 0.60,
+                                minChildSize: 0.1,
+                                snapSizes: const [0.1, 0.60, 0.85],
+                                maxChildSize: 0.85,
+                                snap: true,
+                                builder: (context, scrollController) {
+                                  return Container(
+                                    decoration: BoxDecoration(
+                                      color: isDark
+                                          ? Colors.grey[900]
+                                          : Colors.white,
+                                      borderRadius: const BorderRadius.vertical(
+                                        top: Radius.circular(20),
+                                      ),
+                                    ),
+                                    child: ValueListenableBuilder<BookingState>(
+                                      valueListenable: _bookingState,
+                                      builder: (context, state, _) {
+                                        return RideConfirmationBottomSheet(
+                                          currentUser: _currentUser,
+                                          currentPosition: _rideController
+                                              .currentPosition
+                                              .value!,
+                                          destinationPosition:
+                                              _destinationPosition!,
+                                          pickupAddress: _pickupController.text,
+                                          destinationAddress:
+                                              _destinationController.text,
+                                          isDropoffInServiceArea:
+                                              _isDropoffInServiceArea,
+                                          vehicleOptions: VehicleOption
+                                              .defaultOptions
+                                              .map((option) {
+                                                final realEta = _rideController
+                                                    .getNearestDriverEta(
+                                                      option.type,
+                                                    );
+                                                return VehicleOption(
+                                                  type: option.type,
+                                                  imagePath: option.imagePath,
+                                                  price: option.price,
+                                                  eta: realEta,
+                                                );
+                                              })
+                                              .toList(),
+                                          polylines: state.route != null
+                                              ? {
+                                                  Polyline(
+                                                    polylineId:
+                                                        const PolylineId(
+                                                          "route",
+                                                        ),
+                                                    points: state
+                                                        .route!
+                                                        .polylinePoints,
+                                                    color: Colors.black,
+                                                    width: 5,
+                                                  ),
+                                                }
+                                              : _rideController.polylines,
+                                          isLoadingFares: state.isLoading,
+                                          calculatedFares: state.fares,
+                                          eta: state.route != null
+                                              ? "${(state.route!.durationSeconds / 60).round()} min"
+                                              : null,
+                                          routeDetails: state.route,
+                                          pricingRules: _rideController
+                                              .pricingRules
+                                              .value,
+                                          walletBalance: _rideController
+                                              .walletBalance
+                                              .value,
+                                          rideType: _selectedServiceType,
+                                          showcaseKey: _rideLaterShowcaseKey,
+                                          showScheduleTour: true,
+                                          availability: const {
+                                            'Auto': true,
+                                            'Hatchback': true,
+                                            'Sedan': true,
+                                            'SUV': true,
+                                            'ActingDriver': false,
+                                          },
+                                          pickupPlaceName: _rideController
+                                              .pickupPlaceName
+                                              .value,
+                                          destinationPlaceName: _rideController
+                                              .destinationPlaceName
+                                              .value,
+                                          scrollController: scrollController,
+                                          onEditPickup: () =>
+                                              _handleEditLocation(
+                                                _rideController
+                                                    .currentPosition
+                                                    .value!,
+                                                isPickup: true,
+                                              ),
+                                          onEditDropoff: () =>
+                                              _handleEditLocation(
+                                                _destinationPosition!,
+                                                isPickup: false,
+                                              ),
+                                          onSaveDropoffFavorite:
+                                              _handleSaveDropoffFavorite,
+                                          onSavePickupFavorite:
+                                              _handleSavePickupFavorite,
+                                        );
+                                      },
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                );
+              }),
+            ),
           ),
         ),
       );
   }
 
-  // --- Helper Methods ---
   Widget _buildDrawer() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Drawer(
-      backgroundColor: isDark ? const Color(0xFF1A1A1A) : Colors.white,
-      child: Column(
+      width: 300,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.only(
+          topRight: Radius.circular(24),
+          bottomRight: Radius.circular(24),
+        ),
+      ),
+      child: Stack(
         children: [
-          // --- Custom Header ---
-          Container(
-            padding: const EdgeInsets.fromLTRB(24, 60, 24, 24),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: isDark
-                    ? [Colors.black, const Color(0xFF2C2C2C)]
-                    : [Colors.blueAccent, Colors.blue.shade800],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+          // Ambient Glow
+          Positioned(
+            top: 0,
+            left: 0,
+            child: Container(
+              width: 300,
+              height: 150,
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: Alignment.topLeft,
+                  radius: 1.5,
+                  colors: [
+                    KineticStyles.primary.withValues(alpha: 0.1),
+                    Colors.transparent,
+                  ],
+                ),
               ),
             ),
-            child: Row(
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.2),
-                        blurRadius: 8,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: CircleAvatar(
-                    radius: 32,
-                    backgroundColor: Colors.white,
-                    child: Text(
-                      _currentUser.displayName?.isNotEmpty == true
-                          ? _currentUser.displayName![0].toUpperCase()
-                          : "U",
-                      style: TextStyle(
-                        fontSize: 28.0,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.black : Colors.blueAccent,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _currentUser.displayName ?? "User",
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _currentUser.email ?? "No Email",
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.8),
-                          fontSize: 14,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
           ),
+          Column(
+            children: [
+              Expanded(
+                child: StreamBuilder<DocumentSnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(_currentUser.uid)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    final userData =
+                        snapshot.data?.data() as Map<String, dynamic>? ?? {};
+                    final String membership =
+                        userData['membershipStatus'] ?? 'Classic Member';
+                    final double rating =
+                        (userData['userRating'] as num? ?? 5.0).toDouble();
 
-          // --- Drawer Items ---
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              children: [
-                _buildProDrawerItem(
-                  icon: Icons.history,
-                  text: 'rideHistory'.tr,
-                  onTap: () {
-                    Get.back();
-                    Get.to(() => RideHistoryScreen(user: _currentUser));
-                  },
-                ),
-                CustomShowcase(
-                  showcaseKey: _walletShowcaseKey,
-                  title: "My Wallet",
-                  description: "Manage your balance and recharge easily",
-                  isLastStep: true,
-                  child: _buildProDrawerItem(
-                    key: _walletKey,
-                    icon: Icons.account_balance_wallet_outlined,
-                    text: 'myWallet'.tr,
-                    onTap: () {
-                      Get.back();
-                      Get.to(() => WalletScreen(user: _currentUser));
-                    },
-                  ),
-                ),
-                _buildProDrawerItem(
-                  icon: Icons.person_outline,
-                  text: 'profile'.tr,
-                  onTap: () async {
-                    Get.back();
-                    final result = await Get.to(
-                      () => ProfilePage(user: _currentUser),
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // --- Profile Header ---
+                        _buildKineticProfileHeader(membership, rating),
+
+                        const SizedBox(height: 16),
+
+                        // --- Navigation Items ---
+                        Expanded(
+                          child: ListView(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            children: [
+                              _buildKineticDrawerItem(
+                                icon: Icons.person_outline_rounded,
+                                text: 'Profile',
+                                onTap: () async {
+                                  Get.back();
+                                  final result = await Get.to(
+                                    () => ProfilePage(user: _currentUser),
+                                  );
+                                  if (result == true && mounted) {
+                                    try {
+                                      await FirebaseAuth.instance.currentUser
+                                          ?.reload();
+                                      final updatedUser =
+                                          FirebaseAuth.instance.currentUser;
+                                      if (updatedUser != null && mounted) {
+                                        setState(
+                                          () => _currentUser = updatedUser,
+                                        );
+                                      }
+                                    } catch (e) {
+                                      debugPrint(
+                                        "Error reloading user after profile update: $e",
+                                      );
+                                    }
+                                  }
+                                },
+                              ),
+                              _buildKineticDrawerItem(
+                                icon: Icons.history_rounded,
+                                text: 'Ride History',
+                                onTap: () {
+                                  Get.back();
+                                  Get.to(
+                                    () => RideHistoryScreen(user: _currentUser),
+                                  );
+                                },
+                              ),
+                              _buildKineticDrawerItem(
+                                icon: Icons.stars_rounded,
+                                text: 'Ride Rewards',
+                                highlighted: true,
+                                onTap: () {
+                                  Get.back();
+                                  Get.to(() => const RideRewardsScreen());
+                                },
+                              ),
+                              CustomShowcase(
+                                showcaseKey: _walletShowcaseKey,
+                                title: "My Wallet",
+                                description:
+                                    "Manage your balance and recharge easily",
+                                isLastStep: true,
+                                child: _buildKineticDrawerItem(
+                                  icon: Icons.account_balance_wallet_outlined,
+                                  text: 'Wallet',
+                                  onTap: () {
+                                    Get.back();
+                                    Get.to(
+                                      () => WalletScreen(user: _currentUser),
+                                    );
+                                  },
+                                ),
+                              ),
+                              _buildKineticDrawerItem(
+                                icon: Icons.notifications_none_rounded,
+                                text: 'Notifications',
+                                showBadge: true,
+                                onTap: () {
+                                  Get.back();
+                                  Get.to(
+                                    () =>
+                                        NotificationsScreen(user: _currentUser),
+                                  );
+                                },
+                              ),
+                              _buildKineticDrawerItem(
+                                icon: Icons.support_agent_rounded,
+                                text: 'Support',
+                                onTap: () {
+                                  Get.back();
+                                  Get.to(() => const SupportHubScreen());
+                                },
+                              ),
+                              _buildKineticDrawerItem(
+                                icon: Icons.language_rounded,
+                                text: 'Language',
+                                onTap: () {
+                                  Get.back();
+                                  Get.to(() => const LanguageSelectionScreen());
+                                },
+                              ),
+                              _buildKineticDrawerItem(
+                                icon: Icons.info_outline_rounded,
+                                text: 'About Us',
+                                onTap: () {
+                                  Get.back();
+                                  Get.to(() => const AboutScreen());
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     );
-                    if (result == true && mounted) {
-                      try {
-                        await FirebaseAuth.instance.currentUser?.reload();
-                        final updatedUser = FirebaseAuth.instance.currentUser;
-                        if (updatedUser != null && mounted) {
-                          setState(() => _currentUser = updatedUser);
-                        }
-                      } catch (e) {
-                        debugPrint(
-                          "Error reloading user after profile update: $e",
-                        );
-                      }
-                    }
                   },
                 ),
-                _buildProDrawerItem(
-                  icon: Icons.notifications_none_rounded,
-                  text: 'notifications'.tr,
-                  onTap: () {
-                    Get.back();
-                    Get.to(() => NotificationsScreen(user: _currentUser));
-                  },
-                ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                  child: Divider(height: 1),
-                ),
-                _buildProDrawerItem(
-                  icon: Icons.support_agent,
-                  text: 'support'.tr,
-                  onTap: () {
-                    Get.back();
-                    Get.to(() => const SupportHubScreen());
-                  },
-                ),
-                _buildProDrawerItem(
-                  icon: Icons.language,
-                  text: 'language'.tr,
-                  onTap: () {
-                    Get.back();
-                    Get.to(() => const LanguageSelectionScreen(isFromProfile: true));
-                  },
-                ),
-                _buildProDrawerItem(
-                  icon: Icons.info_outline,
-                  text: 'about'.tr,
-                  onTap: () {
-                    Get.back();
-                    Get.to(() => const AboutScreen());
-                  },
-                ),
-              ],
-            ),
-          ),
+              ),
 
-          // --- Footer ---
-          Container(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              children: [
-                _buildProDrawerItem(
-                  icon: Icons.logout,
-                  text: 'logout'.tr,
-                  onTap: _signOut,
-                  isDestructive: true,
+              // --- Footer ---
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  children: [
+                    _buildLogoutButton(),
+                    // const SizedBox(height: 16),
+                    // Text(
+                    //   'v1.2.20 (Kinetic)',
+                    //   style: KineticStyles.label(10, color: KineticStyles.onSurfaceVariant.withValues(alpha: 0.4)),
+                    // ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  "${'version'.tr} 1.2.1",
-                  style: TextStyle(
-                    color: Theme.of(context).disabledColor,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildProDrawerItem({
+  Widget _buildKineticProfileHeader(String membership, double rating) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color accent = isDark ? const Color(0xFFFFBF00) : const Color(0xFF1E88E5);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 60, 24, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: KineticStyles.outlineVariant),
+                  boxShadow: [
+                    BoxShadow(
+                      color: accent.withValues(alpha: 0.15),
+                      blurRadius: 20,
+                    ),
+                  ],
+                ),
+                child: CircleAvatar(
+                  radius: 35,
+                  backgroundImage: _currentUser.photoURL != null
+                      ? NetworkImage(_currentUser.photoURL!)
+                      : null,
+                  backgroundColor: KineticStyles.surfaceVariant,
+                  child: _currentUser.photoURL == null
+                      ? Text(
+                          _currentUser.displayName?.isNotEmpty == true
+                              ? _currentUser.displayName![0].toUpperCase()
+                              : "U",
+                          style: KineticStyles.headline(
+                            24,
+                            color: accent,
+                          ),
+                        )
+                      : null,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _currentUser.displayName ?? "User",
+                      style: KineticStyles.headline(
+                        20,
+                        weight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: KineticStyles.surfaceVariant,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: KineticStyles.outlineVariant),
+                      ),
+                      child: Text(
+                        membership.toUpperCase(),
+                        style: KineticStyles.label(
+                          8,
+                          color: accent,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Icon(Icons.star, color: accent, size: 16),
+              const SizedBox(width: 4),
+              Text(
+                '$rating Rating',
+                style: KineticStyles.body(
+                  14,
+                  color: KineticStyles.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildKineticDrawerItem({
     required IconData icon,
     required String text,
     required VoidCallback onTap,
-    Key? key,
-    bool isDestructive = false,
+    bool showBadge = false,
+    bool highlighted = false,
   }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final color = isDestructive
-        ? Colors.redAccent
-        : (isDark ? Colors.white : Colors.black87);
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color accentColor = highlighted
+        ? (isDark ? const Color(0xFFFFBF00) : const Color(0xFF1E88E5))
+        : KineticStyles.onSurfaceVariant;
 
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: highlighted
+                  ? accentColor.withValues(alpha: 0.08)
+                  : Colors.transparent,
+            ),
+            child: Row(
+              children: [
+                Icon(icon, color: accentColor, size: 22),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    text,
+                    style: KineticStyles.headline(
+                      16,
+                      color: accentColor,
+                    ),
+                  ),
+                ),
+                if (showBadge)
+                  StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(_currentUser.uid)
+                        .collection('notifications')
+                        .where('isRead', isEqualTo: false)
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      final int count = snapshot.data?.docs.length ?? 0;
+                      if (count == 0) return const SizedBox.shrink();
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: KineticStyles.primary,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '$count',
+                          style: KineticStyles.label(
+                            10,
+                            color: KineticStyles.background,
+                            weight: FontWeight.bold,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLogoutButton() {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        key: key,
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        onTap: () {
+          _signOut();
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: KineticStyles.error.withValues(alpha: 0.2),
+            ),
+          ),
           child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, color: color, size: 24),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Text(
-                  text,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
+              const Icon(Icons.logout, color: KineticStyles.error, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Logout',
+                style: KineticStyles.headline(16, color: KineticStyles.error),
               ),
-              if (!isDestructive)
-                Icon(
-                  Icons.arrow_forward_ios,
-                  color: isDark ? Colors.white24 : Colors.black12,
-                  size: 16,
-                ),
             ],
           ),
         ),
@@ -2481,8 +2624,9 @@ class _HomePageState extends State<HomePage> {
     num totalToll = 0;
 
     // Filter zones that have a surcharge > 0
-    final tollZones =
-        _geofenceZones.where((z) => z.surchargeAmount > 0).toList();
+    final tollZones = _geofenceZones
+        .where((z) => z.surchargeAmount > 0)
+        .toList();
 
     for (var zone in tollZones) {
       // Sum all distinct zones that are intersected by the polyline
@@ -2552,7 +2696,10 @@ class _HomePageState extends State<HomePage> {
                 final lat = pickupLoc['latitude'] ?? pickupLoc['lat'];
                 final lng = pickupLoc['longitude'] ?? pickupLoc['lng'];
                 if (lat != null && lng != null) {
-                  return LatLng((lat as num).toDouble(), (lng as num).toDouble());
+                  return LatLng(
+                    (lat as num).toDouble(),
+                    (lng as num).toDouble(),
+                  );
                 }
               }
             }
@@ -2567,7 +2714,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// Get ETA to next customer (in seconds)
-  Future<int?> getETAToNextPickup(LatLng driverLocation, LatLng nextPickup) async {
+  Future<int?> getETAToNextPickup(
+    LatLng driverLocation,
+    LatLng nextPickup,
+  ) async {
     try {
       final distanceInMeters = _calculateDistance(
         driverLocation.latitude,
@@ -2584,11 +2734,17 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// Calculate distance between two coordinates (Haversine formula)
-  double _calculateDistance(double lat1, double lng1, double lat2, double lng2) {
+  double _calculateDistance(
+    double lat1,
+    double lng1,
+    double lat2,
+    double lng2,
+  ) {
     const double earthRadiusMeters = 6371000;
     final double dLat = _degreesToRadians(lat2 - lat1);
     final double dLng = _degreesToRadians(lng2 - lng1);
-    final double a = sin(dLat / 2) * sin(dLat / 2) +
+    final double a =
+        sin(dLat / 2) * sin(dLat / 2) +
         cos(_degreesToRadians(lat1)) *
             cos(_degreesToRadians(lat2)) *
             sin(dLng / 2) *

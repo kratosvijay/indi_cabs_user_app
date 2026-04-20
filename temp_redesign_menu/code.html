@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Next-Gen Navigation Drawer</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Inter:wght@300;400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "outline": "#76747b",
+                        "on-secondary-container": "#f8f1ff",
+                        "on-primary": "#005762",
+                        "error": "#ff716c",
+                        "secondary": "#ac89ff",
+                        "on-background": "#f9f5fd",
+                        "inverse-on-surface": "#55545b",
+                        "surface-tint": "#81ecff",
+                        "on-surface-variant": "#acaab1",
+                        "outline-variant": "#48474d",
+                        "tertiary-fixed": "#80b2ff",
+                        "on-primary-fixed": "#003840",
+                        "tertiary-container": "#599cf9",
+                        "primary-dim": "#00d4ec",
+                        "on-secondary": "#290067",
+                        "on-secondary-fixed": "#41009a",
+                        "surface-variant": "#25252d",
+                        "on-primary-fixed-variant": "#005762",
+                        "primary-fixed-dim": "#00d4ec",
+                        "secondary-dim": "#874cff",
+                        "inverse-surface": "#fcf8ff",
+                        "tertiary-fixed-dim": "#65a4ff",
+                        "on-error": "#490006",
+                        "surface-container-lowest": "#000000",
+                        "surface-dim": "#0e0e13",
+                        "on-error-container": "#ffa8a3",
+                        "secondary-fixed": "#dac9ff",
+                        "on-tertiary-fixed-variant": "#003971",
+                        "on-secondary-fixed-variant": "#6300e2",
+                        "background": "#0e0e13",
+                        "secondary-fixed-dim": "#ceb9ff",
+                        "primary-fixed": "#00e3fd",
+                        "on-tertiary": "#002a55",
+                        "on-tertiary-fixed": "#001835",
+                        "tertiary-dim": "#5c9ffc",
+                        "inverse-primary": "#006976",
+                        "surface": "#0e0e13",
+                        "error-container": "#9f0519",
+                        "surface-bright": "#2c2b33",
+                        "on-surface": "#f9f5fd",
+                        "primary-container": "#00e3fd",
+                        "error-dim": "#d7383b",
+                        "surface-container-low": "#131319",
+                        "on-tertiary-container": "#001d3f",
+                        "on-primary-container": "#004d57",
+                        "surface-container-highest": "#25252d",
+                        "surface-container-high": "#1f1f26",
+                        "primary": "#81ecff",
+                        "surface-container": "#19191f",
+                        "secondary-container": "#7000ff",
+                        "tertiary": "#70aaff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {},
+                    "fontFamily": {
+                        "headline": ["Space Grotesk", "sans-serif"],
+                        "body": ["Inter", "sans-serif"],
+                        "label": ["Inter", "sans-serif"]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface font-body h-screen w-screen overflow-hidden flex relative">
+<!-- Mock Background for Context -->
+<div class="absolute inset-0 z-0">
+<img alt="Map background" class="w-full h-full object-cover opacity-30" data-alt="Abstract dark city map with neon blue and purple glowing routes, futuristic high-tech aesthetic" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAqYKg4fVwV9fsXHVkguOzAWJqO1xhdue1yIsQXcAaSlTgcvB7P_f-hoaVpJKpqJSwvlT4eIpRlPOCR6CnerlSubCJbO5Tpwn2-F7A1Fg70ffo6upgYuVpa0_PB7NJIReYSt5Tv5oIjA58UqOeuuT63x31ai2j1PlT7PyEwd1LOBC8DsppLyPx61AKxLCi_gfwUhKsd1rl8WMMkSh7P4afNSGTWgaBDW79Q6Tgme74QBcIUC4Ocaq-Nc1cAr1PQM2OfIn0KTHYrAEw"/>
+<div class="absolute inset-0 bg-gradient-to-r from-background via-background/80 to-transparent"></div>
+</div>
+<!-- NavigationDrawer -->
+<aside class="z-50 h-full w-80 rounded-r-3xl bg-[#0e0e13] shadow-[40px_0_80px_rgba(0,0,0,0.8)] border-r border-outline-variant/15 flex flex-col p-8 gap-6 relative overflow-hidden">
+<!-- Ambient Glow -->
+<div class="absolute top-0 left-0 w-full h-32 bg-primary/5 blur-[40px] pointer-events-none"></div>
+<!-- Profile Header -->
+<div class="flex flex-col gap-4 mt-4 relative z-10">
+<div class="flex items-center gap-4">
+<div class="w-16 h-16 rounded-full overflow-hidden border border-outline-variant/30 p-1 bg-surface-container-low shadow-[0_0_20px_rgba(129,236,255,0.1)]">
+<img alt="Alex Sterling" class="w-full h-full object-cover rounded-full" data-alt="Professional portrait of a young woman with subtle neon lighting illuminating her face in a dark futuristic setting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCDVMPN24er8965_KiDxUHw0_cHNhOx5-Mm9aAwhyc49dz1D8bWZVGlrnLxpRWImlZ22wurdFLUG8YOH4fMmo4Wyh0Z_4OZ7TnjceIgsYty4G5BaLywkYVxcrCUUC8gRv7xysCchFzLORsucRSh9oCkMeQ0rWLTiiuhYRF5BQTcouc_ZTOcqVOh3FgGPhCXwPTvhoNUs0JMw617QCV6DS2OhHJ9G7AbSMg_hAonIFxS9xQvTYmtKlm4gfNNdJuMvdxF6mdTq-ppk_8"/>
+</div>
+<div class="flex flex-col">
+<h2 class="font-headline font-medium text-xl text-on-surface tracking-tight">Alex Sterling</h2>
+<div class="flex items-center gap-2 mt-1">
+<span class="px-2 py-0.5 rounded-full bg-surface-container-highest text-primary font-label text-xs uppercase tracking-widest border border-outline-variant/20">Platinum Member</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-2 text-on-surface-variant font-label text-sm mt-2">
+<span class="material-symbols-outlined text-primary text-base" style="font-variation-settings: 'FILL' 1;">star</span>
+<span>4.95 Rating</span>
+</div>
+</div>
+<!-- Spacer -->
+<div class="h-4"></div>
+<!-- Navigation Links -->
+<nav class="flex flex-col gap-2 flex-grow overflow-y-auto pr-2 relative z-10 custom-scrollbar">
+<a class="flex items-center gap-4 px-4 py-3 rounded-xl font-headline font-medium text-cyan-400 bg-cyan-400/10 ease-in-out duration-300" href="#">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">account_circle</span>
+<span class="text-base tracking-wide">Profile</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 rounded-xl font-headline font-medium text-zinc-400 hover:bg-zinc-800/50 hover:text-white ease-in-out duration-300" href="#">
+<span class="material-symbols-outlined text-[20px]">receipt_long</span>
+<span class="text-base tracking-wide">Ride History</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 rounded-xl font-headline font-medium text-zinc-400 hover:bg-zinc-800/50 hover:text-white ease-in-out duration-300" href="#">
+<span class="material-symbols-outlined text-[20px]">account_balance_wallet</span>
+<span class="text-base tracking-wide">Wallet</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 rounded-xl font-headline font-medium text-zinc-400 hover:bg-zinc-800/50 hover:text-white ease-in-out duration-300" href="#">
+<span class="material-symbols-outlined text-[20px]">notifications</span>
+<span class="text-base tracking-wide flex-grow">Notifications</span>
+<span class="bg-primary text-surface-container-lowest font-label text-[10px] font-bold px-1.5 py-0.5 rounded-full">3</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 rounded-xl font-headline font-medium text-zinc-400 hover:bg-zinc-800/50 hover:text-white ease-in-out duration-300" href="#">
+<span class="material-symbols-outlined text-[20px]">contact_support</span>
+<span class="text-base tracking-wide">Support</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 rounded-xl font-headline font-medium text-zinc-400 hover:bg-zinc-800/50 hover:text-white ease-in-out duration-300" href="#">
+<span class="material-symbols-outlined text-[20px]">settings</span>
+<span class="text-base tracking-wide">Settings</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 rounded-xl font-headline font-medium text-zinc-400 hover:bg-zinc-800/50 hover:text-white ease-in-out duration-300" href="#">
+<span class="material-symbols-outlined text-[20px]">language</span>
+<span class="text-base tracking-wide">Language</span>
+</a>
+</nav>
+<!-- Footer Actions -->
+<div class="mt-auto pt-6 flex flex-col gap-4 relative z-10">
+<button class="flex items-center gap-3 px-4 py-3 rounded-xl font-headline font-medium text-error-dim hover:bg-error-container/20 hover:text-error transition-colors ease-in-out duration-300 w-full">
+<span class="material-symbols-outlined text-[20px]">logout</span>
+<span class="text-base tracking-wide">Logout</span>
+</button>
+<div class="text-center w-full">
+<span class="font-label text-xs text-on-surface-variant/40 tracking-widest uppercase">v2.4.1 (Kinetic)</span>
+</div>
+</div>
+</aside>
+<style>
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: theme('colors.surface-container-high');
+            border-radius: 20px;
+        }
+    </style>
+</body></html>

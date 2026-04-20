@@ -20,6 +20,7 @@ import 'package:upgrader/upgrader.dart';
 import 'package:flutter/services.dart';
 import 'package:sms_autofill/sms_autofill.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:async'; // For runZonedGuarded
 
 // **NEW:** Background message handler (must be a top-level function)
@@ -59,6 +60,14 @@ void main() {
     () async {
       WidgetsFlutterBinding.ensureInitialized();
       
+      // Load environment variables from .env file
+      try {
+        await dotenv.load(fileName: "dotenv.env");
+        debugPrint("DEBUG: dotenv loaded. Keys found: ${dotenv.env.keys.join(', ')}");
+      } catch (e) {
+        debugPrint("DEBUG: Failed to load dotenv.env: $e");
+      }
+      
       // Enable edge-to-edge support for Android 15+
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       
@@ -67,12 +76,21 @@ void main() {
         final packageInfo = await PackageInfo.fromPlatform();
         final bool isProd = packageInfo.packageName == 'com.indicabs.userapp';
 
+        // Helper to resolve API key from dotenv or fallback to SecretsConfig
+        String getMapsKey(String fallback) {
+          final envKey = dotenv.env['GOOGLE_MAPS_API_KEY'];
+          if (envKey != null && envKey.isNotEmpty && !envKey.contains('REPLACE')) {
+            return envKey;
+          }
+          return fallback;
+        }
+
         if (isProd) {
           EnvConfig.setConfig(
             EnvConfig(
               environment: Environment.prod,
               appName: 'Indi Cabs',
-              googleMapsKey: SecretsConfig.googleMapsKeyProd,
+              googleMapsKey: getMapsKey(SecretsConfig.googleMapsKeyProd),
               serverClientId: SecretsConfig.serverClientIdProd,
               ondcSubscriberId: SecretsConfig.ondcSubscriberId,
               ondcSigningPublicKey: SecretsConfig.ondcSigningPublicKey,
@@ -88,7 +106,7 @@ void main() {
             EnvConfig(
               environment: Environment.dev,
               appName: 'Indi Cabs Dev',
-              googleMapsKey: SecretsConfig.googleMapsKeyDev,
+              googleMapsKey: getMapsKey(SecretsConfig.googleMapsKeyDev),
               serverClientId: SecretsConfig.serverClientIdDev,
               ondcSubscriberId: SecretsConfig.ondcSubscriberId,
               ondcSigningPublicKey: SecretsConfig.ondcSigningPublicKey,

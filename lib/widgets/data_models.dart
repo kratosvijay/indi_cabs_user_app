@@ -528,7 +528,20 @@ class Driver {
 
   factory Driver.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-    GeoPoint location = data['currentLocation'] ?? const GeoPoint(0, 0);
+    final dynamic locData = data['currentLocation'] ?? 
+                      data['location'] ?? 
+                      data['position'];
+    
+    double lat = 0.0;
+    double lng = 0.0;
+
+    if (locData is GeoPoint) {
+      lat = locData.latitude;
+      lng = locData.longitude;
+    } else if (locData is Map) {
+      lat = (locData['latitude'] as num?)?.toDouble() ?? 0.0;
+      lng = (locData['longitude'] as num?)?.toDouble() ?? 0.0;
+    }
 
     // Map 'vehicleClass' (from new format) to 'vehicleType' (app internal)
     // Fallback to 'vehicleType' if 'vehicleClass' is missing.
@@ -548,7 +561,7 @@ class Driver {
       carNumber: data['vehicleNumber'] ?? data['carNumber'] ?? 'N/A',
       photoUrl: data['photoUrl'] ?? '',
       phoneNumber: data['phoneNumber'] ?? '',
-      currentLocation: LatLng(location.latitude, location.longitude),
+      currentLocation: LatLng(lat, lng),
       vehicleType: vType,
       isActingDriver: data['isActingDriver'] ?? false,
       bearing: (data['bearing'] as num?)?.toDouble() ?? 0.0,
@@ -888,6 +901,44 @@ class BookingState {
       fares: fares ?? this.fares,
       route: route ?? this.route,
       scheduledTime: scheduledTime ?? this.scheduledTime,
+    );
+  }
+}
+
+// **NEW:** Model for Ride Rewards
+class RideReward {
+  final int currentCycleRides;
+  final int completedCycles;
+  final double totalRewardsEarned;
+  final String lastResetMonth;
+  final DateTime updatedAt;
+
+  RideReward({
+    required this.currentCycleRides,
+    required this.completedCycles,
+    required this.totalRewardsEarned,
+    required this.lastResetMonth,
+    required this.updatedAt,
+  });
+
+  factory RideReward.fromFirestore(DocumentSnapshot doc) {
+    if (!doc.exists) {
+      return RideReward(
+        currentCycleRides: 0,
+        completedCycles: 0,
+        totalRewardsEarned: 0.0,
+        lastResetMonth: '',
+        updatedAt: DateTime.now(),
+      );
+    }
+    Map<String, dynamic> data = doc.data() as Map<String, dynamic>? ?? {};
+    return RideReward(
+      currentCycleRides: (data['currentCycleRides'] as num?)?.toInt() ?? 0,
+      completedCycles: (data['completedCycles'] as num?)?.toInt() ?? 0,
+      totalRewardsEarned:
+          (data['totalRewardsEarned'] as num?)?.toDouble() ?? 0.0,
+      lastResetMonth: data['lastResetMonth'] ?? '',
+      updatedAt: (data['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
 }

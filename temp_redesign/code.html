@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Next-Gen Ride-Sharing Home</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Inter:wght@300;400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "outline": "#76747b",
+                        "on-secondary-container": "#f8f1ff",
+                        "on-primary": "#005762",
+                        "error": "#ff716c",
+                        "secondary": "#ac89ff",
+                        "on-background": "#f9f5fd",
+                        "inverse-on-surface": "#55545b",
+                        "surface-tint": "#81ecff",
+                        "on-surface-variant": "#acaab1",
+                        "outline-variant": "#48474d",
+                        "tertiary-fixed": "#80b2ff",
+                        "on-primary-fixed": "#003840",
+                        "tertiary-container": "#599cf9",
+                        "primary-dim": "#00d4ec",
+                        "on-secondary": "#290067",
+                        "on-secondary-fixed": "#41009a",
+                        "surface-variant": "#25252d",
+                        "on-primary-fixed-variant": "#005762",
+                        "primary-fixed-dim": "#00d4ec",
+                        "secondary-dim": "#874cff",
+                        "inverse-surface": "#fcf8ff",
+                        "tertiary-fixed-dim": "#65a4ff",
+                        "on-error": "#490006",
+                        "surface-container-lowest": "#000000",
+                        "surface-dim": "#0e0e13",
+                        "on-error-container": "#ffa8a3",
+                        "secondary-fixed": "#dac9ff",
+                        "on-tertiary-fixed-variant": "#003971",
+                        "on-secondary-fixed-variant": "#6300e2",
+                        "background": "#0e0e13",
+                        "secondary-fixed-dim": "#ceb9ff",
+                        "primary-fixed": "#00e3fd",
+                        "on-tertiary": "#002a55",
+                        "on-tertiary-fixed": "#001835",
+                        "tertiary-dim": "#5c9ffc",
+                        "inverse-primary": "#006976",
+                        "surface": "#0e0e13",
+                        "error-container": "#9f0519",
+                        "surface-bright": "#2c2b33",
+                        "on-surface": "#f9f5fd",
+                        "primary-container": "#00e3fd",
+                        "error-dim": "#d7383b",
+                        "surface-container-low": "#131319",
+                        "on-tertiary-container": "#001d3f",
+                        "on-primary-container": "#004d57",
+                        "surface-container-highest": "#25252d",
+                        "surface-container-high": "#1f1f26",
+                        "primary": "#81ecff",
+                        "surface-container": "#19191f",
+                        "secondary-container": "#7000ff",
+                        "tertiary": "#70aaff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {},
+                    "fontFamily": {
+                        "headline": [
+                            "Space Grotesk"
+                        ],
+                        "body": [
+                            "Inter"
+                        ],
+                        "label": [
+                            "Inter"
+                        ]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.fill {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        /* Custom map overlay style to integrate with background map */
+        .map-gradient-overlay {
+            background: linear-gradient(to bottom, rgba(14, 14, 19, 0) 0%, rgba(14, 14, 19, 0.8) 50%, rgba(14, 14, 19, 1) 100%);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface font-body overflow-x-hidden relative min-h-screen">
+<!-- Immersive Map Background -->
+<div class="absolute inset-0 z-0 h-[530px] w-full bg-surface-container-lowest" data-alt="Futuristic dark mode city map visualization with glowing neon blue and purple routes, highly detailed, cyberpunk aesthetic, overhead view" data-location="Chennai" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCPtPbJ9tUjgtM4yWXUnGfHKsJ43lP6G9NcQvbvJ8Tj3thewGuBbh1g6vinwO-CcFhOr88KuDtrTreMfZ0qMHuucCwMSuQeFZG45p5RwyZdkU_j0hqVoOpQBv-PVaduWs8JUG1YtZ6wM2sRTGo1vIldyEhz3gBoKPvb4Vaq4kjL9MBu99n6gRnc-n874YOgdNVN4KQVkxuQfgI0gLh8vSJNYx8LHiFxMtj-Ej3FYCcC93fm-xEIEGSQ4QHqSG0XS9rsScc4FrjtLjY'); background-size: cover; background-position: center;">
+<div class="absolute inset-0 map-gradient-overlay z-10"></div>
+</div>
+<!-- TopAppBar Container (from JSON) -->
+<div class="fixed top-0 left-0 w-full z-50">
+<header class="flex justify-between items-center w-full px-6 py-4 bg-[#0e0e13]/60 backdrop-blur-2xl shadow-[0_0_20px_rgba(0,229,255,0.05)] docked full-width top-0">
+<button class="text-zinc-500 hover:text-cyan-300 transition-colors scale-95 duration-200 active:opacity-80 p-2 rounded-full hover:bg-surface-variant/50">
+<span class="material-symbols-outlined text-2xl" data-icon="menu">menu</span>
+</button>
+<h1 class="text-2xl font-bold italic tracking-tighter text-cyan-400 font-headline tracking-tight">KINETIC</h1>
+<button class="text-zinc-500 hover:text-cyan-300 transition-colors scale-95 duration-200 active:opacity-80 w-10 h-10 rounded-full overflow-hidden border-2 border-surface-variant">
+<img alt="User avatar profile photo" class="w-full h-full object-cover" data-alt="Portrait of a young professional with dark hair in a cyberpunk neon lit environment, soft focus background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDhGCrqDmZO_oEjXjNmu4M-n4wimQGJQ9W2-mPMcNL3SPiqCQhHGBRHZy9DIS9aeaOZxQDr-XOqeTB4fVyWAyO_2-DrD_xU-fEPQeSJnKt9e99KHPmCeR_zG03jxtgxrFPJ-QSmPXKl12AywEr4wmTZnD2kJTvTJb9ABjWixqebibEsFIXgL02hPyGqtHmxkDl6Bzd96O61xCzOq89W8Ku1oBb9pzyPVoITFFTAugZg8nGsYB5bshN4xHmS3NF-jyu4Zn079XR7gIY"/>
+</button>
+</header>
+</div>
+<!-- Main Content Canvas -->
+<main class="relative z-20 pt-28 pb-32 px-6 flex flex-col gap-8 max-w-7xl mx-auto h-full">
+<!-- Search / Command Line -->
+<section class="w-full max-w-2xl mx-auto">
+<div class="bg-surface-variant/40 backdrop-blur-3xl rounded-full p-2 border border-outline-variant/30 flex items-center shadow-[0_8px_32px_rgba(0,0,0,0.4)] focus-within:ring-2 focus-within:ring-primary/50 transition-all duration-300 group">
+<div class="bg-surface-container-high rounded-full w-12 h-12 flex items-center justify-center ml-1 text-primary shadow-[0_0_15px_rgba(129,236,255,0.2)]">
+<span class="material-symbols-outlined" data-icon="search">search</span>
+</div>
+<input class="bg-transparent border-none text-on-surface placeholder:text-on-surface-variant font-body text-lg w-full px-4 focus:ring-0 focus:outline-none" placeholder="Enter drop-off location" type="text"/>
+<button class="bg-gradient-to-br from-primary to-primary-container text-surface-container-lowest rounded-full px-6 py-3 font-headline font-semibold text-sm tracking-wide mr-1 shadow-[0_0_20px_rgba(0,227,253,0.3)] hover:brightness-110 transition-all">
+                    GO
+                </button>
+</div>
+</section>
+<!-- Services Grid (Bento Style) -->
+<section class="w-full mt-auto pt-12">
+<h2 class="font-headline text-lg font-semibold text-on-surface mb-6 flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_rgba(129,236,255,0.8)]"></span>
+                CORE SERVICES
+            </h2>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+<!-- Daily Rides Card -->
+<div class="bg-surface-container-low/80 backdrop-blur-xl rounded-[1.5rem] p-6 border border-outline-variant/15 hover:bg-surface-container/90 transition-colors cursor-pointer group relative overflow-hidden">
+<div class="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-2xl -mr-10 -mt-10 group-hover:bg-primary/10 transition-colors"></div>
+<div class="flex justify-between items-start mb-8 relative z-10">
+<div class="w-14 h-14 rounded-[1rem] bg-surface-container-highest flex items-center justify-center border border-outline-variant/20 shadow-[0_4px_12px_rgba(0,0,0,0.5)]">
+<span class="material-symbols-outlined text-primary text-3xl" data-icon="directions_car">directions_car</span>
+</div>
+<span class="bg-primary/10 text-primary px-3 py-1 rounded-full text-[10px] font-headline font-bold uppercase tracking-widest border border-primary/20">Active</span>
+</div>
+<div class="relative z-10">
+<h3 class="font-headline text-xl font-medium text-on-surface mb-1">Daily Rides</h3>
+<p class="font-body text-sm text-on-surface-variant">Instant local transport</p>
+</div>
+</div>
+<!-- Metro Ticket Card -->
+<div class="bg-surface-container-low/80 backdrop-blur-xl rounded-[1.5rem] p-6 border border-outline-variant/15 hover:bg-surface-container/90 transition-colors cursor-pointer group relative overflow-hidden">
+<div class="absolute top-0 right-0 w-32 h-32 bg-secondary/5 rounded-full blur-2xl -mr-10 -mt-10 group-hover:bg-secondary/10 transition-colors"></div>
+<div class="flex justify-between items-start mb-8 relative z-10">
+<div class="w-14 h-14 rounded-[1rem] bg-surface-container-highest flex items-center justify-center border border-outline-variant/20 shadow-[0_4px_12px_rgba(0,0,0,0.5)]">
+<span class="material-symbols-outlined text-secondary text-3xl" data-icon="train">train</span>
+</div>
+</div>
+<div class="relative z-10">
+<h3 class="font-headline text-xl font-medium text-on-surface mb-1">Metro Ticket</h3>
+<p class="font-body text-sm text-on-surface-variant">Skip the station queue</p>
+</div>
+</div>
+<!-- Book for Guest Card -->
+<div class="bg-surface-container-low/80 backdrop-blur-xl rounded-[1.5rem] p-6 border border-outline-variant/15 hover:bg-surface-container/90 transition-colors cursor-pointer group relative overflow-hidden">
+<div class="absolute top-0 right-0 w-32 h-32 bg-tertiary-dim/5 rounded-full blur-2xl -mr-10 -mt-10 group-hover:bg-tertiary-dim/10 transition-colors"></div>
+<div class="flex justify-between items-start mb-8 relative z-10">
+<div class="w-14 h-14 rounded-[1rem] bg-surface-container-highest flex items-center justify-center border border-outline-variant/20 shadow-[0_4px_12px_rgba(0,0,0,0.5)]">
+<span class="material-symbols-outlined text-tertiary text-3xl" data-icon="person_add">person_add</span>
+</div>
+</div>
+<div class="relative z-10">
+<h3 class="font-headline text-xl font-medium text-on-surface mb-1">Book for Guest</h3>
+<p class="font-body text-sm text-on-surface-variant">Arrange a ride for others</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Popular Destinations -->
+<section class="w-full">
+<div class="flex justify-between items-end mb-6">
+<h2 class="font-headline text-lg font-semibold text-on-surface flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-secondary shadow-[0_0_8px_rgba(172,137,255,0.8)]"></span>
+                    POPULAR DESTINATIONS
+                </h2>
+<button class="text-secondary text-sm font-body font-medium hover:text-secondary-dim transition-colors">View All</button>
+</div>
+<div class="flex flex-col gap-3">
+<!-- Destination 1 -->
+<div class="bg-surface-container-highest/50 backdrop-blur-md rounded-2xl p-4 flex items-center gap-4 border border-outline-variant/10 hover:border-outline-variant/30 transition-all cursor-pointer">
+<div class="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="flight">flight</span>
+</div>
+<div class="flex-1">
+<h4 class="font-headline text-base font-medium text-on-surface">Chennai International Airport</h4>
+<p class="font-body text-xs text-on-surface-variant">Meenambakkam, Chennai</p>
+</div>
+<div class="text-right">
+<div class="font-headline text-primary font-medium">18 min</div>
+<div class="font-body text-xs text-on-surface-variant">Est. time</div>
+</div>
+</div>
+<!-- Destination 2 -->
+<div class="bg-surface-container-highest/50 backdrop-blur-md rounded-2xl p-4 flex items-center gap-4 border border-outline-variant/10 hover:border-outline-variant/30 transition-all cursor-pointer">
+<div class="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="directions_railway">directions_railway</span>
+</div>
+<div class="flex-1">
+<h4 class="font-headline text-base font-medium text-on-surface">Chennai Central Railway Station</h4>
+<p class="font-body text-xs text-on-surface-variant">Kannappar Thidal, Periyamet</p>
+</div>
+<div class="text-right">
+<div class="font-headline text-primary font-medium">12 min</div>
+<div class="font-body text-xs text-on-surface-variant">Est. time</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar (from JSON) -->
+<div class="fixed bottom-6 left-0 right-0 z-50 flex justify-around items-center px-2 md:hidden">
+<nav class="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md rounded-full border border-white/5 bg-zinc-900/40 backdrop-blur-3xl shadow-2xl shadow-cyan-900/20 flex justify-around items-center p-2 font-['Space_Grotesk'] text-[10px] uppercase tracking-widest text-zinc-500">
+<button class="flex flex-col items-center justify-center bg-gradient-to-br from-cyan-400 to-cyan-600 text-black rounded-full px-6 py-2 scale-105 active:scale-90 transition-transform duration-300">
+<span class="material-symbols-outlined mb-1" data-icon="home_max">home_max</span>
+<span>Home</span>
+</button>
+<button class="flex flex-col items-center justify-center text-zinc-400 px-4 py-2 hover:text-white transition-all scale-105 active:scale-90 transition-transform duration-300">
+<span class="material-symbols-outlined mb-1" data-icon="grid_view">grid_view</span>
+<span>Services</span>
+</button>
+<button class="flex flex-col items-center justify-center text-zinc-400 px-4 py-2 hover:text-white transition-all scale-105 active:scale-90 transition-transform duration-300">
+<span class="material-symbols-outlined mb-1" data-icon="history">history</span>
+<span>Activity</span>
+</button>
+<button class="flex flex-col items-center justify-center text-zinc-400 px-4 py-2 hover:text-white transition-all scale-105 active:scale-90 transition-transform duration-300">
+<span class="material-symbols-outlined mb-1" data-icon="person_outline">person_outline</span>
+<span>Account</span>
+</button>
+</nav>
+</div>
+</body></html>
