@@ -68,8 +68,12 @@ void main() {
         debugPrint("DEBUG: Failed to load dotenv.env: $e");
       }
       
-      // Enable edge-to-edge support for Android 15+
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      // Enable edge-to-edge support (wrapped for stability on older Android versions)
+      try {
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      } catch (e) {
+        debugPrint("DEBUG: Failed to set edge-to-edge mode: $e");
+      }
       
       // Default to dev if no configuration is set (e.g. running main.dart directly)
       if (!EnvConfig.isSet) {
@@ -123,11 +127,17 @@ void main() {
         await Firebase.initializeApp();
         
         debugPrint("DEBUG: Activating App Check. Mode: ${kDebugMode ? 'Debug' : 'Release'}");
-        await FirebaseAppCheck.instance.activate(
-          providerAndroid: kDebugMode ? const AndroidDebugProvider() : const AndroidPlayIntegrityProvider(),
-          providerApple: kDebugMode ? const AppleDebugProvider() : const AppleDeviceCheckProvider(),
-        );
-        debugPrint("DEBUG: App Check activated.");
+        // Wrap App Check activation separately to prevent crashing the whole app
+        try {
+          await FirebaseAppCheck.instance.activate(
+            providerAndroid: kDebugMode ? const AndroidDebugProvider() : const AndroidPlayIntegrityProvider(),
+            providerApple: kDebugMode ? const AppleDebugProvider() : const AppleDeviceCheckProvider(),
+          );
+          debugPrint("DEBUG: App Check activated.");
+        } catch (appCheckError) {
+          debugPrint("DEBUG: App Check activation failed (non-fatal): $appCheckError");
+          // Firebase will still work, just without App Check enforcement for this session
+        }
         
         debugPrint("--------------------------------------------------");
         debugPrint("CHECK CONSOLE LOGS FOR THE APP CHECK DEBUG TOKEN");
@@ -159,12 +169,18 @@ void main() {
           _firebaseMessagingBackgroundHandler,
         );
 
-        // Print App Signature for SMS Autofill
-        SmsAutoFill().getAppSignature.then((signature) {
-          debugPrint("--------------------------------------------------");
-          debugPrint("USER APP SIGNATURE HASH: $signature");
-          debugPrint("--------------------------------------------------");
-        });
+        // Print App Signature for SMS Autofill (wrapped for stability)
+        try {
+          SmsAutoFill().getAppSignature.then((signature) {
+            debugPrint("--------------------------------------------------");
+            debugPrint("USER APP SIGNATURE HASH: $signature");
+            debugPrint("--------------------------------------------------");
+          }).catchError((e) {
+            debugPrint("DEBUG: SMS Autofill Error: $e");
+          });
+        } catch (e) {
+          debugPrint("DEBUG: Failed to initiate SMS Autofill: $e");
+        }
 
       } catch (e) {
         debugPrint("Firebase Initialization Error: $e");

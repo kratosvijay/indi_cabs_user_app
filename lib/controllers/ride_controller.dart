@@ -126,15 +126,27 @@ class RideController extends GetxController {
 
     // Load Data
     try {
-      await Future.wait([
+      final List<Future> initialTasks = [
         _loadCustomIcons(),
         _getCurrentLocation(showLoader: false),
         _loadSearchHistory(),
-        _loadRentalPackages(),
-        _loadPricingRules(),
-        _listenToWallet(), // **NEW**
-        _listenToFavorites(), // **NEW**
-      ]);
+      ];
+
+      // **FIX:** If not initialized or if auth-dependent data is empty, fetch it.
+      // This ensures that even if the first call failed (due to lack of auth), 
+      // subsequent calls after login will populate the data.
+      if (!_isInitialized || rentalPackages.isEmpty) {
+        initialTasks.add(_loadRentalPackages());
+      }
+      if (!_isInitialized || pricingRules.value == null) {
+        initialTasks.add(_loadPricingRules());
+      }
+      if (!_isInitialized) {
+        initialTasks.add(_listenToWallet());
+        initialTasks.add(_listenToFavorites());
+      }
+
+      await Future.wait(initialTasks);
     } catch (e) {
       debugPrint("Error during RideController initialization: $e");
     }
