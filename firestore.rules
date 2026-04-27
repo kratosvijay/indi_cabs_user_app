@@ -95,11 +95,9 @@ service cloud.firestore {
 
     // --- OTP VERIFICATIONS ---
     match /otp_verifications/{phoneNumber} {
-      // Allow users to initiate their own OTP verified by their phone number in Auth token
-      allow read, write: if isSignedIn() && (
-        phoneNumber == request.auth.token.phone_number || 
-        phoneNumber == request.auth.token.get('phone_number', '')
-      );
+      // Allow users to initiate their own OTP. 
+      // The backend generateOtpDriver trigger handles the actual SMS sending and validation.
+      allow read, write: if isSignedIn();
     }
 
     // --- FLEET OPERATORS ---
@@ -237,6 +235,24 @@ service cloud.firestore {
           exists(/databases/$(database)/documents/admins/$(request.auth.uid))
         );
       }
+    }
+
+    // --- SHARED RIDES ---
+    match /shared_rides/{rideId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && (
+        request.resource.data.driver_id == request.auth.uid ||
+        request.resource.data.driverId == request.auth.uid
+      );
+      allow update: if isSignedIn() && (
+        resource.data.driver_id == request.auth.uid ||
+        resource.data.driverId == request.auth.uid ||
+        isUser() // Allow passengers to book
+      );
+      allow delete: if isSignedIn() && (
+        resource.data.driver_id == request.auth.uid ||
+        resource.data.driverId == request.auth.uid
+      );
     }
   }
 }

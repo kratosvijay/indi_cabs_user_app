@@ -584,6 +584,7 @@ class RideController extends GetxController {
   Future<Map<String, num>?> calculateFare({
     required LatLng pickup,
     required LatLng destination,
+    DateTime? referenceTime,
   }) async {
     debugPrint("!!! DEBUG START: calculateFare !!!");
     String currentProjectId = "Unknown";
@@ -636,6 +637,7 @@ class RideController extends GetxController {
         'routePolyline': routeDetails.polylinePoints
             .map((p) => {'latitude': p.latitude, 'longitude': p.longitude})
             .toList(),
+        'referenceTime': referenceTime?.toIso8601String(),
       });
 
       final data = result.data;

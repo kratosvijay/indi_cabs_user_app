@@ -237,6 +237,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     } else if (status == 'started' && !_isRideStarted) {
       setState(() => _isRideStarted = true);
       _waitingTimer?.cancel();
+      _saveTripStartInfo(); // **NEW:** Save start location and time
       // Ensure map is ready before routing
       if (_mapController.isCompleted) {
         // Clear pickup route first
@@ -768,6 +769,26 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         timer.cancel();
       }
     });
+  }
+
+  /// Saves the actual starting coordinates and time to Firestore when the ride begins.
+  Future<void> _saveTripStartInfo() async {
+    if (widget.rideRequestId.isEmpty) return;
+    try {
+      final collection = widget.isRental ? 'rental_requests' : 'ride_requests';
+      final driver = _rideController.assignedDriver.value;
+      
+      // Use driver's current location as the trip start location
+      LatLng? startLoc = driver?.currentLocation ?? _currentPickupLocation;
+      
+      await FirebaseFirestore.instance.collection(collection).doc(widget.rideRequestId).update({
+        'tripStartTime': FieldValue.serverTimestamp(),
+        'tripStartLocation': GeoPoint(startLoc.latitude, startLoc.longitude),
+      });
+      debugPrint("Trip start info saved: $startLoc");
+    } catch (e) {
+      debugPrint("Error saving trip start info: $e");
+    }
   }
 
   Future<void> _showCancelConfirmationDialog() async {
@@ -1970,11 +1991,24 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         }
       });
 
-      // Recalculate Fare (as per user request: based on pickup location)
-      // Even if editing destination, we use the current pickup location.
-      final LatLng currentPickup = pickupLocation;
+      // Recalculate Fare (as per user request: based on trip start location)
+      final rideData = _rideController.rideData;
+      final tripStartLocMap = rideData['tripStartLocation'];
+      LatLng? storedStartLoc;
+      if (tripStartLocMap is GeoPoint) {
+        storedStartLoc = LatLng(tripStartLocMap.latitude, tripStartLocMap.longitude);
+      }
+      
+      final tripStartTimeStamp = rideData['tripStartTime'];
+      DateTime? storedStartTime;
+      if (tripStartTimeStamp is Timestamp) {
+        storedStartTime = tripStartTimeStamp.toDate();
+      }
 
-      final LatLng targetPickup = isPickup ? newLocation : currentPickup;
+      final LatLng targetPickup = (storedStartLoc != null && !isPickup) 
+          ? storedStartLoc 
+          : (isPickup ? newLocation : pickupLocation);
+          
       final LatLng targetDestination = isPickup
           ? destinationLocation
           : newLocation;
@@ -1994,6 +2028,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         final newFares = await _rideController.calculateFare(
           pickup: targetPickup,
           destination: targetDestination,
+          referenceTime: storedStartTime, // **NEW:** Pass original start time
         );
 
         debugPrint("Cloud Function response (newFares): $newFares");
@@ -2007,7 +2042,6 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
 
           // Fix: If type is generic "Ride" or not found, try to find correct type from live data
           if (vehicleType == 'Ride' || !newFares.containsKey(vehicleType)) {
-            final rideData = _rideController.rideData;
             debugPrint(
               "Checking rideData for vehicle type... Current rideData keys: ${rideData.keys}",
             );
@@ -2391,7 +2425,19 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
           );
         }
 
-        final pickupLatLng = _currentPickupLocation;
+        final tripStartLocMap = rideData['tripStartLocation'];
+        LatLng? storedStartLoc;
+        if (tripStartLocMap is GeoPoint) {
+          storedStartLoc = LatLng(tripStartLocMap.latitude, tripStartLocMap.longitude);
+        }
+        
+        final tripStartTimeStamp = rideData['tripStartTime'];
+        DateTime? storedStartTime;
+        if (tripStartTimeStamp is Timestamp) {
+          storedStartTime = tripStartTimeStamp.toDate();
+        }
+
+        final pickupLatLng = storedStartLoc ?? _currentPickupLocation;
 
         final List<LatLng> intermediateLatLngs = currentStops.map((stop) {
           final loc = stop['location'];
@@ -2449,6 +2495,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
           'routePolyline': routeDetails.polylinePoints
               .map((p) => {'latitude': p.latitude, 'longitude': p.longitude})
               .toList(),
+          'referenceTime': storedStartTime?.toIso8601String(), // **NEW:** Pass start time
         });
 
         final data = calcResult.data;

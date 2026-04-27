@@ -2,3 +2,4 @@
 #include "Generated.xcconfig"
 
 EXCLUDED_ARCHS[sdk=iphonesimulator*]=i386
+FLUTTER_BUILD_FLAVOR=prod

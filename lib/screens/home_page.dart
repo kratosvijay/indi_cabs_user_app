@@ -29,6 +29,7 @@ import 'package:project_taxi_with_ai/screens/multistop_ride.dart';
 import 'package:project_taxi_with_ai/screens/ride_in_progress.dart';
 import 'package:project_taxi_with_ai/screens/searching_for_ride.dart';
 import 'package:project_taxi_with_ai/screens/book_for_other_screen.dart'; // **NEW IMPORT**
+import 'package:project_taxi_with_ai/screens/shared_rides_screen.dart';
 import 'package:project_taxi_with_ai/screens/notifications.dart';
 import 'package:project_taxi_with_ai/screens/ride_history.dart';
 
@@ -1211,6 +1212,8 @@ class _HomePageState extends State<HomePage> {
           walletBalance: _rideController.walletBalance.value,
         ),
       );
+    } else if (rideType == RideType.sharedRides) {
+      await Get.to(() => const SharedRidesScreen());
     }
 
     // Reset to daily after returning from any other mode

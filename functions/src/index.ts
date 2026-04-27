@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
+/* eslint-disable camelcase */
 import {
   onCall,
   HttpsError,
@@ -10,6 +11,7 @@ setGlobalOptions({region: "asia-south1"});
 // **FIXED:** Re-added 'onDocumentUpdated' and added required types
 import {
   onDocumentUpdated,
+  onDocumentCreated,
   FirestoreEvent,
   Change,
   DocumentSnapshot,
@@ -60,6 +62,7 @@ interface CalculateFaresData {
   destinationLocation?: { latitude: number; longitude: number; };
   intermediateStops?: { location: { latitude: number; longitude: number; }; }[];
   routePolyline?: { latitude: number; longitude: number; }[];
+  referenceTime?: string;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -159,6 +162,7 @@ export const calculateFares = onCall(async (
     destinationLocation,
     intermediateStops,
     routePolyline,
+    referenceTime,
   } = request.data;
   if (!distanceMeters || !pickupLocation) {
     throw new HttpsError("invalid-argument", "Missing data.");
@@ -188,8 +192,8 @@ export const calculateFares = onCall(async (
     for (const stop of intermediateStops) {
       if (
         stop.location &&
-        typeof stop.location.latitude === "number" &&
-        typeof stop.location.longitude === "number"
+          typeof stop.location.latitude === "number" &&
+          typeof stop.location.longitude === "number"
       ) {
         routePoints.push(
           new admin.firestore.GeoPoint(
@@ -205,7 +209,7 @@ export const calculateFares = onCall(async (
     for (const point of routePolyline) {
       if (
         typeof point.latitude === "number" &&
-        typeof point.longitude === "number"
+          typeof point.longitude === "number"
       ) {
         routePoints.push(
           new admin.firestore.GeoPoint(
@@ -224,7 +228,9 @@ export const calculateFares = onCall(async (
     }
     const rules = rulesDoc.data() as PricingRules;
     const vehiclePricingMap = rules.vehicle_types;
-    const now = new Date();
+
+    // Use referenceTime if provided, otherwise use current server time
+    const now = referenceTime ? new Date(referenceTime) : new Date();
     const timeZone = "Asia/Kolkata";
     const istFormatter = new Intl.DateTimeFormat("en-US", {
       timeZone: timeZone,
@@ -1130,7 +1136,6 @@ export const verifyWalletPayment = onCall(async (
     );
   }
 });
-/* eslint-enable camelcase */
 
 
 // **--- NEW: NOTIFICATION TRIGGER ---**
@@ -2323,3 +2328,314 @@ export const resetMonthlyRewards = onSchedule("0 0 1 * *", async () => {
   await batch.commit();
   logger.info("Monthly rewards reset complete.");
 });
+
+// ─── Shared Rides ────────────────────────────────────────────────────────────
+
+interface BookSharedRideData {
+  ride_id: string;
+  seats_booked: number;
+  user_name: string;
+}
+
+/**
+ * Books seats on a shared ride atomically.
+ * Decrements available_seats and creates a ride_bookings document.
+ */
+export const bookSharedRide = onCall(async (
+  request: CallableRequest<BookSharedRideData>
+) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Must be authenticated.");
+  }
+
+  // eslint-disable-next-line camelcase
+  const {ride_id, seats_booked, user_name} = request.data;
+  if (!ride_id || !seats_booked || seats_booked < 1) {
+    throw new HttpsError("invalid-argument", "Missing or invalid booking data.");
+  }
+
+  const userId = request.auth.uid;
+  const rideRef = db.collection("shared_rides").doc(ride_id);
+
+  const bookingId = await db.runTransaction(async (tx) => {
+    const rideSnap = await tx.get(rideRef);
+    if (!rideSnap.exists) {
+      throw new HttpsError("not-found", "Ride not found.");
+    }
+
+    const rideData = rideSnap.data()!;
+    const availableSeats: number = rideData.available_seats ?? 0;
+
+    if (rideData.status !== "upcoming") {
+      throw new HttpsError("failed-precondition", "Ride is no longer available.");
+    }
+    if (availableSeats < seats_booked) {
+      throw new HttpsError(
+        "resource-exhausted",
+        `Only ${availableSeats} seat(s) left.`
+      );
+    }
+
+    // Check if user already booked this ride
+    const existingBookings = await db
+      .collection("ride_bookings")
+      .where("ride_id", "==", ride_id)
+      .where("user_id", "==", userId)
+      .where("status", "!=", "cancelled")
+      .limit(1)
+      .get();
+
+    if (!existingBookings.empty) {
+      throw new HttpsError("already-exists", "You have already booked this ride.");
+    }
+
+    const pricePerSeat: number = rideData.price_per_seat ?? 0;
+    const totalAmount = pricePerSeat * seats_booked;
+    const newBookingRef = db.collection("ride_bookings").doc();
+
+    tx.update(rideRef, {
+      available_seats: admin.firestore.FieldValue.increment(-seats_booked),
+    });
+
+    tx.set(newBookingRef, {
+      ride_id,
+      user_id: userId,
+      user_name: user_name ?? "User",
+      seats_booked,
+      total_amount: totalAmount,
+      status: "confirmed",
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return newBookingRef.id;
+  });
+
+  // Send booking confirmation notification to user
+  try {
+    const userDoc = await db.collection("users").doc(userId).get();
+    const fcmToken: string | undefined = userDoc.data()?.fcmToken;
+    if (fcmToken) {
+      const rideSnap = await rideRef.get();
+      const rd = rideSnap.data()!;
+      await admin.messaging().send({
+        token: fcmToken,
+        notification: {
+          title: "Booking Confirmed! 🎉",
+          body: `${seats_booked} seat(s) booked from ${rd.start_location} to ${rd.destination}.`,
+        },
+        data: {type: "shared_ride_booked", booking_id: bookingId, ride_id},
+        android: {notification: {channelId: "high_importance_channel"}},
+      });
+    }
+  } catch (notifErr) {
+    logger.warn("Failed to send booking confirmation notification:", notifErr);
+  }
+
+  logger.info(`User ${userId} booked ${seats_booked} seat(s) on ride ${ride_id}. Booking: ${bookingId}`);
+  return {booking_id: bookingId};
+});
+
+/**
+ * Scheduled function: runs every 5 minutes to auto-update shared ride statuses.
+ * - upcoming → started  when departure_time <= now
+ * - started  → completed when departure_time + 8h <= now (rough estimate)
+ */
+export const autoUpdateSharedRideStatus = onSchedule("every 5 minutes", async () => {
+  const now = admin.firestore.Timestamp.now();
+  const eightHoursAgo = admin.firestore.Timestamp.fromDate(
+    new Date(Date.now() - 8 * 60 * 60 * 1000)
+  );
+
+  // Mark upcoming rides that have reached departure time as started
+  const upcomingSnap = await db
+    .collection("shared_rides")
+    .where("status", "==", "upcoming")
+    .where("departure_time", "<=", now)
+    .get();
+
+  const startBatch = db.batch();
+  upcomingSnap.forEach((doc) => {
+    startBatch.update(doc.ref, {status: "started"});
+  });
+  if (!upcomingSnap.empty) {
+    await startBatch.commit();
+    logger.info(`Marked ${upcomingSnap.size} ride(s) as started.`);
+
+    // Notify booked passengers
+    for (const rideDoc of upcomingSnap.docs) {
+      const rideData = rideDoc.data();
+      const bookingsSnap = await db
+        .collection("ride_bookings")
+        .where("ride_id", "==", rideDoc.id)
+        .where("status", "==", "confirmed")
+        .get();
+
+      for (const bookingDoc of bookingsSnap.docs) {
+        const userId: string = bookingDoc.data().user_id;
+        try {
+          const userDoc = await db.collection("users").doc(userId).get();
+          const fcmToken: string | undefined = userDoc.data()?.fcmToken;
+          if (fcmToken) {
+            await admin.messaging().send({
+              token: fcmToken,
+              notification: {
+                title: "Your ride has started! 🚗",
+                body: `${rideData.driver_name}'s ride from ` +
+                  `${rideData.start_location} to ${rideData.destination} has started.`,
+              },
+              data: {type: "shared_ride_started", ride_id: rideDoc.id},
+              android: {notification: {channelId: "high_importance_channel"}},
+            });
+          }
+        } catch (e) {
+          logger.warn(`Failed to notify user ${userId}:`, e);
+        }
+      }
+    }
+  }
+
+  // Mark started rides older than 8 hours as completed
+  const startedSnap = await db
+    .collection("shared_rides")
+    .where("status", "==", "started")
+    .where("departure_time", "<=", eightHoursAgo)
+    .get();
+
+  const completeBatch = db.batch();
+  startedSnap.forEach((doc) => {
+    completeBatch.update(doc.ref, {status: "completed"});
+  });
+  if (!startedSnap.empty) {
+    await completeBatch.commit();
+
+    // Update corresponding bookings to completed
+    for (const rideDoc of startedSnap.docs) {
+      const bookingsSnap = await db
+        .collection("ride_bookings")
+        .where("ride_id", "==", rideDoc.id)
+        .where("status", "==", "confirmed")
+        .get();
+
+      const bkBatch = db.batch();
+      bookingsSnap.forEach((b) => bkBatch.update(b.ref, {status: "completed"}));
+      if (!bookingsSnap.empty) await bkBatch.commit();
+    }
+
+    logger.info(`Marked ${startedSnap.size} ride(s) as completed.`);
+  }
+});
+
+/**
+ * Sends ride reminder notifications 30 minutes before departure.
+ * Runs every 10 minutes.
+ */
+export const sendSharedRideReminders = onSchedule("every 10 minutes", async () => {
+  const now = new Date();
+  const in30Min = new Date(now.getTime() + 30 * 60 * 1000);
+  const in40Min = new Date(now.getTime() + 40 * 60 * 1000);
+
+  const ridesSnap = await db
+    .collection("shared_rides")
+    .where("status", "==", "upcoming")
+    .where("departure_time", ">=", admin.firestore.Timestamp.fromDate(in30Min))
+    .where("departure_time", "<=", admin.firestore.Timestamp.fromDate(in40Min))
+    .get();
+
+  for (const rideDoc of ridesSnap.docs) {
+    const rideData = rideDoc.data();
+    const bookingsSnap = await db
+      .collection("ride_bookings")
+      .where("ride_id", "==", rideDoc.id)
+      .where("status", "==", "confirmed")
+      .get();
+
+    for (const bookingDoc of bookingsSnap.docs) {
+      const userId: string = bookingDoc.data().user_id;
+      try {
+        const userDoc = await db.collection("users").doc(userId).get();
+        const fcmToken: string | undefined = userDoc.data()?.fcmToken;
+        if (fcmToken) {
+          await admin.messaging().send({
+            token: fcmToken,
+            notification: {
+              title: "Ride in 30 minutes! ⏰",
+              body: `Your shared ride from ${rideData.start_location} departs soon. Be ready!`,
+            },
+            data: {type: "shared_ride_reminder", ride_id: rideDoc.id},
+            android: {notification: {channelId: "high_importance_channel"}},
+          });
+        }
+      } catch (e) {
+        logger.warn(`Failed to send reminder to user ${userId}:`, e);
+      }
+    }
+  }
+
+  logger.info(`Sent reminders for ${ridesSnap.size} upcoming ride(s).`);
+});
+
+/**
+ * Triggers when a new notification document is created in the admin panel.
+ * Broadcasts the message to the specified target audience (Users or Drivers).
+ */
+export const sendGlobalNotification = onDocumentCreated("notifications/{notificationId}", async (event) => {
+  const data = event.data?.data();
+  if (!data) return;
+
+  const {title, message, target} = data;
+
+  // 1. Determine which collection to fetch FCM tokens from
+  let targetCollection = "users";
+  if (target === "all_drivers" || target === "specific_drivers") {
+    targetCollection = "drivers";
+  }
+
+  try {
+    let querySnapshot;
+
+    // 2. Fetch target tokens
+    if (target === "all_users" || target === "all_drivers") {
+      querySnapshot = await admin.firestore().collection(targetCollection).get();
+    } else {
+      // For specific IDs, you would filter here.
+      // For now, let's handle the broadcast cases.
+      return logger.info("Specific target not yet implemented in function.");
+    }
+
+    const tokens: string[] = [];
+    querySnapshot.forEach((doc) => {
+      const token = doc.data().fcmToken;
+      if (token) tokens.push(token);
+    });
+
+    if (tokens.length === 0) {
+      return logger.warn("No FCM tokens found for target audience.");
+    }
+
+    // 3. Send Multicast Message
+    const payload = {
+      notification: {title, body: message},
+      tokens: tokens,
+      android: {
+        notification: {
+          channelId: "high_importance_channel",
+          priority: "high" as const,
+        },
+      },
+    };
+
+    const response = await admin.messaging().sendEachForMulticast(payload);
+    logger.info(`Successfully sent ${response.successCount} notifications.`);
+
+    // 4. Update status in admin panel
+    return event.data?.ref.update({
+      status: "delivered",
+      successCount: response.successCount,
+      failureCount: response.failureCount,
+    });
+  } catch (error) {
+    logger.error("Error sending global notification:", error);
+    return null;
+  }
+});
+

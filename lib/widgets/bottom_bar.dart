@@ -115,6 +115,16 @@ class _BottomBarWidgetState extends State<BottomBarWidget> {
                         ),
                         _buildServiceTypeCard(
                           context: context,
+                          icon: Icons.people_outline,
+                          label: "Shared Rides".tr,
+                          isSelected:
+                              widget.selectedServiceType == RideType.sharedRides,
+                          onTap: () =>
+                              widget.onServiceTypeSelected(RideType.sharedRides),
+                          isDark: isDark,
+                        ),
+                        _buildServiceTypeCard(
+                          context: context,
                           icon: Icons.subway_rounded,
                           label: "Metro Ticket".tr,
                           isSelected:

@@ -6,7 +6,7 @@ import 'package:intl/intl.dart'; // Import for formatting
 // --- Enums ---
 
 // Enum to define the type of ride service
-enum RideType { daily, rental, acting, multiStop, bookForOther, metro }
+enum RideType { daily, rental, acting, multiStop, bookForOther, metro, sharedRides }
 
 // --- Models ---
 
@@ -939,6 +939,144 @@ class RideReward {
           (data['totalRewardsEarned'] as num?)?.toDouble() ?? 0.0,
       lastResetMonth: data['lastResetMonth'] ?? '',
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+    );
+  }
+}
+
+// --- Shared Rides Models ---
+
+class SharedRide {
+  final String rideId;
+  final String driverId;
+  final String driverName;
+  final String driverPhone;
+  final String? driverPhotoUrl;
+  final double driverRating;
+  final String vehicleModel;
+  final String vehicleNumber;
+  final String startLocation;
+  final String destination;
+  final LatLng startLatLng;
+  final LatLng destinationLatLng;
+  final String routePolyline;
+  final DateTime departureTime;
+  final int totalSeats;
+  final int availableSeats;
+  final double pricePerSeat;
+  final String status; // upcoming, started, completed, cancelled
+  final DateTime createdAt;
+
+  SharedRide({
+    required this.rideId,
+    required this.driverId,
+    required this.driverName,
+    required this.driverPhone,
+    this.driverPhotoUrl,
+    required this.driverRating,
+    required this.vehicleModel,
+    required this.vehicleNumber,
+    required this.startLocation,
+    required this.destination,
+    required this.startLatLng,
+    required this.destinationLatLng,
+    required this.routePolyline,
+    required this.departureTime,
+    required this.totalSeats,
+    required this.availableSeats,
+    required this.pricePerSeat,
+    required this.status,
+    required this.createdAt,
+  });
+
+  factory SharedRide.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    final startGeo = data['start_latlng'] as Map<String, dynamic>? ?? {};
+    final destGeo = data['destination_latlng'] as Map<String, dynamic>? ?? {};
+    return SharedRide(
+      rideId: doc.id,
+      driverId: data['driver_id'] ?? '',
+      driverName: data['driver_name'] ?? 'Driver',
+      driverPhone: data['driver_phone'] ?? '',
+      driverPhotoUrl: data['driver_photo_url'],
+      driverRating: (data['driver_rating'] as num?)?.toDouble() ?? 4.5,
+      vehicleModel: data['vehicle_model'] ?? '',
+      vehicleNumber: data['vehicle_number'] ?? '',
+      startLocation: data['start_location'] ?? '',
+      destination: data['destination'] ?? '',
+      startLatLng: LatLng(
+        (startGeo['latitude'] as num?)?.toDouble() ?? 0.0,
+        (startGeo['longitude'] as num?)?.toDouble() ?? 0.0,
+      ),
+      destinationLatLng: LatLng(
+        (destGeo['latitude'] as num?)?.toDouble() ?? 0.0,
+        (destGeo['longitude'] as num?)?.toDouble() ?? 0.0,
+      ),
+      routePolyline: data['route_polyline'] ?? '',
+      departureTime: (data['departure_time'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      totalSeats: (data['total_seats'] as num?)?.toInt() ?? 4,
+      availableSeats: (data['available_seats'] as num?)?.toInt() ?? 4,
+      pricePerSeat: (data['price_per_seat'] as num?)?.toDouble() ?? 0.0,
+      status: data['status'] ?? 'upcoming',
+      createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'driver_id': driverId,
+      'driver_name': driverName,
+      'driver_phone': driverPhone,
+      'driver_photo_url': driverPhotoUrl,
+      'driver_rating': driverRating,
+      'vehicle_model': vehicleModel,
+      'vehicle_number': vehicleNumber,
+      'start_location': startLocation,
+      'destination': destination,
+      'start_latlng': {'latitude': startLatLng.latitude, 'longitude': startLatLng.longitude},
+      'destination_latlng': {'latitude': destinationLatLng.latitude, 'longitude': destinationLatLng.longitude},
+      'route_polyline': routePolyline,
+      'departure_time': Timestamp.fromDate(departureTime),
+      'total_seats': totalSeats,
+      'available_seats': availableSeats,
+      'price_per_seat': pricePerSeat,
+      'status': status,
+      'created_at': Timestamp.fromDate(createdAt),
+    };
+  }
+}
+
+class RideBooking {
+  final String bookingId;
+  final String rideId;
+  final String userId;
+  final String userName;
+  final int seatsBooked;
+  final double totalAmount;
+  final String status; // confirmed, cancelled, completed
+  final DateTime createdAt;
+
+  RideBooking({
+    required this.bookingId,
+    required this.rideId,
+    required this.userId,
+    required this.userName,
+    required this.seatsBooked,
+    required this.totalAmount,
+    required this.status,
+    required this.createdAt,
+  });
+
+  factory RideBooking.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    return RideBooking(
+      bookingId: doc.id,
+      rideId: data['ride_id'] ?? '',
+      userId: data['user_id'] ?? '',
+      userName: data['user_name'] ?? '',
+      seatsBooked: (data['seats_booked'] as num?)?.toInt() ?? 1,
+      totalAmount: (data['total_amount'] as num?)?.toDouble() ?? 0.0,
+      status: data['status'] ?? 'confirmed',
+      createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
 }
