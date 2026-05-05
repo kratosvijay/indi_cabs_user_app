@@ -168,6 +168,23 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _currentUser = widget.user;
+    ShowcaseView.register(
+      onStart: (index, key) {
+        debugPrint('Showcase Status: On Start $index $key');
+      },
+      onComplete: (index, key) {
+        debugPrint('Showcase Status: On Complete $index $key');
+      },
+      onFinish: () async {
+        debugPrint('Showcase Status: Finished');
+        final prefs = await SharedPreferences.getInstance();
+        final hasSeenWallet = prefs.getBool('hasSeenWalletTour') ?? false;
+        if (!hasSeenWallet && mounted && _destinationPosition == null) {
+          _scaffoldKey.currentState?.openDrawer();
+          await prefs.setBool('hasSeenWalletTour', true);
+        }
+      },
+    );
 
     // Initialize Services - REMOVED (Handled in Splash/RideController)
     /*
@@ -220,7 +237,7 @@ class _HomePageState extends State<HomePage> {
         final hasSeen = prefs.getBool('hasSeenAppOnboarding') ?? false;
         if (!hasSeen) {
           if (mounted) {
-            ShowCaseWidget.of(context).startShowCase([_searchShowcaseKey]);
+            ShowcaseView.get().startShowCase([_searchShowcaseKey]);
           }
           await prefs.setBool('hasSeenAppOnboarding', true);
         }
@@ -1632,23 +1649,7 @@ class _HomePageState extends State<HomePage> {
             statusBarIconBrightness: Brightness.dark,
           );
 
-    return ShowCaseWidget(
-      onStart: (index, key) {
-        debugPrint('Showcase Status: On Start $index $key');
-      },
-      onComplete: (index, key) {
-        debugPrint('Showcase Status: On Complete $index $key');
-      },
-      onFinish: () async {
-        debugPrint('Showcase Status: Finished');
-        final prefs = await SharedPreferences.getInstance();
-        final hasSeenWallet = prefs.getBool('hasSeenWalletTour') ?? false;
-        if (!hasSeenWallet && mounted && _destinationPosition == null) {
-          _scaffoldKey.currentState?.openDrawer();
-          await prefs.setBool('hasSeenWalletTour', true);
-        }
-      },
-      builder: (context) => AnnotatedRegion<SystemUiOverlayStyle>(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
         value: systemOverlayStyle,
         child: PopScope(
         canPop: false,
@@ -1675,7 +1676,7 @@ class _HomePageState extends State<HomePage> {
               final hasSeen = prefs.getBool('hasSeenWalletTour') ?? false;
               if (!hasSeen) {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  ShowCaseWidget.of(context).startShowCase([_walletShowcaseKey]);
+                  ShowcaseView.get().startShowCase([_walletShowcaseKey]);
                 });
                 await prefs.setBool('hasSeenWalletTour', true);
               }
@@ -1880,7 +1881,10 @@ class _HomePageState extends State<HomePage> {
                                         top: Radius.circular(20),
                                       ),
                                     ),
-                                    child: ValueListenableBuilder<BookingState>(
+                                    child: Obx(() {
+                                      // Read reactive value HERE so GetX can track it
+                                      final currentWalletBalance = _rideController.walletBalance.value;
+                                      return ValueListenableBuilder<BookingState>(
                                       valueListenable: _bookingState,
                                       builder: (context, state, _) {
                                         return RideConfirmationBottomSheet(
@@ -1934,9 +1938,7 @@ class _HomePageState extends State<HomePage> {
                                           pricingRules: _rideController
                                               .pricingRules
                                               .value,
-                                          walletBalance: _rideController
-                                              .walletBalance
-                                              .value,
+                                          walletBalance: currentWalletBalance,
                                           rideType: _selectedServiceType,
                                           showcaseKey: _rideLaterShowcaseKey,
                                           showScheduleTour: true,
@@ -1972,7 +1974,8 @@ class _HomePageState extends State<HomePage> {
                                               _handleSavePickupFavorite,
                                         );
                                       },
-                                    ),
+                                    );
+                                    }),
                                   );
                                 },
                               ),
@@ -1984,8 +1987,7 @@ class _HomePageState extends State<HomePage> {
               }),
             ),
           ),
-        ),
-      );
+        );
   }
 
   Widget _buildDrawer() {

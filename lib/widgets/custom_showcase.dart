@@ -26,8 +26,6 @@ class CustomShowcase extends StatelessWidget {
   Widget build(BuildContext context) {
     return Showcase.withWidget(
       key: showcaseKey,
-      height: 140,
-      width: 300,
       targetShapeBorder: targetShapeBorder,
       container: Builder(
         builder: (ctx) => Container(
@@ -77,7 +75,7 @@ class CustomShowcase extends StatelessWidget {
                   if (!isLastStep)
                     TextButton(
                       onPressed: () {
-                        ShowCaseWidget.of(ctx).dismiss();
+                        ShowcaseView.get().dismiss();
                       },
                       child: Text(
                         'Skip',
@@ -93,9 +91,9 @@ class CustomShowcase extends StatelessWidget {
                   ElevatedButton(
                     onPressed: () {
                       if (isLastStep) {
-                        ShowCaseWidget.of(ctx).dismiss();
+                        ShowcaseView.get().dismiss();
                       } else {
-                        ShowCaseWidget.of(ctx).next();
+                        ShowcaseView.get().next();
                       }
                     },
                     style: ElevatedButton.styleFrom(

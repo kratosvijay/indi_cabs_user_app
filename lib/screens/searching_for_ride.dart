@@ -795,35 +795,40 @@ class _SearchingForRideScreenState extends State<SearchingForRideScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [10.0, 20.0, 50.0].map((tipValue) {
-              bool isSelected = _currentTip == tipValue;
-              return GestureDetector(
-                onTap: () {
-                  setState(() => _currentTip = tipValue);
-                  _updateTipInFirestore(tipValue);
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: isSelected ? AppColors.primary : (isDark ? Colors.grey[800] : Colors.grey[100]),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isSelected ? AppColors.primary : Colors.transparent,
-                    ),
-                  ),
-                  child: Text(
-                    "+₹${tipValue.round()}",
-                    style: TextStyle(
-                      color: isSelected ? Colors.white : (isDark ? Colors.white : Colors.black87),
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
+          const SizedBox(height: 16),
+          Text(
+            '${'addATip'.tr}: ₹${_currentTip.round()}',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: isDark ? Colors.white : Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 8),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: AppColors.primary,
+              inactiveTrackColor: AppColors.primary.withValues(alpha: 0.2),
+              thumbColor: AppColors.primary,
+              overlayColor: AppColors.primary.withValues(alpha: 0.15),
+              valueIndicatorColor: AppColors.primary,
+              valueIndicatorTextStyle: const TextStyle(color: Colors.white),
+            ),
+            child: Slider(
+              value: _currentTip,
+              min: 0,
+              max: 150,
+              divisions: 15,
+              label: '₹${_currentTip.round()}',
+              onChanged: (double value) {
+                final snapped = (value / 10).round() * 10.0;
+                setState(() => _currentTip = snapped);
+              },
+              onChangeEnd: (double value) {
+                final snapped = (value / 10).round() * 10.0;
+                if (snapped > 0) _updateTipInFirestore(snapped);
+              },
+            ),
           ),
         ],
       ),

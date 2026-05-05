@@ -485,7 +485,7 @@ class _RideConfirmationBottomSheetState
       _shouldStartShowcase = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          ShowCaseWidget.of(context).startShowCase([widget.showcaseKey!]);
+          ShowcaseView.get().startShowCase([widget.showcaseKey!]);
         }
       });
     }

@@ -30,7 +30,7 @@ class PhoneAuthScreen extends StatefulWidget {
 
 class _PhoneAuthScreenState extends State<PhoneAuthScreen> with CodeAutoFill {
   final _phoneController = TextEditingController();
-  final _otpController = TextEditingController();
+  final _otpController = PinInputController();
   bool _isLoading = false;
   bool _otpSent = false;
   String? _verificationId;
@@ -293,32 +293,25 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> with CodeAutoFill {
                   keyboardType: TextInputType.phone,
                 )
               else
-                PinCodeTextField(
-                  appContext: context,
+                MaterialPinField(
                   length: 6,
-                  controller: _otpController,
+                  pinController: _otpController,
                   keyboardType: TextInputType.number,
-                  animationType: AnimationType.fade,
-                  pinTheme: PinTheme(
-                    shape: PinCodeFieldShape.box,
+                  theme: MaterialPinTheme(
+                    shape: MaterialPinShape.outlined,
+                    cellSize: const Size(45, 50),
                     borderRadius: BorderRadius.circular(12),
-                    fieldHeight: 50,
-                    fieldWidth: 45,
-                    activeFillColor: isDark ? Colors.grey[900] : Colors.grey[100],
-                    inactiveFillColor: isDark ? Colors.grey[900] : Colors.grey[100],
-                    selectedFillColor: isDark ? Colors.grey[800] : Colors.white,
-                    activeColor: Theme.of(context).primaryColor,
-                    inactiveColor: Colors.grey.withValues(alpha: 0.3),
-                    selectedColor: Theme.of(context).primaryColor,
+                    fillColor: isDark ? Colors.grey[900] : Colors.grey[100],
+                    focusedFillColor: isDark ? Colors.grey[800] : Colors.white,
+                    filledFillColor: isDark ? Colors.grey[900] : Colors.grey[100],
+                    borderColor: Colors.grey.withValues(alpha: 0.3),
+                    focusedBorderColor: Theme.of(context).primaryColor,
+                    filledBorderColor: Theme.of(context).primaryColor,
                   ),
-                  cursorColor: Theme.of(context).primaryColor,
-                  animationDuration: const Duration(milliseconds: 300),
-                  enableActiveFill: true,
                   onCompleted: (v) => _verifyOtp(),
                   onChanged: (value) {
                     setState(() {});
                   },
-                  beforeTextPaste: (text) => true,
                 ),
               const SizedBox(height: 30),
               ProButton(

@@ -211,12 +211,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
       // Persist the arrival timestamp so the timer survives minimize/resume
       _writeArrivedAt();
       _startWaitingTimer();
-      if (!widget.isRental) {
-        // Ensure map is ready before routing
-        if (_mapController.isCompleted) {
-          await _getPickupToDestinationRoute();
-        }
-      }
+      // Only show driver-to-pickup route on arrived; destination route shown after ride starts
       if (_mapController.isCompleted) {
         _animateCameraToBounds();
       }

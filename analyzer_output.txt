@@ -1,0 +1,16 @@
+Analyzing indi_cabs_user_app...                                 
+
+   info • 'of' is deprecated and shouldn't be used. This will be removed in v6.0.0. please use `ShowcaseView.get()` instead • lib/screens/home_page.dart:223:28 • deprecated_member_use
+   info • 'startShowCase' is deprecated and shouldn't be used. This will be removed in v6.0.0. please use `ShowcaseView.get().startShowCase` instead • lib/screens/home_page.dart:223:40 • deprecated_member_use
+   info • 'ShowCaseWidget' is deprecated and shouldn't be used. This will be removed in v6.0.0. Please use `ShowcaseView.register()` instead • lib/screens/home_page.dart:1635:12 • deprecated_member_use
+   info • 'of' is deprecated and shouldn't be used. This will be removed in v6.0.0. please use `ShowcaseView.get()` instead • lib/screens/home_page.dart:1678:34 • deprecated_member_use
+   info • 'startShowCase' is deprecated and shouldn't be used. This will be removed in v6.0.0. please use `ShowcaseView.get().startShowCase` instead • lib/screens/home_page.dart:1678:46 • deprecated_member_use
+   info • 'of' is deprecated and shouldn't be used. This will be removed in v6.0.0. please use `ShowcaseView.get()` instead • lib/widgets/custom_showcase.dart:78:40 • deprecated_member_use
+   info • 'dismiss' is deprecated and shouldn't be used. This will be removed in v6.0.0. please use `ShowcaseView.get().dismiss` instead • lib/widgets/custom_showcase.dart:78:48 • deprecated_member_use
+   info • 'of' is deprecated and shouldn't be used. This will be removed in v6.0.0. please use `ShowcaseView.get()` instead • lib/widgets/custom_showcase.dart:94:40 • deprecated_member_use
+   info • 'dismiss' is deprecated and shouldn't be used. This will be removed in v6.0.0. please use `ShowcaseView.get().dismiss` instead • lib/widgets/custom_showcase.dart:94:48 • deprecated_member_use
+   info • 'of' is deprecated and shouldn't be used. This will be removed in v6.0.0. please use `ShowcaseView.get()` instead • lib/widgets/custom_showcase.dart:96:40 • deprecated_member_use
+   info • 'next' is deprecated and shouldn't be used. This will be removed in v6.0.0. please use `ShowcaseView.get().next` instead • lib/widgets/custom_showcase.dart:96:48 • deprecated_member_use
+   info • 'of' is deprecated and shouldn't be used. This will be removed in v6.0.0. please use `ShowcaseView.get()` instead • lib/widgets/ride_confirm_sheet.dart:488:26 • deprecated_member_use
+   info • 'startShowCase' is deprecated and shouldn't be used. This will be removed in v6.0.0. please use `ShowcaseView.get().startShowCase` instead • lib/widgets/ride_confirm_sheet.dart:488:38 • deprecated_member_use
+
